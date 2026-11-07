@@ -4,6 +4,16 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Três modos de layout: Essencial, Intermediário e Avançado (registrado em 07/11/2026)
+- Seletor de layout (menu Exibir e/ou barra) que mostra ou esconde recursos conforme o nível,
+  lembrando a escolha entre sessões.
+- Sugestão inicial (a validar com o mantenedor):
+  - **Essencial:** display LCD, waterfall, modos, volume/squelch, favoritos e memórias prontas.
+  - **Intermediário:** + scanner, decodificadores, equalizador, gravação, assistente de sintonia.
+  - **Avançado:** tudo (ganho/ppm/bias-T, NB/NR/notch, voltar no tempo, receptores extras, FFT,
+    paletas e demais ajustes finos).
+- Trocar de nível não perde configurações; "Restaurar layout padrão" respeita o nível escolhido.
+
 ### Auto-sintonizar ao selecionar uma transmissão (registrado em 07/11/2026)
 - Ao selecionar uma transmissão (clique no waterfall/espectro, scanner, memória) e a frequência não estiver
   exatamente na dela, ajustar automaticamente para a frequência correta.
