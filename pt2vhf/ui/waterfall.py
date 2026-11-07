@@ -175,6 +175,17 @@ class SpectrumWaterfall(QWidget):
             self.spec.addItem(line)
             self._markers += [t, line]
 
+    def set_extras(self, freqs: list[float]):
+        """Linhas verdes nos receptores extras."""
+        for it in getattr(self, "_extra_items", []):
+            (self.spec if it[1] == 0 else self.wf).removeItem(it[0])
+        self._extra_items = []
+        for f in freqs:
+            for k, plot in enumerate((self.spec, self.wf)):
+                ln = pg.InfiniteLine(f / 1e6, angle=90, pen=pg.mkPen((60, 230, 120, 200), width=1.5))
+                plot.addItem(ln)
+                self._extra_items.append((ln, k))
+
     def set_bands(self, bands: list[tuple[float, float, str]]):
         for it in self._band_items:
             self.spec.removeItem(it)

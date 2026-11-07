@@ -69,6 +69,14 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 - Plano de bandas (IARU R2 / Brasil): HF, PX (11 m), 6 m, FM broadcast, aviação, 2 m, marítimo, 70 cm…
 - VFO A/B, A⇄B, A=B.
 
+### Assistente de sintonia, voltar no tempo e receptores extras
+- **Auto-sintonia SSB**: corrige o VFO pela estrutura harmônica da voz (sem mexer no áudio); modo contínuo opcional.
+- **Detectar modo**: WFM, NFM, AM, CW ou USB/LSB, ajustando modo, filtro e sintonia.
+- **Ajustar filtro**: passband ajustado à largura real do sinal.
+- **Voltar no tempo**: reouça os últimos 10–60 s de qualquer frequência da faixa.
+- **Receptores extras**: até 4 canais da mesma faixa ao mesmo tempo.
+- **Transcrição local opcional** das transmissões gravadas (`pip install faster-whisper`).
+
 ### Decodificadores
 - **APRS / AX.25 1200 bd (AFSK Bell 202)** com vários fatiadores (compensa pré-ênfase, estilo Dire Wolf):
   posição normal e compactada, **Mic-E**, objetos, status, mensagens, **telemetria** (`T#`) e **estações meteorológicas**.
@@ -90,9 +98,9 @@ para decimação exata até 48 kHz).
 ## Instalação (Windows)
 
 ### Executável
-O executável **ainda não é gerado automaticamente**. Quando for a hora, ele pode ser criado
-manualmente no GitHub Actions (**Actions → Run workflow → "Gerar executável do Windows"**),
-que publica o artefato `PT2VHF-SDR-Tool-windows`.
+Baixe o **instalador** ou a **versão portátil** em **https://www.pt2vhf.com/sdr** (downloads e
+atualizações oficiais somente pelo site). O programa avisa quando há versão nova e se atualiza sozinho,
+conferindo tamanho e SHA-256 do pacote.
 
 ### A partir do código
 1. Instale o Python 3.10+ (64 bits).
@@ -101,7 +109,7 @@ que publica o artefato `PT2VHF-SDR-Tool-windows`.
    pip install -r requirements.txt
    python run_pt2vhf.py
    ```
-3. Para gerar o `.exe` localmente: `build_windows.bat`.
+3. Para gerar instalador e portátil localmente: `build_windows.bat` (requer Inno Setup 6).
 
 ### Driver do RTL-SDR
 No Windows o dongle precisa do driver **WinUSB**: use o **Zadig** (Options → List All Devices →
@@ -152,8 +160,6 @@ e um teste da interface (offscreen).
 Veja [CHANGELOG.md](CHANGELOG.md).
 
 ## Próximos passos (roteiro)
-- Sintonia automática de SSB com IA, detecção automática de modo, transcrição de fonia.
-- "Voltar no tempo" (buffer de IQ) e vários receptores simultâneos na mesma faixa.
 - Cliente para receptores **KiwiSDR** remotos e servidor web próprio.
 - Mapa APRS, envio para APRS-IS (iGate RX-only).
 - POCSAG/FLEX, ADS-B, AIS, ACARS, satélites meteorológicos (APT), radiossondas.

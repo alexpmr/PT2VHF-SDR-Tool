@@ -64,6 +64,8 @@ class Receiver:
         self.muted = False
         self.signal_db = -150.0
         self.rec_audio = np.zeros(0, np.float32)
+        self.keep_if = False
+        self.last_if = np.zeros(0, np.complex64)
         self.nco = NCO(self.input_rate)
         self.stage1 = Decimator(self.input_rate // IF_RATE, cutoff=0.85,
                                 numtaps=12 * (self.input_rate // IF_RATE) + 1)
@@ -139,6 +141,8 @@ class Receiver:
         """Processa um bloco IQ. Retorna (áudio_saída, áudio_para_decodificadores)."""
         x = self.nco.process(iq)
         x = self.stage1.process(x)
+        if self.keep_if:  # IQ a 240 kHz centrado no VFO (assistente de sintonia)
+            self.last_if = x
         x = self.nb.process(x)
         if self.mode == "WFM":
             x = self.chan.process(x)

@@ -22,6 +22,7 @@ from ..audio import ActivityRecorder
 from ..presets import import_packs
 from ..scanner import ScannerConfig, SpectrumScanner
 from .lcd import THEMES, LCDDisplay
+from .assist_panels import AssistBox, ExtrasPanel, TimeShiftBox, UpdateController
 from .listening import FavoritesBar, PresetDialog, ScannerPanel
 from .panels import AudioPanel, DecoderPanel, MemoryPanel, ModePanel, ReceiverPanel
 from .waterfall import COLORMAPS, SpectrumWaterfall
@@ -75,6 +76,7 @@ class MainWindow(QMainWindow):
         self.engine.fft_size = self.cfg["fft_size"]
         self.engine.wf_speed = self.cfg["wf_speed"]
         self.engine.decoders_enabled = dict(self.cfg["decoders"])
+        self.engine.timeshift_seconds = float(self.cfg.get("timeshift_s", 20))
 
         self.mode = self.cfg["mode"]
         self.low, self.high = passband_for(self.mode, self.cfg["bandwidth"])
@@ -127,13 +129,22 @@ class MainWindow(QMainWindow):
         self.scan_panel = ScannerPanel(self.cfg, self.bank.categories + ["Descobertas"])
         self.sscan: SpectrumScanner | None = None
         self._hits_t = 0.0
+        self.assist = AssistBox()
+        self.mode_panel.layout().insertWidget(self.mode_panel.layout().count() - 1, self.assist)
+        self.tshift = TimeShiftBox(self.cfg.get("timeshift_s", 20))
+        self.audio_panel.layout().insertWidget(self.audio_panel.layout().count() - 1, self.tshift)
+        self.extras_panel = ExtrasPanel()
+        self.transcriber = None
+        self.updates = UpdateController(self)
+        self._assist_busy = False
         self.docks = {}
-        for key, title, w, area in (("rx", "Receptor", self.rx_panel, Qt.LeftDockWidgetArea),
-                                    ("mode", "Modo / Filtro", self.mode_panel, Qt.LeftDockWidgetArea),
-                                    ("audio", "Áudio / DSP", self.audio_panel, Qt.RightDockWidgetArea),
+        for key, title, w, area in (("rx", "Receptor", _scroll(self.rx_panel), Qt.LeftDockWidgetArea),
+                                    ("mode", "Modo / Filtro", _scroll(self.mode_panel), Qt.LeftDockWidgetArea),
+                                    ("audio", "Áudio / DSP", _scroll(self.audio_panel), Qt.RightDockWidgetArea),
                                     ("mem", "Memórias / Varredura", self.mem_panel, Qt.BottomDockWidgetArea),
                                     ("scan", "Scanner", self.scan_panel, Qt.BottomDockWidgetArea),
-                                    ("dec", "Decodificadores", self.dec_panel, Qt.BottomDockWidgetArea)):
+                                    ("dec", "Decodificadores", self.dec_panel, Qt.BottomDockWidgetArea),
+                                    ("extras", "Receptores extras", self.extras_panel, Qt.BottomDockWidgetArea)):
             d = QDockWidget(title, self)
             d.setObjectName(f"dock_{key}")
             d.setWidget(w)
@@ -143,6 +154,7 @@ class MainWindow(QMainWindow):
         self.docks["rx"].raise_()
         self.tabifyDockWidget(self.docks["mem"], self.docks["scan"])
         self.tabifyDockWidget(self.docks["scan"], self.docks["dec"])
+        self.tabifyDockWidget(self.docks["dec"], self.docks["extras"])
         self.docks["mem"].raise_()
 
         self.status_src = QLabel("Parado")
@@ -229,13 +241,18 @@ class MainWindow(QMainWindow):
         a.triggered.connect(self._reset_layout)
         v.addAction(a)
         h = mb.addMenu("A&juda")
+        a = QAction("Verificar atualizações…", self)
+        a.triggered.connect(lambda: self.updates.check(manual=True))
+        h.addAction(a)
         a = QAction("Atalhos de teclado", self)
         a.triggered.connect(self._show_shortcuts)
         h.addAction(a)
         a = QAction("Sobre", self)
         a.triggered.connect(lambda: QMessageBox.about(
             self, APP_NAME, f"<b>{APP_NAME}</b> {__version__}<br>Receptor SDR para radioamadores.<br>"
-                            "RTL-SDR, rtl_tcp, SoapySDR, arquivos IQ.<br>Decodificação APRS, DTMF e CTCSS."))
+                            "RTL-SDR, rtl_tcp, SoapySDR, arquivos IQ.<br>Decodificação APRS, DTMF e CTCSS.<br><br>"
+                            "Downloads e atualizações oficiais somente em "
+                            "<a href='https://www.pt2vhf.com/sdr'>www.pt2vhf.com</a>."))
         h.addAction(a)
 
     # ================================================================== ligações
@@ -314,6 +331,31 @@ class MainWindow(QMainWindow):
         self.avg.valueChanged.connect(lambda v: (setattr(self.wf, "avg_alpha", v / 100), self.cfg.__setitem__("spectrum_avg", v / 100)))
         self.peak.toggled.connect(lambda v: (setattr(self.wf, "peak_hold", v), self.wf.clear_peak()))
         self.lcd_theme.currentTextChanged.connect(lambda n: (self.lcd.set_theme(n), self.cfg.__setitem__("lcd_theme", n)))
+
+        ab = self.assist
+        ab.autotuneRequested.connect(lambda: self._assist_autotune(manual=True))
+        ab.detectRequested.connect(self._assist_detect)
+        ab.filterRequested.connect(self._assist_filter)
+        self._cont_timer = QTimer(self)
+        self._cont_timer.timeout.connect(lambda: self._assist_autotune(manual=False))
+        ab.cont.toggled.connect(lambda on: self._cont_timer.start(10_000) if on else self._cont_timer.stop())
+
+        ts = self.tshift
+        ts.bufferChanged.connect(self._set_timeshift)
+        ts.replayRequested.connect(self._replay)
+        ts.liveRequested.connect(lambda: self.engine.stop_replay())
+
+        xp = self.extras_panel
+        xp.addRequested.connect(self._extra_add)
+        xp.removeRequested.connect(self._extra_remove)
+        xp.changed.connect(lambda _ex: self._extra_markers())
+        xp.tuneMainRequested.connect(lambda f, m: (self.set_mode(m), self.tune(f)))
+
+        self.scan_panel.transcribe.toggled.connect(self._toggle_transcription)
+        if self.cfg.get("check_updates", True):
+            from .. import updater as _upd
+            if _upd.install_kind() != "source":
+                QTimer.singleShot(5000, lambda: self.updates.check(manual=False))
 
         # atalhos (estilo KiwiSDR / SDR#)
         for keys, fn in (
@@ -845,6 +887,131 @@ class MainWindow(QMainWindow):
             self._rec_flag()
         self.lcd.update()
 
+    # ================================================================== assistente de sintonia
+    def _assist_capture(self, seconds, kind, fn, busy_text, manual=True):
+        if not self.engine.running:
+            if manual:
+                QMessageBox.information(self, "Assistente", "Ligue o receptor primeiro.")
+            return False
+        if self._assist_busy:
+            return False
+        self._assist_busy = True
+        if manual:
+            self.assist.busy(busy_text)
+        vfo, mode = self.engine.vfo, self.mode
+
+        def cb(iq, fs):
+            try:
+                res = fn(iq, fs, vfo, mode)
+            except Exception as e:  # noqa: BLE001
+                log.exception("assistente: %s", e)
+                res = None
+            self.engine.events.put((kind, {"res": res, "vfo": vfo, "mode": mode, "manual": manual}, time.time()))
+        self.engine.capture_if(seconds, cb)
+        return True
+
+    def _assist_autotune(self, manual=True):
+        if self.mode not in ("USB", "LSB"):
+            if manual:
+                self.assist.result.setText("A auto-sintonia funciona em USB ou LSB. Use \"Detectar modo\" antes.")
+            return
+        from ..dsp.assist import estimate_ssb_offset
+        self._assist_capture(4.0, "assist_tune", lambda iq, fs, v, m: estimate_ssb_offset(iq, fs, m),
+                             "Ouvindo a fonia por 4 s…", manual)
+
+    def _assist_detect(self):
+        from ..dsp.assist import detect_mode
+        self._assist_capture(3.0, "assist_mode", lambda iq, fs, v, m: detect_mode(iq, fs, v),
+                             "Analisando o sinal por 3 s…")
+
+    def _assist_filter(self):
+        from ..dsp.assist import adaptive_passband
+        low, high = self.low, self.high
+        self._assist_capture(1.0, "assist_filter", lambda iq, fs, v, m: adaptive_passband(iq, fs, m, low, high),
+                             "Medindo a largura do sinal…")
+
+    def _assist_result(self, kind, d):
+        self._assist_busy = False
+        res, manual = d["res"], d["manual"]
+        if abs(self.engine.vfo - d["vfo"]) > 1:  # usuário mudou de frequência no meio
+            self.assist.done("Frequência alterada durante a análise; tente de novo.")
+            return
+        if kind == "assist_tune":
+            if res is None:
+                if manual:
+                    self.assist.done("Não encontrei voz SSB suficiente. Tente com o sinal no ar.")
+                return
+            delta, conf = res
+            if not manual and (abs(delta) < 8 or conf < 0.3):
+                return
+            self.tune(d["vfo"] + delta)
+            self.assist.done(f"Corrigido {delta:+.0f} Hz (confiança {conf * 100:.0f}%).")
+        elif kind == "assist_mode":
+            if res is None:
+                self.assist.done("Nenhum sinal claro perto da frequência atual.")
+                return
+            self.set_mode(res.mode, res.bandwidth)
+            self.tune(d["vfo"] + res.center_offset)
+            self.assist.done(f"{res.mode} — {res.reason} (confiança {res.confidence * 100:.0f}%).")
+        else:
+            if res is None:
+                self.assist.done("Não consegui medir o sinal.")
+                return
+            self._set_passband(*res)
+            self.assist.done(f"Filtro ajustado: {res[0]:+.0f} a {res[1]:+.0f} Hz ({(res[1] - res[0]) / 1e3:.1f} kHz).")
+
+    # ================================================================== voltar no tempo
+    def _set_timeshift(self, seconds):
+        self.cfg["timeshift_s"] = seconds
+        self.engine.timeshift_seconds = seconds
+        if self.engine.running:
+            self.engine.set_timeshift(seconds)
+        self.tshift.status.setText("Desligado" if seconds <= 0 else "Ao vivo")
+
+    def _replay(self, seconds):
+        ts = self.engine.timeshift
+        if not self.engine.running or ts is None:
+            QMessageBox.information(self, "Voltar no tempo", "Ligue o receptor e escolha o tamanho do buffer.")
+            return
+        if ts.available_seconds < 1:
+            return
+        self.engine.start_replay(min(seconds, ts.available_seconds - 0.5))
+
+    # ================================================================== receptores extras
+    def _extra_add(self):
+        if not self.engine.running:
+            QMessageBox.information(self, "Receptores extras", "Ligue o receptor primeiro.")
+            return
+        ex = self.engine.add_extra(self.engine.vfo, self.mode, self.high - self.low)
+        if ex is not None:
+            self.extras_panel.add_row(ex)
+            self._extra_markers()
+
+    def _extra_remove(self, ex):
+        self.engine.remove_extra(ex)
+        self.extras_panel.remove_row(ex)
+        self._extra_markers()
+
+    def _extra_markers(self):
+        self.wf.set_extras([row["ex"].freq for row in self.extras_panel.rows if row["ex"].enabled])
+
+    # ================================================================== transcrição
+    def _toggle_transcription(self, on):
+        from ..transcribe import Transcriber, backend_available
+        if on and self.transcriber is None:
+            if not backend_available():
+                self.scan_panel.transcribe.setChecked(False)
+                QMessageBox.information(self, "Transcrição", (
+                    "A transcrição local usa o pacote opcional faster-whisper (o áudio não sai do computador).\n"
+                    "Instale com:  pip install faster-whisper\n"
+                    "Na primeira vez o modelo (~500 MB) é baixado automaticamente."))
+                return
+            self.transcriber = Transcriber(
+                lambda p, t, c: self.engine.events.put(("transcription", (p, t, c), time.time())))
+        elif not on and self.transcriber is not None:
+            self.transcriber.stop()
+            self.transcriber = None
+
     # ================================================================== waterfall
     def _levels(self):
         lo, hi = self.wf_min.value(), self.wf_max.value()
@@ -937,9 +1104,25 @@ class MainWindow(QMainWindow):
                 self.dec_panel.add_dtmf(data, ts)
             elif kind == "activity":
                 self.scan_panel.add_activity(data, self._mem_name(data["freq"]))
+                if self.transcriber is not None:
+                    self.transcriber.submit(data["file"])
+            elif kind == "transcription":
+                self.scan_panel.set_transcription(*data)
+            elif kind in ("assist_tune", "assist_mode", "assist_filter"):
+                self._assist_result(kind, data)
+            elif kind == "replay":
+                self.lcd.flags["REPLAY"] = True
+            elif kind == "replay_end":
+                self.lcd.flags["REPLAY"] = False
+                self.tshift.status.setText("Ao vivo")
             elif kind == "error":
                 self.statusBar().showMessage(data, 8000)
         self._scan_tick()
+        if self.engine.replay_pos is not None:
+            self.tshift.status.setText(f"Reproduzindo {self.engine.replay_seconds_behind():.0f} s atrás — "
+                                       "a recepção ao vivo continua no waterfall")
+        if self.extras_panel.rows and int(time.monotonic() * 2) % 2 == 0:
+            self.extras_panel.refresh_levels()
 
     # ================================================================== layout / saída
     def _restore_layout(self):
@@ -965,6 +1148,8 @@ class MainWindow(QMainWindow):
             " Esc parar varredura."))
 
     def closeEvent(self, ev):
+        if self.transcriber is not None:
+            self.transcriber.stop()
         s = QSettings("PT2VHF", "SDRTool")
         s.setValue("geometry", self.saveGeometry())
         s.setValue("state", self.saveState())
@@ -976,3 +1161,12 @@ class MainWindow(QMainWindow):
         self.engine.stop()
         self.audio.stop()
         super().closeEvent(ev)
+
+
+def _scroll(w):
+    from PySide6.QtWidgets import QFrame, QScrollArea
+    sa = QScrollArea()
+    sa.setWidgetResizable(True)
+    sa.setFrameShape(QFrame.NoFrame)
+    sa.setWidget(w)
+    return sa

@@ -31,17 +31,58 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.build_windows
     runs-on: windows-latest
     needs: tests
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements-dev.txt
-      - run: python -m pytest -q
-        env:
-          QT_QPA_PLATFORM: offscreen
-      - run: pyinstaller --noconfirm pt2vhf.spec
+      - name: Dependências
+        run: pip install -r requirements-dev.txt
+      - name: Testes no Windows
+        run: python -m pytest -q
+      - name: Versão
+        id: ver
+        run: |
+          $v = python packaging/make_version_info.py
+          "version=$v" >> $env:GITHUB_OUTPUT
+      - name: PyInstaller (pasta + portátil)
+        run: pyinstaller --noconfirm pt2vhf.spec
+      - name: Autoteste dos executáveis
+        run: |
+          foreach ($exe in @("dist\PT2VHF-SDR-Tool\PT2VHF-SDR-Tool.exe", "dist\PT2VHF-SDR-Tool-portable.exe")) {
+            $p = Start-Process -FilePath $exe -ArgumentList "--selftest" -Wait -PassThru
+            Get-Content "$env:TEMP\pt2vhf-sdr-selftest.log"
+            if ($p.ExitCode -ne 0) { throw "Autoteste falhou: $exe" }
+          }
+      - name: Instalador (Inno Setup)
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          & $iscc "/DAppVersion=${{ steps.ver.outputs.version }}" packaging\installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC falhou" }
+      - name: Instalar em silêncio e testar o programa instalado
+        run: |
+          $setup = "dist\PT2VHF-SDR-Tool-${{ steps.ver.outputs.version }}-win-x64-setup.exe"
+          $p = Start-Process -FilePath $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/CURRENTUSER","/DIR=C:\pt2vhf-sdr-test" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Instalação falhou" }
+          if (-not (Test-Path "C:\pt2vhf-sdr-test\unins000.exe")) { throw "Desinstalador ausente" }
+          $p = Start-Process -FilePath "C:\pt2vhf-sdr-test\PT2VHF-SDR-Tool.exe" -ArgumentList "--selftest" -Wait -PassThru
+          Get-Content "$env:TEMP\pt2vhf-sdr-selftest.log"
+          if ($p.ExitCode -ne 0) { throw "Programa instalado falhou no autoteste" }
+      - name: Pacotes finais e SHA-256
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item "dist\PT2VHF-SDR-Tool-$v-win-x64-setup.exe" release\
+          Copy-Item "dist\PT2VHF-SDR-Tool-portable.exe" "release\PT2VHF-SDR-Tool-$v-win-x64-portable.exe"
+          Get-ChildItem release | ForEach-Object { "{0}  {1}  {2}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Length, $_.Name } | Tee-Object release\SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: PT2VHF-SDR-Tool-windows
-          path: dist/PT2VHF-SDR-Tool
+          name: PT2VHF-SDR-Tool-${{ steps.ver.outputs.version }}-windows
+          path: release/

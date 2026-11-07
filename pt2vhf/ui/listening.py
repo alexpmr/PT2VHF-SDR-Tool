@@ -179,7 +179,7 @@ class ScannerPanel(QWidget):
     priorityFromCurrent = Signal()
 
     HIT_COLS = ["Frequência (MHz)", "Memória", "Acessos", "Última vez", "SNR máx. (dB)", "Tempo ativo (s)", "Escutado"]
-    ACT_COLS = ["Hora", "Frequência (MHz)", "Memória", "Modo", "Duração (s)", "Arquivo"]
+    ACT_COLS = ["Hora", "Frequência (MHz)", "Memória", "Modo", "Duração (s)", "Arquivo", "Transcrição"]
 
     def __init__(self, cfg, categories: list[str], parent=None):
         super().__init__(parent)
@@ -329,6 +329,10 @@ class ScannerPanel(QWidget):
         open_folder.clicked.connect(self._open_folder)
         top.addWidget(self.autorec)
         top.addWidget(self.min_dur)
+        self.transcribe = QCheckBox("Transcrever fonia (local, opcional)")
+        self.transcribe.setToolTip("Converte cada gravação em texto no próprio computador (faster-whisper) "
+                                   "e destaca os indicativos ouvidos")
+        top.addWidget(self.transcribe)
         top.addStretch(1)
         top.addWidget(open_folder)
         al.addLayout(top)
@@ -339,6 +343,7 @@ class ScannerPanel(QWidget):
         self.act.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.act.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.act.setColumnWidth(2, 170)
+        self.act.setColumnWidth(5, 230)
         al.addWidget(self.act, 1)
         ab = QHBoxLayout()
         play = QPushButton("▶ Ouvir")
@@ -447,6 +452,16 @@ class ScannerPanel(QWidget):
                 it.setData(Qt.UserRole, ev["file"])
             self.act.setItem(0, c, it)
         self.act_info.setText(f"{self.act.rowCount()} gravações")
+
+    def set_transcription(self, path: str, text: str, calls: list):
+        for r in range(self.act.rowCount()):
+            it = self.act.item(r, 5)
+            if it and it.data(Qt.UserRole) == path:
+                label = (f"[{', '.join(calls)}] " if calls else "") + (text or "(sem fala reconhecida)")
+                cell = QTableWidgetItem(label)
+                cell.setToolTip(text)
+                self.act.setItem(r, 6, cell)
+                return
 
     def _play(self):
         r = self.act.currentRow()

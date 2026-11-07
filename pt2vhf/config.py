@@ -55,6 +55,8 @@ DEFAULTS = {
     "decoders": {"aprs": True, "dtmf": True, "ctcss": True},
     "scan_dwell_ms": 150,
     "scan_resume_s": 3.0,
+    "timeshift_s": 20,
+    "check_updates": True,
     "recordings_dir": str(Path.home() / "PT2VHF-Gravacoes"),
 }
 

@@ -22,8 +22,22 @@ from .decoders.afsk import AFSKDemodulator
 from .decoders.tones import CTCSSDetector, DTMFDecoder
 from .dsp.receiver import AUDIO_RATE, Receiver, compute_spectrum
 from .sources.base import IQSource
+from .timeshift import TimeShiftBuffer
 
 log = logging.getLogger(__name__)
+
+
+class ExtraReceiver:
+    """Receptor adicional dentro da mesma faixa (ouvido junto com o principal)."""
+
+    def __init__(self, sample_rate: int, freq: float, mode: str = "NFM", width: float | None = None):
+        self.rx = Receiver(sample_rate)
+        self.freq = float(freq)
+        self.enabled = True
+        self.in_span = True
+        self.rx.set_mode(mode, width)
+        self.rx.volume = 0.5
+        self.label = ""
 
 
 class Engine:
@@ -38,6 +52,11 @@ class Engine:
         self.tone_squelch: float | None = None  # CTCSS exigido para abrir o áudio
         self.hold_center = False  # True durante a varredura: o VFO não move o centro
         self.activity_rec: ActivityRecorder | None = None
+        self.timeshift_seconds = 20.0
+        self.timeshift: TimeShiftBuffer | None = None
+        self.replay_pos: int | None = None
+        self.extras: list[ExtraReceiver] = []
+        self._capture: dict | None = None
         self.events: queue.Queue = queue.Queue()
         self.wf_lines: deque = deque(maxlen=200)
         self.spectrum: np.ndarray | None = None
@@ -72,6 +91,15 @@ class Engine:
         self.source = source
         self.rx = Receiver(source.sample_rate)
         self._make_decoders()
+        self.replay_pos = None
+        self.timeshift = (TimeShiftBuffer(source.sample_rate, self.timeshift_seconds)
+                          if self.timeshift_seconds > 0 else None)
+        for ex in self.extras:  # recria na taxa da nova fonte, preservando modo e volume
+            old = ex.rx
+            ex.rx = Receiver(source.sample_rate)
+            ex.rx.set_mode(old.mode)
+            ex.rx.set_passband(old.low, old.high)
+            ex.rx.volume, ex.rx.squelch.threshold_db = old.volume, old.squelch.threshold_db
         self._retune(self.vfo, force=True)
         source.start()
         self._running = True
@@ -164,6 +192,61 @@ class Engine:
     def sample_rate(self) -> int:
         return self.source.sample_rate if self.source else 0
 
+    # ----------------------------------------------------------- voltar no tempo
+    def set_timeshift(self, seconds: float):
+        """Define o tamanho do buffer (0 = desligado). Vale a partir de já."""
+        self.timeshift_seconds = float(seconds)
+
+        def _do(_rx):
+            self.replay_pos = None
+            src = self.source
+            self.timeshift = TimeShiftBuffer(src.sample_rate, seconds) if (src and seconds > 0) else None
+        if self.source is not None:
+            self.call(_do)
+
+    def start_replay(self, seconds_back: float):
+        def _do(_rx):
+            ts = self.timeshift
+            if ts is None or ts.written == 0:
+                return
+            pos = ts.written - int(seconds_back * ts.sample_rate)
+            self.replay_pos = max(pos, ts.oldest())
+            self.events.put(("replay", self.replay_seconds_behind(), time.time()))
+        self.call(_do)
+
+    def stop_replay(self):
+        def _do(rx):
+            if self.replay_pos is not None:
+                self.replay_pos = None
+                self._retune(self.vfo)
+                self.events.put(("replay_end", 0.0, time.time()))
+        self.call(_do)
+
+    def replay_seconds_behind(self) -> float:
+        ts = self.timeshift
+        if ts is None or self.replay_pos is None:
+            return 0.0
+        return (ts.written - self.replay_pos) / ts.sample_rate
+
+    # ----------------------------------------------------------- receptores extras
+    def add_extra(self, freq: float, mode: str = "NFM", width: float | None = None) -> ExtraReceiver | None:
+        if self.source is None or len(self.extras) >= 4:
+            return None
+        ex = ExtraReceiver(self.source.sample_rate, freq, mode, width)
+        self.call(lambda _rx: self.extras.append(ex))
+        return ex
+
+    def remove_extra(self, ex: ExtraReceiver):
+        self.call(lambda _rx: self.extras.remove(ex) if ex in self.extras else None)
+
+    # ----------------------------------------------------------- captura p/ assistente
+    def capture_if(self, seconds: float, callback):
+        """Captura `seconds` de IQ a 240 kHz centrado no VFO e chama callback(iq, fs) numa thread."""
+        def _do(rx):
+            rx.keep_if = True
+            self._capture = {"need": int(240_000 * seconds), "chunks": [], "got": 0, "cb": callback}
+        self.call(_do)
+
     # ----------------------------------------------------------- gravação
     def start_audio_recording(self, folder: str) -> Path:
         name = datetime.now().strftime(f"PT2VHF_%Y%m%d_%H%M%S_{int(self.vfo)}Hz_AF.wav")
@@ -227,7 +310,49 @@ class Engine:
                 self.spectrum = spec
                 self.wf_lines.append((spec, src.center_freq, fs))
 
-        audio, raw = rx.process(blk)
+        center = src.center_freq
+        if self.timeshift is not None:
+            self.timeshift.append(blk, center)
+        rx_in = blk
+        if self.replay_pos is not None and self.timeshift is not None:
+            got = self.timeshift.read(self.replay_pos, len(blk))
+            ts = self.timeshift
+            if got is None or ts.written - self.replay_pos <= len(blk):
+                self.replay_pos = None  # alcançou o ao vivo
+                self.events.put(("replay_end", 0.0, time.time()))
+            else:
+                rx_in, rcenter = got
+                self.replay_pos += len(rx_in)
+                lim = fs / 2 * 0.95
+                rx.set_offset(min(max(self.vfo - rcenter, -lim), lim))
+        live_offset = None if rx_in is blk else self.vfo - center
+
+        audio, raw = rx.process(rx_in)
+        if live_offset is not None:
+            self._retune(self.vfo)
+
+        cap = self._capture
+        if cap is not None and len(rx.last_if):
+            cap["chunks"].append(rx.last_if.copy())
+            cap["got"] += len(rx.last_if)
+            if cap["got"] >= cap["need"]:
+                self._capture = None
+                rx.keep_if = False
+                iq = np.concatenate(cap["chunks"])
+                threading.Thread(target=cap["cb"], args=(iq, 240_000), daemon=True).start()
+
+        if self.extras:
+            mix = audio.astype(np.float32).copy()
+            for ex in list(self.extras):
+                off = ex.freq - center
+                ex.in_span = abs(off) < fs / 2 * 0.9
+                if not ex.enabled or not ex.in_span:
+                    continue
+                ex.rx.set_offset(off)
+                a, _ = ex.rx.process(blk)
+                n = min(len(a), len(mix))
+                mix[:n] += a[:n]
+            audio = np.tanh(mix).astype(np.float32)
 
         if self.decoders_enabled.get("ctcss"):
             tone = self.ctcss.process(raw) if rx.mode == "NFM" else None

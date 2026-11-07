@@ -130,7 +130,7 @@ class LCDDisplay(QWidget):
         tags = [(self.vfo_name, True), (self.mode, True),
                 (f"BW {self._fmt_hz(self.bandwidth)}", True),
                 (f"STEP {self._fmt_hz(self.step)}", True)]
-        for name in ("AGC", "NB", "NR", "NOTCH", "EQ", "SQL", "TSQ", "SCAN", "REC"):
+        for name in ("AGC", "NB", "NR", "NOTCH", "EQ", "SQL", "TSQ", "SCAN", "REC", "REPLAY"):
             tags.append((name, self.flags.get(name, False)))
         x = x0
         for text, active in tags:
@@ -138,11 +138,11 @@ class LCDDisplay(QWidget):
             box = QRectF(x, y0, tw, H * 0.12)
             if active:
                 p.setPen(QPen(on, 1.2))
-                if text in (self.mode, self.vfo_name) or text in ("REC", "SCAN"):
+                if text in (self.mode, self.vfo_name) or text in ("REC", "SCAN", "REPLAY"):
                     p.fillRect(box, on)
                     p.setPen(bg1)
                 p.drawText(box, Qt.AlignCenter, text)
-                if not (text in (self.mode, self.vfo_name) or text in ("REC", "SCAN")):
+                if not (text in (self.mode, self.vfo_name) or text in ("REC", "SCAN", "REPLAY")):
                     p.setPen(QPen(on, 1))
                     p.drawRoundedRect(box, 3, 3)
             else:
