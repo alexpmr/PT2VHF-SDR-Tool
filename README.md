@@ -72,9 +72,9 @@ para decimação exata até 48 kHz).
 ## Instalação (Windows)
 
 ### Executável
-Cada push na branch `main` gera o executável no GitHub Actions
-(aba **Actions → Testes e build Windows → artefato `PT2VHF-SDR-Tool-windows`**).
-Descompacte e rode `PT2VHF-SDR-Tool.exe`.
+O executável **ainda não é gerado automaticamente**. Quando for a hora, ele pode ser criado
+manualmente no GitHub Actions (**Actions → Run workflow → "Gerar executável do Windows"**),
+que publica o artefato `PT2VHF-SDR-Tool-windows`.
 
 ### A partir do código
 1. Instale o Python 3.10+ (64 bits).

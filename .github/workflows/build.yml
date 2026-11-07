@@ -1,10 +1,15 @@
-name: Testes e build Windows
+name: Testes (build Windows sob demanda)
 
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      build_windows:
+        description: "Gerar executável do Windows"
+        type: boolean
+        default: false
 
 jobs:
   tests:
@@ -22,6 +27,8 @@ jobs:
           QT_QPA_PLATFORM: offscreen
 
   windows-exe:
+    # Desativado por padrão: só roda manualmente (Actions → Run workflow → marcar "Gerar executável")
+    if: github.event_name == 'workflow_dispatch' && inputs.build_windows
     runs-on: windows-latest
     needs: tests
     steps:
