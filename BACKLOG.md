@@ -4,6 +4,23 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Waterfall para ao mudar de banda com RTL-SDR Blog V4 e não volta (registrado em 07/11/2026)
+- **Relato:** com um RTL-SDR Blog V4, ao mudar de banda o waterfall parou; voltando para 2 m continua parado.
+  O waterfall tem que ficar contínuo enquanto o dispositivo estiver detectado.
+- **Causa provável (código):** em `RtlSdrSource._run`, se `read_samples_async` termina sem exceção
+  (erro de USB/sintonizador), `_running` continua verdadeiro; o motor espera blocos para sempre, sem aviso
+  nem recuperação.
+- **Corrigir:**
+  - vigiar o fluxo (sem amostras por ~1 s): reabrir a leitura e, se preciso, o dispositivo, reaplicando
+    frequência, ganho, ppm e bias-T;
+  - avisar o usuário se não recuperar; nenhuma mudança de banda pode deixar o waterfall parado;
+  - erro ao sintonizar uma frequência deve ser informado, mantendo a frequência anterior.
+- **V4:** a `librtlsdr` incluída (pyrtlsdrlib, osmocom v0.8.0) provavelmente não suporta o V4 por completo
+  (HF pelo upconverter interno, R828D). Embutir a biblioteca do driver RTL-SDR Blog e testar 2 m, PX e HF
+  no V4. HF no V4 é pelo upconverter, não por "Amostragem direta".
+- **Faixa sem suporte:** se o dongle não alcança a banda escolhida (ex.: HF num RTL-SDR comum), avisar
+  em vez de travar.
+
 ### Modos clicáveis dentro do display LCD (registrado em 07/11/2026)
 - Levar a seleção de modo (NFM, WFM, AM, USB, LSB, CW, DSB, RAW) para dentro do display de rádio,
   como teclas/indicadores clicáveis, com o modo ativo destacado (hoje o display só mostra o modo e a
