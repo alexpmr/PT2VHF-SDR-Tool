@@ -4,6 +4,14 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Modo AUTO (registrado em 07/11/2026)
+- Novo modo **AUTO** junto aos demais (NFM, WFM, AM, USB, LSB, CW…), também no display quando os modos
+  forem para lá: detecta o tipo do sinal e aplica automaticamente modo, filtro e sintonia.
+- Usar o detector já existente (`detect_mode`, botão "Detectar modo"), reavaliando ao mudar de frequência
+  (clique no waterfall, memória, scanner) e sempre que houver sinal novo, sem trocas nervosas
+  (histerese/confiança mínima); mostrar no display o modo detectado (ex.: "AUTO·NFM").
+- Em SSB, combinar com a auto-sintonia pelos harmônicos da voz.
+
 ### Waterfall para ao mudar de banda com RTL-SDR Blog V4 e não volta (registrado em 07/11/2026)
 - **Relato:** com um RTL-SDR Blog V4, ao mudar de banda o waterfall parou; voltando para 2 m continua parado.
   O waterfall tem que ficar contínuo enquanto o dispositivo estiver detectado.
