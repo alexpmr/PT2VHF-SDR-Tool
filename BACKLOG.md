@@ -4,6 +4,16 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Aba Configurações + servidor web para acompanhar a sessão pela rede (registrado em 07/11/2026)
+- Criar a **aba/janela Configurações** reunindo as opções do programa (hoje espalhadas pelos painéis).
+- Nela, opção **Servidor web (rede local)**, como no PT2VHF APRS Client (conferir a implementação "web
+  local/LAN" de lá e seguir o mesmo padrão: porta, endereço exibido/QR, acesso só na LAN, senha opcional).
+- Outro navegador/computador da rede **replica a sessão corrente**: display LCD (frequência, modo, S-meter),
+  waterfall/espectro, memórias/favoritos, scanner e decodificadores (APRS), e **o áudio sai também no
+  navegador remoto** (streaming, ex.: WebSocket com áudio comprimido), sem deixar de tocar no computador local.
+- Definir permissões: só visualizar/ouvir ou também controlar (sintonia, modo, volume); vários clientes ao
+  mesmo tempo; baixo uso de CPU/banda (waterfall reduzido para o navegador).
+
 ### Gravação tipo VOX mais acessível (registrado em 07/11/2026)
 - **Já existe desde a 0.2.0:** Scanner → aba "Atividade gravada" → "Gravar automaticamente cada transmissão
   (quando o squelch abre)" — um WAV por transmissão, descartando as curtas demais. O mantenedor pediu o recurso
