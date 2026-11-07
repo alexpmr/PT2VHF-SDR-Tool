@@ -82,14 +82,28 @@ class AudioHub:
             return len(self._clients)
 
 
+def is_private_lan(addr) -> bool:
+    """Rede local de verdade: 10/8, 172.16/12, 192.168/16, link-local (IPv4/IPv6) e ULA fc00::/7."""
+    if isinstance(addr, str):
+        addr = ipaddress.ip_address(addr)
+    if getattr(addr, "ipv4_mapped", None):
+        addr = addr.ipv4_mapped
+    if addr.is_link_local:
+        return True
+    nets = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16") if addr.version == 4 else ("fc00::/7",)
+    return any(addr in ipaddress.ip_network(n) for n in nets)
+
+
 class WebServer:
-    def __init__(self, state_fn, spectrum_fn, lan: bool = False, port: int = 8095):
+    def __init__(self, state_fn, spectrum_fn, lan: bool = False, port: int = 8095, require_key: bool = True):
         """state_fn() -> dict com o estado atual; spectrum_fn() -> (spec_db, center, fs) ou None.
 
         Ambos são chamados pelas threads HTTP: devem só ler dados já prontos (nunca tocar o Qt/rádio).
         """
         self.state_fn, self.spectrum_fn = state_fn, spectrum_fn
         self.lan, self.port = bool(lan), int(port)
+        # sem chave: só endereços de rede privada (10/8, 172.16/12, 192.168/16, link-local) entram direto
+        self.require_key = bool(require_key)
         self.key = secrets.token_urlsafe(24)
         self.audio = AudioHub()
         self._httpd: ThreadingHTTPServer | None = None
@@ -102,7 +116,7 @@ class WebServer:
     def url(self, for_lan: bool | None = None) -> str:
         lan = self.lan if for_lan is None else for_lan
         host = detect_lan_ipv4() if lan else "127.0.0.1"
-        return f"http://{host}:{self.port}/" + (f"?key={self.key}" if lan else "")
+        return f"http://{host}:{self.port}/" + (f"?key={self.key}" if lan and self.require_key else "")
 
     def start(self):
         owner = self
@@ -126,13 +140,15 @@ class WebServer:
 
             def _authorized(self, qs) -> tuple[bool, dict]:
                 try:
-                    local = ipaddress.ip_address(self.client_address[0]).is_loopback
+                    addr = ipaddress.ip_address(self.client_address[0])
                 except ValueError:
-                    local = False
-                if local:
+                    addr = None
+                if addr is not None and addr.is_loopback:
                     return True, {}
                 if not owner.lan:
                     return False, {}
+                if not owner.require_key and addr is not None and is_private_lan(addr):
+                    return True, {}
                 key = (qs.get("key") or [""])[0]
                 if key and hmac.compare_digest(key, owner.key):
                     return True, {"Set-Cookie": f"PT2VHFSDR={owner.key}; HttpOnly; SameSite=Strict; Path=/"}

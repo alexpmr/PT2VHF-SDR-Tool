@@ -9,7 +9,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDockWidget, QLabel, QMainWindow,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QLabel, QMainWindow,
                                QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget)
 
 from .. import APP_NAME, __version__
@@ -36,7 +36,6 @@ LEVELS = ["Essencial", "Intermediário", "Avançado"]
 
 STYLE = """
 QMainWindow, QWidget { background: #161a20; color: #d8dee6; font-size: 12px; }
-QDockWidget::title { background: #232a33; padding: 4px 8px; font-weight: bold; color: #f0b44a; }
 QGroupBox { border: 1px solid #2e3742; border-radius: 6px; margin-top: 10px; padding-top: 6px; }
 QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 4px; color: #f0b44a; }
 QPushButton { background: #252d37; border: 1px solid #39444f; border-radius: 4px; padding: 4px 8px; }
@@ -64,7 +63,16 @@ QToolButton#favButton:checked { background: #c9871e; color: #120c02; font-weight
 QLabel#favStar { color: #f0b44a; font-size: 20px; padding: 0 4px; }
 QLabel#hintLabel { color: #7d8894; font-style: italic; }
 QLabel#infoLabel { color: #9aa6b2; }
-QPushButton#versionButton { background: transparent; border: 1px solid #39444f; padding: 1px 8px; color: #f0b44a; }
+QPushButton#versionButton { background: #155a3e; border: 1px solid #30a579; color: #e6fff4; padding: 4px 10px; }
+QPushButton#versionButton:hover { background: #1b6f4c; }
+QFrame#header { background: #10141a; border: 1px solid #232a33; border-radius: 6px; }
+QLabel#headline { font-size: 18px; font-weight: 800; color: #f0b44a; letter-spacing: 1px; padding-right: 8px; }
+QLabel#headerSummary { color: #9aa6b2; font-size: 11px; padding-left: 6px; }
+QLabel#utcLabel { font-size: 12px; font-weight: 700; color: #f6dca8; padding: 4px 6px; background: #232a33;
+  border: 1px solid #39444f; border-radius: 5px; }
+QTabWidget#mainTabs::pane { border: 0; }
+QTabWidget#mainTabs > QTabBar::tab { padding: 9px 18px; font-size: 13px; background: #1d232b; color: #bfc8d2; }
+QTabWidget#mainTabs > QTabBar::tab:selected { background: #2a323d; color: #f0b44a; border-bottom: 2px solid #f0b44a; }
 QToolBar#wfToolbar { background: transparent; border: 0; spacing: 6px; }
 """
 
@@ -106,35 +114,24 @@ class MainWindow(QMainWindow):
         self.apply_level(self.cfg.get("ui_level", "Intermediário"))
         self._apply_receiver_settings()
         self._refresh_markers()
+        self.settings_panel.pres_btn.clicked.connect(lambda: self.set_presentation(not self._presenting))
+        if not os.environ.get("PT2VHF_NO_AUTOCONNECT"):
+            QTimer.singleShot(900, self._auto_reconnect)
+        if self.cfg.get("presentation") and not os.environ.get("PT2VHF_NO_STARTUP_DIALOGS"):
+            QTimer.singleShot(300, lambda: self.set_presentation(True))
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
         self.timer.start(33)
         self.clock = QTimer(self)
-        self.clock.timeout.connect(self.lcd.update)
+        self.clock.timeout.connect(self._clock_tick)
         self.clock.start(1000)
 
     # ================================================================== UI
     def _build_ui(self):
+        """Padrão PT2VHF (como no Sat Tool): cabeçalho com versão/atualização e abas superiores."""
+        from PySide6.QtWidgets import QSplitter, QTabWidget
         self.setStyleSheet(STYLE)
-        self.setDockOptions(QMainWindow.AnimatedDocks | QMainWindow.AllowTabbedDocks | QMainWindow.AllowNestedDocks)
-        central = QWidget()
-        cl = QVBoxLayout(central)
-        cl.setContentsMargins(4, 4, 4, 4)
-        self.lcd = LCDDisplay()
-        self.lcd.set_theme(self.cfg["lcd_theme"])
-        cl.addWidget(self.lcd)
-        self.fav_bar = FavoritesBar()
-        self.fav_bar.refresh(self.bank.channels, self.engine.vfo)
-        cl.addWidget(self.fav_bar)
-        cl.addWidget(self._build_wf_toolbar())
-        self.wf = SpectrumWaterfall()
-        self.wf.set_colormap(self.cfg["wf_colormap"])
-        self.wf.set_levels(self.cfg["wf_min_db"], self.cfg["wf_max_db"])
-        self.wf.avg_alpha = self.cfg["spectrum_avg"]
-        cl.addWidget(self.wf, 1)
-        self.setCentralWidget(central)
-
         self.rx_panel = ReceiverPanel(self.cfg)
         self.mode_panel = ModePanel(self.cfg)
         self.audio_panel = AudioPanel(self.cfg)
@@ -154,42 +151,118 @@ class MainWindow(QMainWindow):
         self._web_aprs = deque(maxlen=30)
         self._web_state = {}
         self.transcriber = None
-        self.version_btn = QPushButton(f"v{__version__}")
-        self.version_btn.setObjectName("versionButton")
-        self.updates = UpdateController(self, self.version_btn)
         self._assist_busy = False
-        self.docks = {}
-        for key, title, w, area in (("rx", "Receptor", _scroll(self.rx_panel), Qt.LeftDockWidgetArea),
-                                    ("mode", "Modo / Filtro", _scroll(self.mode_panel), Qt.LeftDockWidgetArea),
-                                    ("audio", "Áudio / DSP", _scroll(self.audio_panel), Qt.RightDockWidgetArea),
-                                    ("mem", "Memórias / Varredura", _scroll(self.mem_panel), Qt.BottomDockWidgetArea),
-                                    ("scan", "Scanner", _scroll(self.scan_panel), Qt.BottomDockWidgetArea),
-                                    ("dec", "Decodificadores", _scroll(self.dec_panel), Qt.BottomDockWidgetArea),
-                                    ("extras", "Receptores extras", _scroll(self.extras_panel), Qt.BottomDockWidgetArea),
-                                    ("settings", "Configurações", _scroll(self.settings_panel), Qt.BottomDockWidgetArea)):
-            d = QDockWidget(title, self)
-            d.setObjectName(f"dock_{key}")
-            d.setWidget(w)
-            self.addDockWidget(area, d)
-            self.docks[key] = d
-        self.tabifyDockWidget(self.docks["rx"], self.docks["mode"])
-        self.docks["rx"].raise_()
-        self.tabifyDockWidget(self.docks["mem"], self.docks["scan"])
-        self.tabifyDockWidget(self.docks["scan"], self.docks["dec"])
-        self.tabifyDockWidget(self.docks["dec"], self.docks["extras"])
-        self.tabifyDockWidget(self.docks["extras"], self.docks["settings"])
-        self.docks["mem"].raise_()
+        self._presenting = False
+        self._quiet_start = False
+        self._quiet_error = ""
+
+        central = QWidget()
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(4, 4, 4, 0)
+        outer.setSpacing(3)
+        self.header = self._build_header()
+        outer.addWidget(self.header)
+        self.tabs = QTabWidget()
+        self.tabs.setObjectName("mainTabs")
+        self.tabs.setDocumentMode(True)
+        outer.addWidget(self.tabs, 1)
+        self.setCentralWidget(central)
+
+        # aba Receptor: display + favoritos + waterfall, painel de áudio à direita
+        left = QWidget()
+        cl = QVBoxLayout(left)
+        cl.setContentsMargins(0, 0, 0, 0)
+        self.lcd = LCDDisplay()
+        self.lcd.set_theme(self.cfg["lcd_theme"])
+        cl.addWidget(self.lcd)
+        self.fav_bar = FavoritesBar()
+        self.fav_bar.refresh(self.bank.channels, self.engine.vfo)
+        cl.addWidget(self.fav_bar)
+        self.wf_toolbar = self._build_wf_toolbar()
+        cl.addWidget(self.wf_toolbar)
+        self.wf = SpectrumWaterfall()
+        self.wf.set_colormap(self.cfg["wf_colormap"])
+        self.wf.set_levels(self.cfg["wf_min_db"], self.cfg["wf_max_db"])
+        self.wf.avg_alpha = self.cfg["spectrum_avg"]
         self.wf.setMinimumHeight(300)
-        self.resizeDocks([self.docks["mem"]], [300], Qt.Vertical)
+        cl.addWidget(self.wf, 1)
+        self.audio_scroll = _scroll(self.audio_panel)
+        self.audio_scroll.setMinimumWidth(max(330, self.audio_panel.minimumSizeHint().width() + 18))
+        self.main_split = QSplitter(Qt.Horizontal)
+        self.main_split.addWidget(left)
+        self.main_split.addWidget(self.audio_scroll)
+        self.main_split.setStretchFactor(0, 1)
+        self.main_split.setStretchFactor(1, 0)
+        self.main_split.setCollapsible(0, False)
+        self.main_split.setSizes([1100, self.audio_scroll.minimumWidth()])
+        self._default_split = self.main_split.saveState()
+
+        self.settings_tabs = QTabWidget()
+        self.settings_tabs.setObjectName("settingsTabs")
+        self.settings_tabs.addTab(_scroll(self.rx_panel), "Receptor")
+        self.settings_tabs.addTab(_scroll(self.mode_panel), "Modo / Filtro")
+        self.settings_tabs.addTab(_scroll(self.settings_panel), "Geral · Web · Atualizações")
+        self.pages = {}
+        for key, title, w in (("rx", "Receptor", self.main_split),
+                              ("mem", "Memórias / Varredura", _scroll(self.mem_panel)),
+                              ("scan", "Scanner", _scroll(self.scan_panel)),
+                              ("dec", "Decodificadores", _scroll(self.dec_panel)),
+                              ("extras", "Receptores extras", _scroll(self.extras_panel)),
+                              ("settings", "Configurações", self.settings_tabs)):
+            self.tabs.addTab(w, title)
+            self.pages[key] = w
 
         self.status_src = QLabel("Parado")
         self.status_cpu = QLabel("")
         self.status_audio = QLabel("Áudio: OK" if self.audio.available else "Áudio indisponível")
         if not self.audio.available:
             self.status_audio.setToolTip(self.audio.error)
-        for w in (self.status_src, self.status_cpu, self.status_audio, self.version_btn):
+        for w in (self.status_src, self.status_cpu, self.status_audio):
             self.statusBar().addPermanentWidget(w)
         self._build_menu()
+
+    def _build_header(self):
+        from PySide6.QtWidgets import QFrame, QHBoxLayout
+        box = QFrame()
+        box.setObjectName("header")
+        h = QHBoxLayout(box)
+        h.setContentsMargins(8, 4, 8, 4)
+        title = QLabel(f"PT2VHF  SDR TOOL   v{__version__}")
+        title.setObjectName("headline")
+        h.addWidget(title)
+        self.version_btn = QPushButton("Verificar atualizações")
+        self.version_btn.setObjectName("versionButton")
+        self.updates = UpdateController(self, self.version_btn)
+        h.addWidget(self.version_btn)
+        self.hdr_summary = QLabel("Receptor parado")
+        self.hdr_summary.setObjectName("headerSummary")
+        h.addWidget(self.hdr_summary, 1)
+        self.power_btn = QPushButton("▶  Ligar")
+        self.power_btn.setObjectName("powerButton")
+        self.power_btn.setCheckable(True)
+        self.power_btn.setMinimumWidth(120)
+        self.power_btn.setToolTip("Liga/desliga o receptor (fonte e dispositivo em Configurações → Receptor)")
+        self.power_btn.clicked.connect(lambda on: self.rx_panel.start_btn.setChecked(on))
+        h.addWidget(self.power_btn)
+        self.pres_btn = QPushButton("Tela cheia")
+        self.pres_btn.setToolTip("Modo apresentação: tela cheia sem barras do Windows (F11; Esc sai)")
+        self.pres_btn.clicked.connect(lambda: self.set_presentation(not self._presenting))
+        h.addWidget(self.pres_btn)
+        self.utc_label = QLabel("")
+        self.utc_label.setObjectName("utcLabel")
+        h.addWidget(self.utc_label)
+        return box
+
+    def _set_running_ui(self, running: bool):
+        self.rx_panel.set_running(running)
+        self.power_btn.setChecked(running)
+        self.power_btn.setText("■  Desligar" if running else "▶  Ligar")
+        if not running:
+            self.hdr_summary.setText("Receptor parado")
+
+    def _clock_tick(self):
+        self.lcd.update()
+        self.utc_label.setText(time.strftime("%H:%M:%S UTC", time.gmtime()))
 
     def _build_wf_toolbar(self):
         from PySide6.QtWidgets import QSizePolicy, QToolBar
@@ -277,8 +350,22 @@ class MainWindow(QMainWindow):
         a.triggered.connect(self.close)
         m.addAction(a)
         v = mb.addMenu("&Exibir")
-        for d in self.docks.values():
-            v.addAction(d.toggleViewAction())
+        self._tab_actions = []
+        for i in range(self.tabs.count()):
+            a = QAction(f"Aba {self.tabs.tabText(i)}", self, shortcut=QKeySequence(f"Ctrl+{i + 1}"))
+            a.triggered.connect(lambda _=False, w=self.tabs.widget(i): self.tabs.setCurrentWidget(w))
+            v.addAction(a)
+            self.addAction(a)
+            self._tab_actions.append(a)
+        self.audio_action = QAction("Painel de áudio / DSP", self, checkable=True, checked=True)
+        self.audio_action.toggled.connect(self.audio_scroll.setVisible)
+        v.addAction(self.audio_action)
+        v.addSeparator()
+        self.pres_action = QAction("Modo apresentação (tela cheia)", self, checkable=True,
+                                   shortcut=QKeySequence("F11"))
+        self.pres_action.triggered.connect(self.set_presentation)
+        v.addAction(self.pres_action)
+        self.addAction(self.pres_action)  # funciona com o menu oculto
         v.addSeparator()
         from PySide6.QtGui import QActionGroup
         grp = QActionGroup(self)
@@ -450,7 +537,7 @@ class MainWindow(QMainWindow):
             ("Ctrl+B", lambda: self._vfo_action("swap")),
             ("Ctrl+S", self._auto_squelch),
             ("Ctrl+L", self._auto_levels),
-            ("Escape", lambda: (self._stop_scan(), self._sscan_stop())),
+            ("Escape", self._escape),
         ):
             QShortcut(QKeySequence(keys), self, activated=fn)
 
@@ -484,7 +571,10 @@ class MainWindow(QMainWindow):
                     raise SourceError(f"Taxa do arquivo ({src.sample_rate} S/s) precisa ser múltipla de 240 kHz.")
                 self.engine.vfo = src.center_freq
         except SourceError as e:
-            self.rx_panel.set_running(False)
+            self._set_running_ui(False)
+            if self._quiet_start:  # reconexão ao abrir: avisa sem diálogo
+                self._quiet_error = str(e)
+                return
             if name == "RTL-SDR":
                 from ..sources import rtl_driver
                 need, reason, _pid = rtl_driver.needs_preparation()
@@ -511,19 +601,21 @@ class MainWindow(QMainWindow):
             self.vfos[self.active_vfo]["freq"] = self.engine.vfo
         self.engine.start(src)
         self._apply_receiver_settings()
-        self.rx_panel.set_running(True)
+        self._set_running_ui(True)
         tuner = getattr(src, "tuner", "")
         if getattr(src, "library", ""):
             tuner += f" · biblioteca {src.library}"
         self.rx_panel.info.setText(f"{src.name} {tuner} — {src.sample_rate / 1e6:g} MS/s, bloco {src.block_size}")
         self.status_src.setText(f"● {src.name} {src.sample_rate / 1e6:g} MS/s")
+        self.hdr_summary.setText(f"● {src.name} {tuner} — {src.sample_rate / 1e6:g} MS/s")
+        self.cfg.update(device_index=opts.get("device_index", 0), device_name=self.rx_panel.device.currentText())
         self._update_lcd()
 
     def stop_source(self):
         self._stop_scan()
         self._sscan_stop()
         self.engine.stop()
-        self.rx_panel.set_running(False)
+        self._set_running_ui(False)
         self.rx_panel.info.setText("Parado")
         self.status_src.setText("Parado")
         self.audio_panel.rec_audio.setChecked(False)
@@ -1117,7 +1209,7 @@ class MainWindow(QMainWindow):
         from ..webserver import WebServer
         sp = self.settings_panel
         self.cfg.update(web_enabled=sp.web_on.isChecked(), web_allow_lan=sp.web_lan.isChecked(),
-                        web_port=sp.web_port.value())
+                        web_require_key=sp.web_key.isChecked(), web_port=sp.web_port.value())
         if self.web is not None:
             if self.web.audio.push in self.engine.audio_listeners:
                 self.engine.audio_listeners.remove(self.web.audio.push)
@@ -1129,7 +1221,8 @@ class MainWindow(QMainWindow):
         eng = self.engine
         web = WebServer(lambda: self._web_state,
                         lambda: (eng.spectrum, eng.spectrum_center, eng.sample_rate) if eng.spectrum is not None else None,
-                        lan=sp.web_lan.isChecked(), port=sp.web_port.value())
+                        lan=sp.web_lan.isChecked(), port=sp.web_port.value(),
+                        require_key=sp.web_key.isChecked())
         try:
             web.start()
         except OSError as e:
@@ -1141,6 +1234,8 @@ class MainWindow(QMainWindow):
         txt = f"Ativa: {local}"
         if web.lan:
             txt += f"\nRede local: {web.url(True)}"
+            if not web.require_key:
+                txt += "\nSem chave: qualquer aparelho da rede local abre direto por este endereço."
         sp.web_status.setText(txt)
 
     def _web_open(self):
@@ -1448,8 +1543,6 @@ class MainWindow(QMainWindow):
         self.wf.step = self.step
         self.wf.set_vfo(vfo, self.low, self.high)
         self.mode_panel.show_mode(self.mode, self.high - self.low, self.step)
-        if self.auto_mode:
-            self.mode_panel.mode_btns["AUTO"].setChecked(True)
         self._update_lcd()
 
     def _update_lcd(self):
@@ -1558,16 +1651,93 @@ class MainWindow(QMainWindow):
     # ================================================================== layout / saída
     def _restore_layout(self):
         s = QSettings("PT2VHF", "SDRTool")
-        geo, state = s.value("geometry"), s.value("state")
-        self._default_state = self.saveState()
+        geo, split = s.value("geometry"), s.value("split_v05")
         if isinstance(geo, QByteArray):
             self.restoreGeometry(geo)
-        if isinstance(state, QByteArray):
-            self.restoreState(state)
+        if isinstance(split, QByteArray):
+            self.main_split.restoreState(split)
+        self.audio_action.setChecked(s.value("audio_panel", "true") not in ("false", False))
+        self.tabs.setCurrentIndex(0)
 
     def _reset_layout(self):
-        self.restoreState(self._default_state)
+        if self._presenting:
+            self.set_presentation(False)
+        self.main_split.restoreState(self._default_split)
+        self.audio_action.setChecked(True)
+        self.tabs.setCurrentIndex(0)
+        self.settings_tabs.setCurrentIndex(0)
         self.apply_level(self.cfg.get("ui_level", "Intermediário"))
+
+    # ================================================================== modo apresentação
+    def set_presentation(self, on: bool):
+        """Tela cheia de verdade (sem título nem barra de tarefas), no monitor em que a janela está."""
+        on = bool(on)
+        self.pres_action.setChecked(on)
+        if on == self._presenting:
+            return
+        self._presenting = on
+        self.cfg["presentation"] = on
+        minimal = bool(self.cfg.get("presentation_minimal", True))
+        if on:
+            self._pres_was_max = self.isMaximized()
+            self._pres_audio = self.audio_scroll.isVisible()
+            if minimal:
+                self.tabs.setCurrentIndex(0)
+                for w in (self.menuBar(), self.statusBar(), self.header, self.tabs.tabBar(), self.audio_scroll,
+                          self.fav_bar, self.wf_toolbar):
+                    w.setVisible(False)
+            self.showFullScreen()
+            self.statusBar().showMessage("Modo apresentação — Esc ou F11 para sair", 6000)
+        else:
+            for w in (self.menuBar(), self.statusBar(), self.header, self.tabs.tabBar(), self.fav_bar, self.wf_toolbar):
+                w.setVisible(True)
+            self.audio_scroll.setVisible(getattr(self, "_pres_audio", True) and self.audio_action.isChecked())
+            self.showMaximized() if getattr(self, "_pres_was_max", False) else self.showNormal()
+        self.settings_panel.pres_btn.setText("Sair do modo apresentação" if on else "Entrar no modo apresentação")
+
+    def _escape(self):
+        if self._presenting:
+            self.set_presentation(False)
+            return
+        self._stop_scan()
+        self._sscan_stop()
+
+    # ================================================================== reconectar ao abrir
+    def _auto_reconnect(self):
+        c = self.cfg
+        if (not c.get("reconnect_on_start", True) or not c.get("rx_was_on")
+                or c.get("source") not in ("RTL-SDR", "rtl_tcp", "SoapySDR") or self.engine.running):
+            return
+        rp = self.rx_panel
+        if rp.source.currentText() != c["source"]:
+            rp.source.setCurrentText(c["source"])
+        if c["source"] == "RTL-SDR":
+            real = [rp.device.itemText(i) for i in range(rp.device.count()) if rp.device.itemText(i)[:1].isdigit()]
+            if not real:
+                self._reconnect_failed("RTL-SDR não encontrado. Conecte o dongle e clique em Ligar.")
+                return
+            name = c.get("device_name", "").split(":", 1)[-1].strip()
+            pick = next((t for t in real if name and t.split(":", 1)[-1].strip() == name), None)
+            if pick is None:
+                idx = int(c.get("device_index", 0))
+                pick = next((t for t in real if t.split(":", 1)[0].strip() == str(idx)), real[0])
+            rp.device.setCurrentText(pick)
+        self._quiet_start, self._quiet_error = True, ""
+        try:
+            rp.start_btn.setChecked(True)
+        finally:
+            self._quiet_start = False
+        if self.engine.running:
+            self.statusBar().showMessage(f"Receptor reconectado ({c['source']}), como estava ao fechar", 8000)
+        else:
+            self._reconnect_failed(self._quiet_error or "não foi possível abrir o receptor.")
+
+    def _reconnect_failed(self, why: str):
+        msg = f"Reconexão automática do {self.cfg.get('source')}: {why}"
+        log.warning(msg)
+        self.rx_panel.info.setText(msg)
+        self.hdr_summary.setText("Receptor parado — " + why.split("\n")[0][:120])
+        self.statusBar().showMessage(msg.split("\n")[0], 15000)
 
     def apply_level(self, name: str):
         """Mostra/esconde recursos conforme o nível (as configurações nunca se perdem)."""
@@ -1581,9 +1751,14 @@ class MainWindow(QMainWindow):
             combo.blockSignals(False)
         for act in getattr(self, "_level_actions", []):
             act.setChecked(act.text() == name)
-        dock_lvl = {"rx": 0, "mode": 0, "audio": 0, "mem": 0, "scan": 1, "dec": 1, "extras": 2}
-        for key, dock in self.docks.items():
-            dock.setVisible(lvl >= dock_lvl.get(key, 0))
+        page_lvl = {"scan": 1, "dec": 1, "extras": 2}
+        for key, page in self.pages.items():
+            vis = lvl >= page_lvl.get(key, 0)
+            i = self.tabs.indexOf(page)
+            self.tabs.setTabVisible(i, vis)
+            self._tab_actions[i].setVisible(vis)
+            if not vis and self.tabs.currentIndex() == i:
+                self.tabs.setCurrentIndex(0)
         group_lvl = {"Sintonizador": 0, "AGC / Ruído": 2, "Equalizador": 1, "Saída / Gravação": 1,
                      "Voltar no tempo": 2, "Assistente de sintonia": 1}
         from PySide6.QtWidgets import QFormLayout, QGroupBox
@@ -1608,16 +1783,22 @@ class MainWindow(QMainWindow):
             " roda = zoom; Ctrl+roda = sintonia; duplo clique = zoom total.<br>"
             "<b>Teclado</b>: Alt+N/W/A/U/L/C modos; Ctrl+←/→ passo; Ctrl+↑/↓ passo×10; Ctrl+M salvar memória;"
             " Ctrl+B trocar VFO; Ctrl+S squelch automático; Ctrl+L níveis automáticos; Ctrl+Shift+M mudo;"
-            " Esc parar varredura."))
+            " Ctrl+1…6 abas; F11 modo apresentação; Esc sai da apresentação ou para a varredura."))
 
     def closeEvent(self, ev):
         if self.web is not None:
             self.web.stop()
         if self.transcriber is not None:
             self.transcriber.stop()
+        presenting = self._presenting
+        if presenting:  # a geometria salva é a da janela normal
+            self.set_presentation(False)
+        self.cfg["presentation"] = presenting
         s = QSettings("PT2VHF", "SDRTool")
         s.setValue("geometry", self.saveGeometry())
-        s.setValue("state", self.saveState())
+        s.setValue("split_v05", self.main_split.saveState())
+        s.setValue("audio_panel", "true" if self.audio_action.isChecked() else "false")
+        self.cfg["rx_was_on"] = bool(self.engine.running and self.cfg.get("source") in ("RTL-SDR", "rtl_tcp", "SoapySDR"))
         self.cfg["vfo_freq"] = self.vfos["A"]["freq"] if self.active_vfo != "A" else self.engine.vfo
         self.cfg["fft_size"] = self.engine.fft_size
         self.cfg["my_locator"] = self.dec_panel.locator.text()

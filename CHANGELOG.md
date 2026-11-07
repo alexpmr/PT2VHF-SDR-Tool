@@ -2,6 +2,30 @@
 
 Todas as mudanças relevantes do PT2VHF SDR Tool.
 
+## [0.5.0] — 2026-11-07
+### Corrigido
+- **RTL-SDR voltou a abrir** (0.4.1: "Error code -1 when setting PLL dithering mode" seguido de LIBUSB_ERROR_ACCESS):
+  funções que a DLL do driver RTL-SDR Blog não tem passam a responder sem erro, e se a abertura falhar o dongle é
+  liberado antes de tentar a biblioteca padrão.
+
+### Adicionado
+- **Abas superiores**, no padrão dos programas PT2VHF: Receptor (display + waterfall + áudio), Memórias / Varredura,
+  Scanner, Decodificadores, Receptores extras e **Configurações** (sub-abas Receptor, Modo / Filtro e
+  Geral · Web · Atualizações). Atalhos Ctrl+1…6.
+- **Cabeçalho** com nome e versão, botão de **atualização no topo** (verificar / nova versão / progresso),
+  resumo do receptor, **Ligar/Desligar** e relógio UTC.
+- **Lembrar o receptor ao sair**: se o programa foi fechado com um RTL-SDR, rtl_tcp ou SoapySDR ligado, ele reconecta
+  sozinho ao abrir (mesmo dispositivo, taxa, ganho e frequência); sem o dispositivo, avisa sem travar.
+  Opção "Reconectar o receptor ao abrir".
+- **Modo apresentação** (F11, Exibir ou botão "Tela cheia"): tela cheia sem barra de título e barra de tarefas, no
+  monitor da janela; opcionalmente só display + waterfall. Esc/F11 saem; o programa lembra se estava nele.
+- Interface web: opção **"Exigir chave na rede local"** — desmarcada, outro computador abre direto por
+  `http://IP:porta/` (somente endereços de rede privada).
+
+### Alterado
+- Os botões de modo saíram do painel Modo / Filtro (ficam no display e nos atalhos Alt+…).
+- Painel de áudio pode ser ocultado (Exibir) e redimensionado.
+
 ## [0.4.1] — 2026-11-07
 ### Corrigido
 - **RTL-SDR não abria na 0.4.0 (LIBUSB_ERROR_ACCESS)** em computadores onde a 0.3.0 funcionava: se a biblioteca do

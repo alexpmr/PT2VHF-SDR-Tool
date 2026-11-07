@@ -69,6 +69,13 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 - Plano de bandas (IARU R2 / Brasil): HF, PX (11 m), 6 m, FM broadcast, aviação, 2 m, marítimo, 70 cm…
 - VFO A/B, A⇄B, A=B.
 
+### Novidades da 0.5
+- **Abas superiores** (Receptor, Memórias / Varredura, Scanner, Decodificadores, Receptores extras, Configurações)
+  e cabeçalho com versão/atualização, Ligar/Desligar e relógio UTC.
+- **Reconecta o receptor ao abrir** se o programa foi fechado com ele ligado.
+- **Modo apresentação** (F11): tela cheia só com display e waterfall.
+- Interface web pela rede local **direto pelo IP, sem chave** (opcional).
+
 ### Novidades da 0.4
 - **Modo AUTO**, **auto-sintonizar ao selecionar** (tecla A-SINT), **◀ ▶ transmissão vizinha** e **modos clicáveis
   no display**.
@@ -136,7 +143,9 @@ pacote `pyrtlsdr[lib]`.
 | Ctrl+S | squelch automático |
 | Ctrl+L | níveis automáticos do waterfall |
 | Ctrl+Shift+M | mudo |
-| Esc | parar varredura |
+| F11 | modo apresentação (tela cheia) |
+| Ctrl+1 … 6 | abas |
+| Esc | sair do modo apresentação / parar varredura |
 
 ## Arquitetura
 

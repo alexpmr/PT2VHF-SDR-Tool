@@ -1,4 +1,4 @@
-"""Painéis de controle (docks) da janela principal."""
+"""Painéis de controle (abas) da janela principal."""
 from __future__ import annotations
 
 import csv
@@ -6,7 +6,7 @@ import time
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-                               QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox,
+                               QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
                                QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
                                QMessageBox, QPlainTextEdit, QPushButton, QSlider, QSpinBox,
                                QTableWidget, QTableWidgetItem, QTabWidget, QTreeWidget,
@@ -237,19 +237,13 @@ class ModePanel(QWidget):
         self.vfo_btns["A"].setChecked(True)
         lay.addWidget(vg)
 
-        mg = QGroupBox("Modo")
-        ml = QGridLayout(mg)
+        # os modos ficam no display (teclas clicáveis) e nos atalhos Alt+N/W/A/U/L/C/O
         self.mode_btns = {}
-        for i, m in enumerate(["AUTO"] + [k for k in MODES if k != "RAW"] + ["RAW"]):
-            b = QPushButton(m)
-            if m == "AUTO":
-                b.setToolTip("Detecta o tipo da transmissão e aplica modo, filtro e sintonia automaticamente")
-            b.setCheckable(True)
-            b.setAutoExclusive(True)
-            b.clicked.connect(lambda _=False, mm=m: self.modeChanged.emit(mm))
-            ml.addWidget(b, i // 3, i % 3)
-            self.mode_btns[m] = b
-        lay.addWidget(mg)
+        mode_hint = QLabel("Modo: use as teclas do display (AUTO, NFM, WFM, AM, USB, LSB, CW, DSB, RAW) "
+                           "ou Alt+N/W/A/U/L/C, Alt+O = AUTO.")
+        mode_hint.setWordWrap(True)
+        mode_hint.setObjectName("hintLabel")
+        lay.addWidget(mode_hint)
 
         fg = QGroupBox("Filtro / passo")
         fl = QFormLayout(fg)

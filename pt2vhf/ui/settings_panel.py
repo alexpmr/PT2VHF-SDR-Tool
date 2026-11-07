@@ -44,6 +44,20 @@ class SettingsPanel(QWidget):
         f.addRow("Tema do display:", self.theme)
         col1.addWidget(g)
 
+        g = QGroupBox("Modo apresentação (F11)")
+        f = QVBoxLayout(g)
+        self.pres_minimal = QCheckBox("Mostrar só o display e o waterfall (oculta menus, abas, painel de áudio)")
+        self.pres_minimal.setChecked(bool(cfg.get("presentation_minimal", True)))
+        self.pres_btn = QPushButton("Entrar no modo apresentação")
+        hint = QLabel("Tela cheia de verdade: some a barra de título e a barra de tarefas do Windows, no monitor "
+                      "em que a janela está. Esc ou F11 voltam ao normal.")
+        hint.setWordWrap(True)
+        hint.setObjectName("hintLabel")
+        f.addWidget(self.pres_minimal)
+        f.addWidget(self.pres_btn)
+        f.addWidget(hint)
+        col1.addWidget(g)
+
         g = QGroupBox("Sintonia e receptor")
         f = QFormLayout(g)
         self.auto_tune = QCheckBox("Auto-sintonizar ao selecionar uma transmissão (tecla A-SINT)")
@@ -61,7 +75,10 @@ class SettingsPanel(QWidget):
         i = self.rtl_lib.findData(cfg.get("rtl_library", "auto"))
         self.rtl_lib.setCurrentIndex(max(i, 0))
         self.rtl_lib.setToolTip("Biblioteca usada para abrir o RTL-SDR (vale na próxima vez que clicar em Ligar)")
+        self.reconnect = QCheckBox("Reconectar o receptor ao abrir (se o programa foi fechado com ele ligado)")
+        self.reconnect.setChecked(bool(cfg.get("reconnect_on_start", True)))
         f.addRow(self.auto_tune)
+        f.addRow(self.reconnect)
         f.addRow("Calibração do S-meter:", self.smeter)
         f.addRow("Biblioteca do RTL-SDR:", self.rtl_lib)
         col1.addWidget(g)
@@ -91,6 +108,12 @@ class SettingsPanel(QWidget):
         row.addWidget(self.web_lan, 1)
         row.addWidget(QLabel("Porta TCP"))
         row.addWidget(self.web_port)
+        self.web_key = QCheckBox("Exigir chave na rede local")
+        self.web_key.setChecked(bool(cfg.get("web_require_key", False)))
+        self.web_key.setToolTip("Desmarcado: outro computador da rede local abre direto pelo IP "
+                                "(somente endereços privados 10.x, 172.16–31.x, 192.168.x e link-local).")
+        self.web_key.setEnabled(self.web_lan.isChecked())
+        self.web_lan.toggled.connect(self.web_key.setEnabled)
         btns = QHBoxLayout()
         b_open = QPushButton("Abrir interface web")
         b_copy = QPushButton("Copiar endereço")
@@ -101,13 +124,15 @@ class SettingsPanel(QWidget):
         self.web_status.setObjectName("infoLabel")
         self.web_status.setWordWrap(True)
         info = QLabel("O navegador replica a sessão: display, waterfall, APRS e o áudio (que continua saindo "
-                      "neste computador). Somente leitura: a sintonia é feita aqui. Na LAN o endereço leva uma "
-                      "chave temporária. HTTP na rede local não é criptografado: nunca exponha a porta à Internet.")
+                      "neste computador). Somente leitura: a sintonia é feita aqui. Sem a chave, qualquer "
+                      "aparelho da rede local (endereço privado) abre direto pelo IP; com a chave, o endereço leva "
+                      "uma chave temporária. HTTP na rede local não é criptografado: nunca exponha a porta à Internet.")
         info.setWordWrap(True)
         info.setObjectName("hintLabel")
         for w in (self.web_on,):
             f.addWidget(w)
         f.addLayout(row)
+        f.addWidget(self.web_key)
         f.addLayout(btns)
         f.addWidget(self.web_status)
         f.addWidget(info)
@@ -124,8 +149,10 @@ class SettingsPanel(QWidget):
         self.smeter.valueChanged.connect(lambda v: self.changed.emit("s_meter_cal", float(v)))
         self.auto_update.toggled.connect(lambda v: self.changed.emit("auto_update", v))
         self.rtl_lib.currentIndexChanged.connect(lambda _i: self.changed.emit("rtl_library", self.rtl_lib.currentData()))
+        self.reconnect.toggled.connect(lambda v: self.changed.emit("reconnect_on_start", v))
+        self.pres_minimal.toggled.connect(lambda v: self.changed.emit("presentation_minimal", v))
         now.clicked.connect(self.checkUpdatesNow)
-        for sig in (self.web_on.toggled, self.web_lan.toggled, self.web_port.valueChanged):
+        for sig in (self.web_on.toggled, self.web_lan.toggled, self.web_key.toggled, self.web_port.valueChanged):
             sig.connect(lambda *_: self.webApply.emit())
         b_open.clicked.connect(self.webOpen)
         b_copy.clicked.connect(self.webCopy)

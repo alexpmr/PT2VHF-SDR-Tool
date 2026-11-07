@@ -217,8 +217,8 @@ class UpdateController(QObject):
         self._checked.connect(self._on_checked)
         self._progress.connect(self._on_progress)
         self._downloaded.connect(self._on_downloaded)
-        self.btn.setText(f"v{__version__}")
-        self.btn.setToolTip("Verificar versões em www.pt2vhf.com e atualizar")
+        self.btn.setText("Verificar atualizações")
+        self.btn.setToolTip(f"Versão instalada {__version__} · verificar versões em www.pt2vhf.com e atualizar")
         self.btn.clicked.connect(self.on_button)
 
     # ------------------------------------------------------------ consulta
@@ -250,7 +250,7 @@ class UpdateController(QObject):
             return
         self.available = info
         if info is None:
-            self.btn.setText(f"v{__version__}")
+            self.btn.setText("Verificar atualizações")
             if manual:
                 QMessageBox.information(self.win, "Atualizações",
                                         f"Você já está na versão mais recente ({__version__}).")

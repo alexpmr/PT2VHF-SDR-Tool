@@ -57,6 +57,12 @@ DEFAULTS = {
     "scan_resume_s": 3.0,
     "timeshift_s": 20,
     "check_updates": True,
+    "reconnect_on_start": True,
+    "rx_was_on": False,
+    "device_name": "",
+    "web_require_key": False,
+    "presentation": False,
+    "presentation_minimal": True,
     "recordings_dir": str(Path.home() / "PT2VHF-Gravacoes"),
 }
 

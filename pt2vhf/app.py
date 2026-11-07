@@ -31,6 +31,7 @@ def main():
         ctypes.windll.kernel32.CreateMutexW(None, False, "PT2VHF_SDR_Tool_Running")
     if args.screenshot:
         os.environ["PT2VHF_NO_STARTUP_DIALOGS"] = "1"
+        os.environ["PT2VHF_NO_AUTOCONNECT"] = "1"
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
 
@@ -60,6 +61,7 @@ def selftest() -> int:
     import threading
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     os.environ["PT2VHF_NO_STARTUP_DIALOGS"] = "1"
+    os.environ["PT2VHF_NO_AUTOCONNECT"] = "1"
     from . import __version__
     from .dsp.assist import detect_mode
     from .dsp.receiver import Receiver
