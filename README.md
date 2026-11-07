@@ -8,6 +8,7 @@ Funciona com **RTL-SDR**, servidores **rtl_tcp**, qualquer rádio suportado pelo
 
 Plataforma inicial: **Windows** (também roda em Linux/macOS).
 
+![Scanner por espectro e teclas de favoritos](docs/screenshot-scanner.png)
 ![Tela principal com decodificação APRS](docs/screenshot-aprs.png)
 ![Tema azul, DTMF e CTCSS](docs/screenshot-azul.png)
 
@@ -42,12 +43,29 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 - Volume, mudo, limitador suave, escolha da placa de som.
 - **Gravação** de áudio (WAV 48 kHz) e de **IQ** (WAV estéreo, compatível com SDR#/SDR++).
 
+### Memórias prontas e favoritos
+- **Pacotes de memórias prontas** (botão *Memórias prontas…*): radioamador (chamada e fonia),
+  FT8/FT4/WSPR, satélites/ISS, aviação, marítimo VHF (simplex, DSC, AIS), PX 11 m (40 canais),
+  FRS/PMR446 e sinais horários (WWV/CHU).
+- **Barra de favoritos ★** acima do waterfall: teclas de memória de um clique, como num rádio.
+
+### Scanner por espectro
+- Varre faixas inteiras **pelo FFT**, segmento a segmento — salta direto para onde há sinal
+  (centenas de canais por segundo com um RTL-SDR).
+- Faixas prontas (aviação, marítimo, 2 m, 70 cm, VHF/UHF serviços, FRS, PMR446, PX, radiossondas,
+  FM, ondas curtas) ou faixa personalizada; resolução e sensibilidade (dB acima do ruído) ajustáveis.
+- **Só descobrir** (monta a lista de frequências ativas com acessos, horário, SNR e tempo ativo)
+  ou **Parar e escutar** (retoma após o silêncio), **canal prioritário**, **bloqueio** de frequências.
+- Salve as descobertas como memórias com um clique; exporte a lista em CSV.
+- **Gravação automática por atividade**: cada transmissão vira um WAV, para ouvir depois.
+
+![Gravação automática por atividade](docs/screenshot-atividade.png)
+
 ### Memórias e varredura
 - Memórias com **categorias** (Repetidoras, Simplex, APRS/Digital, Satélites, Aviação, Marítimo, Broadcast…),
   banda detectada automaticamente, modo, largura, CTCSS, deslocamento de repetidora, notas, favoritos.
 - **Importa/exporta CSV do CHIRP** (leve as memórias do seu HT para o SDR e vice-versa).
-- **Varredura** de categoria ou de faixa (de/até com o passo atual), com tempo de permanência
-  e retomada automática.
+- **Varredura de memórias** por categoria, com tempo de permanência e retomada automática.
 - Plano de bandas (IARU R2 / Brasil): HF, PX (11 m), 6 m, FM broadcast, aviação, 2 m, marítimo, 70 cm…
 - VFO A/B, A⇄B, A=B.
 
@@ -114,6 +132,8 @@ pt2vhf/
   engine.py     thread DSP: espectro/waterfall, receptor, decodificadores, gravação
   audio.py      saída de áudio (PortAudio) com compensação de clock, gravadores WAV
   memory.py     memórias, categorias, plano de bandas, CSV do CHIRP
+  presets.py    pacotes de memórias prontas
+  scanner.py    scanner por espectro (detecção, segmentos, prioridade, bloqueios)
   ui/           display LCD, espectro/waterfall (pyqtgraph), painéis (docks), janela principal
 ```
 
@@ -128,7 +148,12 @@ Os testes cobrem filtros, demoduladores, AFSK/AX.25/APRS (incluindo Mic-E e comp
 DTMF, CTCSS, memórias/CSV, protocolo rtl_tcp, arquivo IQ, a cadeia completa com o simulador
 e um teste da interface (offscreen).
 
+## Changelog
+Veja [CHANGELOG.md](CHANGELOG.md).
+
 ## Próximos passos (roteiro)
+- Sintonia automática de SSB com IA, detecção automática de modo, transcrição de fonia.
+- "Voltar no tempo" (buffer de IQ) e vários receptores simultâneos na mesma faixa.
 - Cliente para receptores **KiwiSDR** remotos e servidor web próprio.
 - Mapa APRS, envio para APRS-IS (iGate RX-only).
 - POCSAG/FLEX, ADS-B, AIS, ACARS, satélites meteorológicos (APT), radiossondas.

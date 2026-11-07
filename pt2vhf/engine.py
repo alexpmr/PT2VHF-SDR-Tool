@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .audio import AudioOutput, WavRecorder
+from .audio import ActivityRecorder, AudioOutput, WavRecorder
 from .decoders import aprs as aprs_mod
 from .decoders.afsk import AFSKDemodulator
 from .decoders.tones import CTCSSDetector, DTMFDecoder
@@ -36,6 +36,8 @@ class Engine:
         self.wf_speed = 20.0
         self.decoders_enabled = {"aprs": True, "dtmf": True, "ctcss": True}
         self.tone_squelch: float | None = None  # CTCSS exigido para abrir o áudio
+        self.hold_center = False  # True durante a varredura: o VFO não move o centro
+        self.activity_rec: ActivityRecorder | None = None
         self.events: queue.Queue = queue.Queue()
         self.wf_lines: deque = deque(maxlen=200)
         self.spectrum: np.ndarray | None = None
@@ -90,6 +92,10 @@ class Engine:
             self.source = None
         self.stop_audio_recording()
         self.stop_iq_recording()
+        if self.activity_rec is not None:
+            ev = self.activity_rec.close()
+            if ev:
+                self.events.put(("activity", ev, ev["start"]))
         self.status["running"] = False
 
     @property
@@ -112,11 +118,25 @@ class Engine:
             self._retune(self.vfo)
 
     def set_center(self, freq: float):
+        """Muda a frequência central (usado pelo scanner, com hold_center=True)."""
         def _do(_rx):
             if self.source:
                 self.source.set_center_freq(freq)
+                self._flush_source()
+                self.wf_lines.clear()
+                self._wf_acc = 1.0  # próxima linha sai já com o novo centro
                 self._retune(self.vfo)
         self.call(_do)
+
+    def _flush_source(self):
+        q = getattr(self.source, "_q", None)
+        if q is None:
+            return
+        while True:
+            try:
+                q.get_nowait()
+            except queue.Empty:
+                break
 
     def _retune(self, vfo: float, force: bool = False):
         src, rx = self.source, self.rx
@@ -124,8 +144,8 @@ class Engine:
             return
         fs = src.sample_rate
         margin = fs / 2 * 0.9 - abs(rx.bandwidth) / 2
-        if not src.tunable:
-            # gravação: só é possível sintonizar dentro da faixa gravada
+        if not src.tunable or self.hold_center:
+            # gravação IQ ou scanner: centro fixo, só desloca o canal dentro da faixa
             lim = fs / 2 * 0.95
             rx.set_offset(min(max(vfo - src.center_freq, -lim), lim))
             return
@@ -230,6 +250,12 @@ class Engine:
         with self._lock:
             if self._audio_rec and len(audio):
                 self._audio_rec.write(audio)
+        if self.activity_rec is not None:
+            sq_active = rx.squelch.threshold_db > -149 or self.tone_squelch is not None
+            opened = sq_active and rx.squelch.is_open and bool(np.any(audio))
+            ev = self.activity_rec.process(rx.rec_audio, opened, self.vfo, rx.mode, rx.signal_db)
+            if ev:
+                self.events.put(("activity", ev, ev["start"]))
         if self.audio_tap:
             self.audio_tap(audio, raw)
 

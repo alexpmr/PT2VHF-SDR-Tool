@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
@@ -17,7 +18,11 @@ from ..dsp.receiver import AUDIO_RATE, MODES, passband_for
 from ..engine import Engine
 from ..memory import MemoryBank, MemoryChannel, band_for
 from ..sources.base import SourceError
+from ..audio import ActivityRecorder
+from ..presets import import_packs
+from ..scanner import ScannerConfig, SpectrumScanner
 from .lcd import THEMES, LCDDisplay
+from .listening import FavoritesBar, PresetDialog, ScannerPanel
 from .panels import AudioPanel, DecoderPanel, MemoryPanel, ModePanel, ReceiverPanel
 from .waterfall import COLORMAPS, SpectrumWaterfall
 
@@ -46,6 +51,12 @@ QTabBar::tab:selected { background: #2a323d; color: #f0b44a; }
 QStatusBar { background: #10141a; color: #9aa6b2; }
 QLabel#bigLabel { font-size: 14px; font-weight: bold; color: #f0b44a; }
 QLineEdit#dtmfLine { font: bold 22px Consolas, monospace; color: #f0b44a; }
+QToolButton#favButton { background: #252d37; border: 1px solid #39444f; border-radius: 5px;
+  padding: 2px 10px; font-size: 11px; min-width: 96px; }
+QToolButton#favButton:hover { background: #2f3945; border-color: #f0b44a; }
+QToolButton#favButton:checked { background: #c9871e; color: #120c02; font-weight: bold; }
+QLabel#favStar { color: #f0b44a; font-size: 20px; padding: 0 4px; }
+QLabel#hintLabel { color: #7d8894; font-style: italic; }
 QLabel#infoLabel { color: #9aa6b2; }
 """
 
@@ -97,6 +108,9 @@ class MainWindow(QMainWindow):
         self.lcd = LCDDisplay()
         self.lcd.set_theme(self.cfg["lcd_theme"])
         cl.addWidget(self.lcd)
+        self.fav_bar = FavoritesBar()
+        self.fav_bar.refresh(self.bank.channels, self.engine.vfo)
+        cl.addWidget(self.fav_bar)
         cl.addLayout(self._build_wf_toolbar())
         self.wf = SpectrumWaterfall()
         self.wf.set_colormap(self.cfg["wf_colormap"])
@@ -110,11 +124,15 @@ class MainWindow(QMainWindow):
         self.audio_panel = AudioPanel(self.cfg)
         self.mem_panel = MemoryPanel(self.bank)
         self.dec_panel = DecoderPanel(self.cfg)
+        self.scan_panel = ScannerPanel(self.cfg, self.bank.categories + ["Descobertas"])
+        self.sscan: SpectrumScanner | None = None
+        self._hits_t = 0.0
         self.docks = {}
         for key, title, w, area in (("rx", "Receptor", self.rx_panel, Qt.LeftDockWidgetArea),
                                     ("mode", "Modo / Filtro", self.mode_panel, Qt.LeftDockWidgetArea),
                                     ("audio", "Áudio / DSP", self.audio_panel, Qt.RightDockWidgetArea),
                                     ("mem", "Memórias / Varredura", self.mem_panel, Qt.BottomDockWidgetArea),
+                                    ("scan", "Scanner", self.scan_panel, Qt.BottomDockWidgetArea),
                                     ("dec", "Decodificadores", self.dec_panel, Qt.BottomDockWidgetArea)):
             d = QDockWidget(title, self)
             d.setObjectName(f"dock_{key}")
@@ -123,7 +141,8 @@ class MainWindow(QMainWindow):
             self.docks[key] = d
         self.tabifyDockWidget(self.docks["rx"], self.docks["mode"])
         self.docks["rx"].raise_()
-        self.tabifyDockWidget(self.docks["mem"], self.docks["dec"])
+        self.tabifyDockWidget(self.docks["mem"], self.docks["scan"])
+        self.tabifyDockWidget(self.docks["scan"], self.docks["dec"])
         self.docks["mem"].raise_()
 
         self.status_src = QLabel("Parado")
@@ -264,7 +283,24 @@ class MainWindow(QMainWindow):
         mem.saveCurrentRequested.connect(self._save_current_memory)
         mem.scanRequested.connect(self._start_scan)
         mem.scanStop.connect(self._stop_scan)
-        mem.changed.connect(self._refresh_markers)
+        mem.changed.connect(self._memories_changed)
+        mem.presetsRequested.connect(self._open_presets)
+
+        fb = self.fav_bar
+        fb.recallRequested.connect(self.recall_memory)
+        fb.addCurrentRequested.connect(self._fav_add_current)
+        fb.unfavoriteRequested.connect(self._unfavorite)
+
+        sp = self.scan_panel
+        sp.startRequested.connect(self._sscan_start)
+        sp.stopRequested.connect(self._sscan_stop)
+        sp.listenRequested.connect(self._sscan_listen)
+        sp.saveRequested.connect(self._sscan_save)
+        sp.lockoutRequested.connect(self._sscan_lock)
+        sp.clearLockouts.connect(self._sscan_unlock)
+        sp.clearHits.connect(self._sscan_clear)
+        sp.autoRecordChanged.connect(self._auto_record)
+        sp.priorityFromCurrent.connect(lambda: sp.prio.setValue(self.engine.vfo / 1e6))
 
         dp.enabledChanged.connect(self._set_decoders)
         dp.toneSquelchChanged.connect(self._set_tone_squelch)
@@ -292,7 +328,7 @@ class MainWindow(QMainWindow):
             ("Ctrl+B", lambda: self._vfo_action("swap")),
             ("Ctrl+S", self._auto_squelch),
             ("Ctrl+L", self._auto_levels),
-            ("Escape", self._stop_scan),
+            ("Escape", lambda: (self._stop_scan(), self._sscan_stop())),
         ):
             QShortcut(QKeySequence(keys), self, activated=fn)
 
@@ -340,6 +376,7 @@ class MainWindow(QMainWindow):
 
     def stop_source(self):
         self._stop_scan()
+        self._sscan_stop()
         self.engine.stop()
         self.rx_panel.set_running(False)
         self.rx_panel.info.setText("Parado")
@@ -400,6 +437,8 @@ class MainWindow(QMainWindow):
         self._sync_views()
 
     def tune(self, freq: float, snap: bool = False):
+        if self.sscan is not None and self.sscan.running and not getattr(self, "_scanner_tuning", False):
+            self._sscan_stop()
         if snap and self.step > 0:
             freq = round(freq / self.step) * self.step
         freq = min(max(float(freq), 24_000.0), 1_766_000_000.0)
@@ -606,6 +645,7 @@ class MainWindow(QMainWindow):
 
     # ================================================================== varredura
     def _start_scan(self, kind, arg):
+        self._sscan_stop()
         if not self.engine.running:
             QMessageBox.information(self, "Varredura", "Ligue o receptor antes de varrer.")
             return
@@ -671,6 +711,140 @@ class MainWindow(QMainWindow):
             self.lcd.flags["SCAN"] = False
             self.lcd.update()
 
+    # ================================================================== favoritos / prontas
+    def _memories_changed(self):
+        self._refresh_markers()
+        self.fav_bar.refresh(self.bank.channels, self.engine.vfo)
+
+    def _open_presets(self):
+        dlg = PresetDialog(self)
+        if dlg.exec():
+            n = import_packs(self.bank, dlg.selected_keys(), favorite=dlg.fav.isChecked())
+            self.bank.save()
+            self.mem_panel.refresh()
+            self._memories_changed()
+            self.statusBar().showMessage(f"{n} canais adicionados às memórias", 6000)
+
+    def _fav_add_current(self):
+        f = self.engine.vfo
+        ch = MemoryChannel(name=f"{f / 1e6:.4f}", freq=f, mode=self.mode, bandwidth=self.high - self.low,
+                           category="Favoritos", favorite=True)
+        self.mem_panel.add_channel_dialog(ch)
+
+    def _unfavorite(self, ch):
+        ch.favorite = False
+        self.bank.save()
+        self.mem_panel.refresh()
+        self._memories_changed()
+
+    def _mem_name(self, f: float, tol: float = 3000) -> str:
+        best = min(self.bank.channels, key=lambda c: abs(c.freq - f), default=None)
+        return best.name if best is not None and abs(best.freq - f) <= tol else ""
+
+    # ================================================================== scanner por espectro
+    def _sscan_start(self, opts: dict):
+        if not self.engine.running:
+            QMessageBox.information(self, "Scanner", "Ligue o receptor antes de varrer.")
+            self.scan_panel.set_running(False)
+            return
+        if not self.engine.source.tunable and (opts["start"] < self.engine.center_freq - self.engine.sample_rate / 2
+                                               or opts["end"] > self.engine.center_freq + self.engine.sample_rate / 2):
+            QMessageBox.information(self, "Scanner", "Com arquivo IQ só é possível varrer dentro da faixa gravada.")
+            self.scan_panel.set_running(False)
+            return
+        self._stop_scan()
+        old = self.sscan
+        cfg = ScannerConfig(**opts)
+        if old is not None:
+            cfg.lockouts = old.cfg.lockouts
+        self.set_mode(opts["mode"], opts["bandwidth"])
+        sc = SpectrumScanner(self.engine, cfg)
+        if old is not None and abs(old.cfg.start - cfg.start) < 1 and abs(old.cfg.end - cfg.end) < 1:
+            sc.hits = old.hits  # continua acumulando a mesma faixa
+        self.sscan = sc
+        sc.start(time.monotonic())
+        self.scan_panel.set_running(True)
+        self.lcd.flags["SCAN"] = True
+
+    def _sscan_stop(self):
+        sc = self.sscan
+        if sc is not None and sc.running:
+            sc.stop()
+            self.engine.tune(self.engine.vfo)
+            self.lcd.flags["SCAN"] = False
+            self.lcd.update()
+        self.scan_panel.set_running(False)
+
+    def _sscan_listen(self, f, mode, bw):
+        self._sscan_stop()
+        self.set_mode(mode, bw)
+        self.tune(f)
+
+    def _sscan_save(self, freqs, category):
+        opts = self.scan_panel.options()
+        n = 0
+        for f in freqs:
+            if self._mem_name(f, 500):
+                continue
+            self.bank.add(MemoryChannel(name=f"{f / 1e6:.4f}", freq=f, mode=opts["mode"],
+                                        bandwidth=opts["bandwidth"], category=category or "Descobertas",
+                                        notes=time.strftime("Scanner %d/%m/%Y %H:%M")))
+            n += 1
+        self.bank.save()
+        self.mem_panel.refresh()
+        self._memories_changed()
+        self.statusBar().showMessage(f"{n} frequências salvas em '{category}'", 5000)
+
+    def _sscan_lock(self, freqs):
+        if self.sscan is None:
+            return
+        for f in freqs:
+            self.sscan.lockout(f)
+        self._update_hits(force=True)
+
+    def _sscan_unlock(self):
+        if self.sscan is not None:
+            self.sscan.cfg.lockouts.clear()
+
+    def _sscan_clear(self):
+        if self.sscan is not None:
+            self.sscan.hits.clear()
+        self._update_hits(force=True)
+
+    def _update_hits(self, force=False):
+        now = time.monotonic()
+        if self.sscan is None or (not force and now - self._hits_t < 0.7):
+            return
+        self._hits_t = now
+        self.scan_panel.show_hits(self.sscan.sorted_hits(), self._mem_name, now)
+        sc = self.sscan
+        if sc.running:
+            where = (f"escutando {sc.listen_freq / 1e6:.4f} MHz" if sc.state == "listen" else
+                     f"segmento {sc._seg + 1}/{len(sc._segments)}")
+            self.scan_panel.status.setText(
+                f"Varrendo {sc.cfg.start / 1e6:.3f}–{sc.cfg.end / 1e6:.3f} MHz — {where}<br>"
+                f"{sc.sweeps} varreduras · ~{sc.channels_per_second():.0f} canais/s · piso {sc.floor_db:.0f} dBFS · "
+                f"{len(sc.hits)} ativas · {len(sc.cfg.lockouts)} bloqueadas")
+        else:
+            self.scan_panel.status.setText(f"Parado — {len(sc.hits)} frequências na lista")
+
+    def _auto_record(self, on, min_s):
+        if on:
+            if self.audio_panel.squelch.value() <= -150 and self.engine.tone_squelch is None:
+                self._auto_squelch()
+                self.statusBar().showMessage("Squelch ajustado automaticamente para a gravação por atividade", 5000)
+            folder = str(Path(self.cfg["recordings_dir"]) / "atividade")
+            self.engine.activity_rec = ActivityRecorder(folder, AUDIO_RATE, min_s=min_s)
+            self.lcd.flags["REC"] = True
+        else:
+            rec, self.engine.activity_rec = self.engine.activity_rec, None
+            if rec is not None:
+                ev = rec.close()
+                if ev:
+                    self.scan_panel.add_activity(ev, self._mem_name(ev["freq"]))
+            self._rec_flag()
+        self.lcd.update()
+
     # ================================================================== waterfall
     def _levels(self):
         lo, hi = self.wf_min.value(), self.wf_max.value()
@@ -695,6 +869,7 @@ class MainWindow(QMainWindow):
         self._update_lcd()
 
     def _update_lcd(self):
+        self.fav_bar.mark_current(self.engine.vfo)
         lcd = self.lcd
         lcd.set_freq(self.engine.vfo)
         lcd.mode = self.mode
@@ -719,6 +894,18 @@ class MainWindow(QMainWindow):
                 lines.append(eng.wf_lines.popleft())
             except IndexError:
                 break
+        sc = self.sscan
+        if sc is not None and sc.running:
+            now = time.monotonic()
+            for spec, center, fs in lines:
+                for ev in sc.feed(spec, center, fs, now):
+                    if ev[0] == "listen":
+                        self.statusBar().showMessage(f"Scanner: sinal em {ev[1] / 1e6:.4f} MHz "
+                                                     f"{self._mem_name(ev[1])}", 4000)
+                        self._sync_views()
+                    elif ev[0] == "resume":
+                        self._sync_views()
+            self._update_hits()
         for spec, center, fs in lines[-8:]:
             self.wf.add_line(spec, center, fs)
         if lines and abs(getattr(self, "_marker_center", 0) - eng.center_freq) > 1:
@@ -748,6 +935,8 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(f"APRS: {data.raw}", 4000)
             elif kind == "dtmf":
                 self.dec_panel.add_dtmf(data, ts)
+            elif kind == "activity":
+                self.scan_panel.add_activity(data, self._mem_name(data["freq"]))
             elif kind == "error":
                 self.statusBar().showMessage(data, 8000)
         self._scan_tick()

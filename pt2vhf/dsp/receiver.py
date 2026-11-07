@@ -63,6 +63,7 @@ class Receiver:
         self.volume = 0.5
         self.muted = False
         self.signal_db = -150.0
+        self.rec_audio = np.zeros(0, np.float32)
         self.nco = NCO(self.input_rate)
         self.stage1 = Decimator(self.input_rate // IF_RATE, cutoff=0.85,
                                 numtaps=12 * (self.input_rate // IF_RATE) + 1)
@@ -164,6 +165,8 @@ class Receiver:
         a = self.notch.process(a)
         a = self.nr.process(a)
         a = self.eq.process(a)
+        # áudio para gravação: independe do volume e do mudo
+        self.rec_audio = soft_limiter(a) if open_ else np.zeros_like(a)
         if not open_ or self.muted:
             a = np.zeros_like(a)
         else:

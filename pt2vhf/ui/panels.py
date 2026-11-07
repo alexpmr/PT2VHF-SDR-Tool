@@ -582,9 +582,10 @@ class MemoryDialog(QDialog):
 class MemoryPanel(QWidget):
     recallRequested = Signal(object)
     saveCurrentRequested = Signal()
-    scanRequested = Signal(str, object)  # "memory"/"band", parâmetros
+    scanRequested = Signal(str, object)  # "memory", categoria
     scanStop = Signal()
     changed = Signal()
+    presetsRequested = Signal()
 
     def __init__(self, bank: MemoryBank, parent=None):
         super().__init__(parent)
@@ -594,7 +595,10 @@ class MemoryPanel(QWidget):
         self.search = QLineEdit()
         self.search.setPlaceholderText("Filtrar por nome, frequência, notas…")
         tb.addWidget(self.search, 1)
-        for text, slot, tip in (("+ Atual", self.saveCurrentRequested.emit, "Salvar frequência atual (Ctrl+M)"),
+        for text, slot, tip in (("Memórias prontas…", self.presetsRequested.emit,
+                                 "Pacotes de frequências padronizadas (marítimo, PX, FRS, aviação, satélites…)"),
+                                ("★ Favorito", self._toggle_fav, "Liga/desliga favorito (tecla de acesso rápido)"),
+                                ("+ Atual", self.saveCurrentRequested.emit, "Salvar frequência atual (Ctrl+M)"),
                                 ("Editar", self._edit, ""), ("Excluir", self._delete, ""),
                                 ("Categoria +", self._new_cat, "Nova categoria"),
                                 ("Importar CSV", self._import, "Importa CSV do CHIRP"),
@@ -617,14 +621,6 @@ class MemoryPanel(QWidget):
         sc = QHBoxLayout()
         self.scan_mem = QPushButton("⟳ Varrer categoria")
         self.scan_mem.setToolTip("Varre os canais da categoria selecionada (ou favoritos)")
-        self.scan_band = QPushButton("⟳ Varrer faixa")
-        self.scan_from = QDoubleSpinBox()
-        self.scan_to = QDoubleSpinBox()
-        for w, v in ((self.scan_from, 144.0), (self.scan_to, 148.0)):
-            w.setRange(0.024, 1766)
-            w.setDecimals(4)
-            w.setValue(v)
-            w.setSuffix(" MHz")
         self.scan_stop = QPushButton("■ Parar")
         self.dwell = QSpinBox()
         self.dwell.setRange(50, 3000)
@@ -636,18 +632,18 @@ class MemoryPanel(QWidget):
         self.resume.setValue(3)
         self.resume.setSuffix(" s")
         self.resume.setToolTip("Retomar a varredura após o sinal cair (0 = parar no sinal)")
-        for w in (self.scan_mem, QLabel("De"), self.scan_from, QLabel("até"), self.scan_to,
-                  self.scan_band, QLabel("Perm.:"), self.dwell, QLabel("Retomar:"), self.resume,
+        hint = QLabel("Para varrer faixas inteiras e descobrir frequências, use o painel Scanner.")
+        hint.setObjectName("infoLabel")
+        for w in (self.scan_mem, QLabel("Perm.:"), self.dwell, QLabel("Retomar:"), self.resume,
                   self.scan_stop):
             sc.addWidget(w)
         sc.addStretch(1)
+        sc.addWidget(hint)
         lay.addLayout(sc)
 
         self.tree.itemDoubleClicked.connect(self._recall)
         self.search.textChanged.connect(self.refresh)
         self.scan_mem.clicked.connect(self._scan_memory)
-        self.scan_band.clicked.connect(lambda: self.scanRequested.emit(
-            "band", (self.scan_from.value() * 1e6, self.scan_to.value() * 1e6)))
         self.scan_stop.clicked.connect(self.scanStop)
         self.refresh()
 
@@ -745,6 +741,14 @@ class MemoryPanel(QWidget):
         p, _ = QFileDialog.getSaveFileName(self, "Exportar CSV", "memorias_pt2vhf.csv", "CSV (*.csv)")
         if p:
             self.bank.export_csv(p)
+
+    def _toggle_fav(self):
+        d = self._selected()
+        if not d or d[0] != "ch":
+            return
+        ch = self.bank.get(d[1])
+        ch.favorite = not ch.favorite
+        self._commit()
 
     def _scan_memory(self):
         d = self._selected()

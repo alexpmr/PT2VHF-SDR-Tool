@@ -6,6 +6,7 @@ import threading
 import time
 import wave
 from collections import deque
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -128,3 +129,67 @@ class WavRecorder:
 
     def close(self):
         self.w.close()
+
+
+class ActivityRecorder:
+    """Grava automaticamente cada transmissão (enquanto o squelch está aberto).
+
+    Cria um WAV por atividade em <pasta>/<AAAA-MM-DD>/HHMMSS_<freq>MHz_<modo>.wav,
+    descarta gravações curtas demais e divide as muito longas.
+    """
+
+    def __init__(self, folder: str, rate: int = 48_000, tail_s: float = 1.5,
+                 min_s: float = 1.0, max_s: float = 300.0):
+        self.folder = Path(folder)
+        self.rate = rate
+        self.tail_s, self.min_s, self.max_s = tail_s, min_s, max_s
+        self._rec: WavRecorder | None = None
+        self._closed_for = 0.0
+        self._info: dict = {}
+
+    @property
+    def active(self) -> bool:
+        return self._rec is not None
+
+    def process(self, audio: np.ndarray, opened: bool, freq: float, mode: str, level_db: float):
+        dt = len(audio) / self.rate
+        if self._rec is None:
+            if not opened:
+                return None
+            now = datetime.now()
+            name = f"{now:%H%M%S}_{freq / 1e6:.4f}MHz_{mode}.wav"
+            path = self.folder / f"{now:%Y-%m-%d}" / name
+            k = 2
+            while path.exists():  # duas transmissões no mesmo segundo
+                path = path.with_name(f"{name[:-4]}_{k}.wav")
+                k += 1
+            self._rec = WavRecorder(path, self.rate, 1)
+            self._info = {"file": str(path), "freq": freq, "mode": mode, "start": time.time(),
+                          "peak_db": level_db}
+            self._closed_for = 0.0
+        if len(audio):
+            self._rec.write(audio)
+        self._info["peak_db"] = max(self._info["peak_db"], level_db) if opened else self._info["peak_db"]
+        self._closed_for = 0.0 if opened else self._closed_for + dt
+        dur = self._rec.samples / self.rate
+        if self._closed_for >= self.tail_s or dur >= self.max_s or abs(freq - self._info["freq"]) > 1:
+            return self._finish()
+        return None
+
+    def _finish(self):
+        rec, info = self._rec, dict(self._info)
+        self._rec = None
+        rec.close()
+        info["duration"] = max(0.0, rec.samples / self.rate - self._closed_for)
+        if info["duration"] < self.min_s:
+            try:
+                rec.path.unlink()
+            except OSError:
+                pass
+            return None
+        return info
+
+    def close(self):
+        if self._rec is not None:
+            return self._finish()
+        return None
