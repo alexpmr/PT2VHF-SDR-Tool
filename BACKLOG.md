@@ -4,6 +4,12 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Anúncio ao abrir o app, como nos demais programas (registrado em 07/11/2026)
+- Ao abrir, mostrar o aviso/anúncio no mesmo padrão dos outros programas PT2VHF: divulgar o site oficial
+  www.pt2vhf.com (downloads e atualizações somente por lá) e os demais aplicativos PT2VHF.
+- Antes de implementar: conferir como os outros programas exibem esse anúncio (textos, frequência,
+  opção de não mostrar de novo, ordem em relação ao aviso de versão nova) e seguir o mesmo comportamento.
+
 ### Modo AUTO (registrado em 07/11/2026)
 - Novo modo **AUTO** junto aos demais (NFM, WFM, AM, USB, LSB, CW…), também no display quando os modos
   forem para lá: detecta o tipo do sinal e aplica automaticamente modo, filtro e sintonia.
