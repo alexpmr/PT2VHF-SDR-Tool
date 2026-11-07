@@ -4,6 +4,17 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Gravação tipo VOX mais acessível (registrado em 07/11/2026)
+- **Já existe desde a 0.2.0:** Scanner → aba "Atividade gravada" → "Gravar automaticamente cada transmissão
+  (quando o squelch abre)" — um WAV por transmissão, descartando as curtas demais. O mantenedor pediu o recurso
+  sem saber dele: falta visibilidade.
+- **Melhorias:**
+  - opção **VOX** junto ao botão "Gravar áudio" (painel Áudio / DSP) e indicador no display;
+  - se o squelch estiver aberto, avisar e oferecer o squelch automático (sem squelch tudo seria gravado);
+  - pré-gravação (~0,5 s antes de abrir) para não cortar o início da fala;
+  - opção de juntar as transmissões num único arquivo por sessão (sem os silêncios) ou um arquivo por transmissão;
+  - VOX também para a gravação de IQ.
+
 ### Três modos de layout: Essencial, Intermediário e Avançado (registrado em 07/11/2026)
 - Seletor de layout (menu Exibir e/ou barra) que mostra ou esconde recursos conforme o nível,
   lembrando a escolha entre sessões.
