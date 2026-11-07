@@ -38,31 +38,63 @@ def _bundled_blog_dir() -> Path | None:
     return None
 
 
+class _DllWithStubs:
+    """Embrulha a DLL do driver RTL-SDR Blog para o pyrtlsdr.
+
+    O pyrtlsdr 0.5 liga funções que só existem em algumas compilações (GPIO, dithering, testmode);
+    as ausentes viram stubs que retornam -1 (recursos não usados pelo programa)."""
+
+    def __init__(self, dll):
+        self._dll = dll
+        self._stubs = {}
+        self._name = getattr(dll, "_name", "rtlsdr.dll")
+
+    def __getattr__(self, name):
+        try:
+            return getattr(self._dll, name)
+        except AttributeError:
+            if not name.startswith("rtlsdr_"):
+                raise
+            if name not in self._stubs:
+                def stub(*_a, **_k):
+                    return -1
+                stub.restype = None
+                stub.argtypes = None
+                self._stubs[name] = stub
+            return self._stubs[name]
+
+
+_DLL_DIR_HANDLES = []  # os.add_dll_directory: manter a referência (senão o diretório é removido)
+
+
 def load_library():
-    """Carrega a librtlsdr (preferindo a do driver RTL-SDR Blog quando incluída). Retorna o módulo."""
+    """Carrega a librtlsdr (no Windows, a do driver RTL-SDR Blog incluída no pacote). Retorna o objeto da DLL."""
     if "rtlsdr.librtlsdr" in sys.modules:
         return sys.modules["rtlsdr.librtlsdr"].librtlsdr
     blog = _bundled_blog_dir() if sys.platform == "win32" else None
     if blog is not None:
         try:
-            os.add_dll_directory(str(blog))
-            os.environ["PATH"] = str(blog) + os.pathsep + os.environ.get("PATH", "")
             import ctypes
+            import types
+            _DLL_DIR_HANDLES.append(os.add_dll_directory(str(blog)))
+            os.environ["PATH"] = str(blog) + os.pathsep + os.environ.get("PATH", "")
             for dep in ("msvcr100.dll", "libusb-1.0.dll", "pthreadVC2.dll"):
                 if (blog / dep).is_file():
                     ctypes.CDLL(str(blog / dep))
-            ctypes.CDLL(str(blog / "rtlsdr.dll"))
-            sys.modules["pyrtlsdrlib"] = None  # força o pyrtlsdr a usar a DLL do driver Blog
-        except OSError as e:
-            log.warning("Biblioteca RTL-SDR Blog não carregou (%s); usando a padrão", e)
-            sys.modules.pop("pyrtlsdrlib", None)
+            wrapped = _DllWithStubs(ctypes.CDLL(str(blog / "rtlsdr.dll")))
+            fake = types.ModuleType("pyrtlsdrlib")
+            fake.load_librtlsdr = lambda: wrapped  # o pyrtlsdr usa este carregador primeiro
+            sys.modules["pyrtlsdrlib"] = fake
+            from rtlsdr.librtlsdr import librtlsdr
+            _LIB_INFO.update(name=str(blog / "rtlsdr.dll"), blog=True)
+            return librtlsdr
+        except Exception as e:  # noqa: BLE001
+            log.warning("Driver RTL-SDR Blog não carregou (%s); usando a biblioteca padrão", e)
+            _LIB_INFO["error_blog"] = f"{type(e).__name__}: {e}"
+            for m in ("pyrtlsdrlib", "rtlsdr.librtlsdr", "rtlsdr.rtlsdr", "rtlsdr"):
+                sys.modules.pop(m, None)
     from rtlsdr.librtlsdr import librtlsdr
-    _LIB_INFO["name"] = getattr(librtlsdr, "_name", "") or ""
-    try:
-        getattr(librtlsdr, "rtlsdr_set_dithering")  # só existe no driver RTL-SDR Blog
-        _LIB_INFO["blog"] = True
-    except AttributeError:
-        _LIB_INFO["blog"] = False
+    _LIB_INFO.update(name=getattr(librtlsdr, "_name", "") or "", blog=False)
     return librtlsdr
 
 

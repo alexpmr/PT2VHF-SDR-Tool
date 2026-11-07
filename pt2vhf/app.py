@@ -119,6 +119,10 @@ def selftest() -> int:
         blog = info.get("blog", False)
         check(f"Biblioteca RTL-SDR carregada ({n} dispositivo(s)) — "
               + ("driver RTL-SDR Blog (V4)" if blog else "versão padrão"), not info.get("error"))
+        if info.get("error_blog"):
+            say(f"[INFO] Driver RTL-SDR Blog: {info['error_blog']}")
+        if info.get("error"):
+            say(f"[INFO] Biblioteca: {info['error']}")
         if sys.platform == "win32" and getattr(sys, "frozen", False):
             check("Driver RTL-SDR Blog incluído (suporte ao V4)", blog)
             from .sources.rtl_driver import wdi_simple_path
