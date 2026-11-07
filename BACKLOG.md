@@ -4,6 +4,14 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Waterfall não acompanha ao arrastar para o lado (registrado em 07/11/2026)
+- **Relato:** ao clicar e arrastar o waterfall para o lado, a tela continua mostrando o waterfall da região
+  anterior; a nova região só aparece depois de clicar nela (o clique sintoniza e muda a frequência central).
+- **Esperado:** arrastar (pan) deve atualizar a região mostrada, como no KiwiSDR/SDR#: ao sair da faixa
+  recebida, mudar a frequência central do receptor para a região visível e o waterfall acompanhar.
+- **Pista:** hoje o arraste só move a visualização (pyqtgraph) dentro da faixa já amostrada; não há
+  re-sintonia do centro quando a área visível sai da largura de amostragem.
+
 ### OTA igual aos demais programas PT2VHF (registrado em 07/11/2026)
 - Alinhar a atualização automática ao comportamento dos outros programas (ex.: Sat Tool, Prog Tool,
   QSL Manager): fluxo e textos do aviso de versão nova, adiamento, progresso, instalação e reabertura,
