@@ -4,6 +4,14 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Indicador de versão / atualização no topo da janela, como nos demais programas (registrado em 07/11/2026)
+- Hoje o botão de versão ("v0.4.x" / "Nova versão X · atualizar" / progresso) fica no canto inferior direito, na barra
+  de status, e passa despercebido.
+- Mover para o **topo da janela**, como no PT2VHF Sat Tool (botão de versão na barra superior), com os mesmos estados:
+  versão atual, "Nova versão X · atualizar", "Atualizando… N%", "instala ao ficar livre" e falha/tentar novamente;
+  clique verifica ou inicia a atualização.
+- Combinar com o item das abas superiores (Configurações) para ficar visível em todos os níveis de interface.
+
 ### Abas superiores com "Configurações"; receptor e modo/filtro dentro dela; tirar os modos duplicados (registrado em 07/11/2026)
 - Criar **abas na parte superior** da janela, entre elas **Configurações**.
 - Mover para dentro de Configurações o que hoje ocupa a página principal: o bloco **Receptor** (fonte, dispositivo,
