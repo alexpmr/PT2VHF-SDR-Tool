@@ -4,6 +4,13 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Modo apresentação (tela cheia sem as barras do Windows) (registrado em 07/11/2026)
+- Modo que ocupa a tela inteira, escondendo a barra de título da janela e a barra de tarefas do Windows
+  (tela cheia de verdade), para exibição em monitor/TV ou apresentações.
+- Acesso por menu Exibir → "Modo apresentação", atalho (ex.: F11) e um botão discreto; Esc ou F11 para sair.
+- Opção de esconder também menu, barra de status e painéis, deixando só display + waterfall (com os painéis
+  reabríveis); lembrar a preferência; funcionar em vários monitores (abre no monitor onde está a janela).
+
 ### Lembrar o estado do receptor ao sair e reconectar ao abrir (registrado em 07/11/2026)
 - Hoje o programa sempre abre desligado e com a fonte "Simulador" selecionada por padrão; o usuário precisa escolher
   o RTL-SDR e clicar em Ligar a cada abertura.
