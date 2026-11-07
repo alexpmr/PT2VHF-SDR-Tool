@@ -40,7 +40,11 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
   clique verifica ou inicia a atualização.
 - Combinar com o item das abas superiores (Configurações) para ficar visível em todos os níveis de interface.
 
-### Abas superiores com "Configurações"; receptor e modo/filtro dentro dela; tirar os modos duplicados (registrado em 07/11/2026)
+### Abas superiores (como nos demais programas PT2VHF): Configurações, painéis inferiores e sem modos duplicados (registrado em 07/11/2026)
+- **Acréscimo (07/11/2026):** mover também os painéis da parte inferior — Memórias / Varredura, Scanner,
+  Decodificadores, Receptores extras e Configurações — para **abas na parte de cima**, no mesmo padrão de abas dos
+  demais projetos PT2VHF (ex.: Sat Tool), em vez de docks embaixo; a área principal fica para display + waterfall.
+  Conferir o layout de abas dos outros programas antes de implementar.
 - Criar **abas na parte superior** da janela, entre elas **Configurações**.
 - Mover para dentro de Configurações o que hoje ocupa a página principal: o bloco **Receptor** (fonte, dispositivo,
   amostragem, ligar, ganho/ppm/bias-T/amostragem direta) e o bloco **Modo / Filtro** (VFO, filtro/passo, bandas,
