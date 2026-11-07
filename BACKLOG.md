@@ -4,6 +4,25 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Decodificador de radiossondas meteorológicas (RS41 e outras) com mapa e previsão de trajetória (registrado em 07/11/2026)
+- Decodificar sondas meteorológicas na faixa de 400–406 MHz (e 1680 MHz quando o hardware permitir):
+  **Vaisala RS41** (prioridade) e outras comuns, ex.: RS92, Graw DFM-06/09/17, Meteomodem M10/M20,
+  Intermet iMet-4, Meisei, LMS6 — conforme viabilidade.
+- **Informações em tempo real, de forma amigável**: tudo o que a sonda transmitir, como número de série/ID,
+  frequência, posição (lat/lon), altitude, velocidade vertical (subida/descida) e horizontal, rumo,
+  temperatura, umidade, pressão, ponto de orvalho, bateria, quadro/contador, satélites GPS, tempo de voo,
+  fase (subida, estouro do balão, descida) e qualidade da recepção; unidades claras e gráficos simples
+  (altitude, temperatura e umidade × tempo).
+- **Mapa** com a posição atual, o rastro percorrido, a sua estação (locator) e distância/azimute até a sonda.
+- **Previsão de trajetória e do ponto de queda** (subida até o estouro e descida), atualizada durante o voo,
+  com estimativa de horário e local de pouso — para quem gosta de buscar sondas.
+- Detectar e sintonizar sondas automaticamente (ex.: scanner na faixa de radiossondas), aviso ao surgir uma
+  nova, histórico de sondas recebidas e exportação (CSV/KML/GPX).
+- Verificar viabilidade e licença de reaproveitar decodificadores e serviços abertos (ex.: projetos tipo
+  radiosonde_auto_rx/RS1729, previsores de trajetória como o Tawhiri/SondeHub) antes de implementar;
+  envio opcional dos dados ao SondeHub.
+- Mostrar também na interface web (mapa e dados da sonda no navegador).
+
 ### Campos de configuração com a largura do conteúdo, não da página inteira (registrado em 07/11/2026)
 - Hoje, nas abas de configuração (Configurações → Receptor, Modo / Filtro, Geral · Web · Atualizações e demais
   ajustes), as listas suspensas e campos se esticam por toda a largura da janela — ex.: **Fonte**, **Dispositivo**,
