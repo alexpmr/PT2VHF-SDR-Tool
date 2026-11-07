@@ -4,6 +4,17 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Abas superiores com "Configurações"; receptor e modo/filtro dentro dela; tirar os modos duplicados (registrado em 07/11/2026)
+- Criar **abas na parte superior** da janela, entre elas **Configurações**.
+- Mover para dentro de Configurações o que hoje ocupa a página principal: o bloco **Receptor** (fonte, dispositivo,
+  amostragem, ligar, ganho/ppm/bias-T/amostragem direta) e o bloco **Modo / Filtro** (VFO, filtro/passo, bandas,
+  assistente, tom CW, de-ênfase), liberando espaço para display e waterfall.
+- **Tirar os botões de modo** do painel Modo/Filtro: os modos já estão no display (AUTO, NFM, WFM, AM, USB, LSB,
+  CW, DSB, RAW). Manter os atalhos Alt+… e as teclas do display.
+- Unificar com a aba Configurações atual (hoje dock inferior); o botão Ligar/Desligar deve continuar acessível
+  na tela principal (ex.: no topo ou no display), já que o receptor sai da página principal.
+- Respeitar os níveis Essencial/Intermediário/Avançado e o "Restaurar layout padrão".
+
 ### Interface web: abrir de outro computador direto pelo IP, sem chave (registrado em 07/11/2026)
 - Hoje, com "Permitir outros dispositivos da rede local (LAN)", o endereço precisa da chave temporária
   (`http://IP:porta/?key=…`); sem ela o navegador recebe "Acesso negado".
