@@ -4,6 +4,12 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Modos clicáveis dentro do display LCD (registrado em 07/11/2026)
+- Levar a seleção de modo (NFM, WFM, AM, USB, LSB, CW, DSB, RAW) para dentro do display de rádio,
+  como teclas/indicadores clicáveis, com o modo ativo destacado (hoje o display só mostra o modo e a
+  troca fica no painel "Modo / Filtro", numa aba atrás de "Receptor").
+- Manter os atalhos Alt+N/W/A/U/L/C e o assistente "Detectar modo" funcionando junto.
+
 ### Waterfall não acompanha ao arrastar para o lado (registrado em 07/11/2026)
 - **Relato:** ao clicar e arrastar o waterfall para o lado, a tela continua mostrando o waterfall da região
   anterior; a nova região só aparece depois de clicar nela (o clique sintoniza e muda a frequência central).
