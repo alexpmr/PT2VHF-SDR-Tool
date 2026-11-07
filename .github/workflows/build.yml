@@ -29,7 +29,7 @@ jobs:
   windows-exe:
     # Desativado por padrão: só roda manualmente (Actions → Run workflow → marcar "Gerar executável")
     if: github.event_name == 'workflow_dispatch' && inputs.build_windows
-    runs-on: windows-latest
+    runs-on: windows-2022  # mesmo runner do Sat Tool (Visual Studio 2022 para a libwdi)
     needs: tests
     timeout-minutes: 90
     defaults:
@@ -85,7 +85,9 @@ jobs:
           curl -sSL %WDK_URL% -o wdk-redist.msi || exit /b 1
           msiexec /a wdk-redist.msi /qn TARGETDIR=%CD%\wdk
           if not exist "wdk\Windows Kits\8.0\redist\wdf\x64" (echo WDK redist ausente & exit /b 1)
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.Component.MSBuild -property installationPath`) do set VSDIR=%%i
+          if not defined VSDIR (echo Visual Studio nao encontrado & exit /b 1)
+          call "%VSDIR%\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul
           msbuild libwdi.sln /m /p:Configuration=Release,Platform=Win32,BuildMacros="WDK_DIR=\"../wdk/Windows Kits/8.0\"" || exit /b 1
           msbuild libwdi.sln /m /p:Configuration=Release,Platform=x64,BuildMacros="WDK_DIR=\"../wdk/Windows Kits/8.0\"" || exit /b 1
           if not exist x64\Release\examples\wdi-simple.exe exit /b 1
