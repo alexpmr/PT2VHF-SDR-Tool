@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -83,6 +84,8 @@ class MainWindow(QMainWindow):
         self.engine.wf_speed = self.cfg["wf_speed"]
         self.engine.decoders_enabled = dict(self.cfg["decoders"])
         self.engine.timeshift_seconds = float(self.cfg.get("timeshift_s", 20))
+        from ..sources.rtlsdr_source import set_preference
+        set_preference(self.cfg.get("rtl_library", "auto"))
 
         self.mode = self.cfg["mode"]
         self.low, self.high = passband_for(self.mode, self.cfg["bandwidth"])
@@ -492,7 +495,14 @@ class MainWindow(QMainWindow):
                     QMessageBox.information(self, "Preparar RTL-SDR",
                                             msg + ("\n\nReconecte o dongle e clique em Ligar." if ok else ""))
                     return
-            QMessageBox.warning(self, "Fonte de sinal", str(e))
+            text = str(e)
+            if name == "RTL-SDR" and sys.platform == "win32":
+                from ..sources import rtl_driver
+                ifaces = rtl_driver.windows_interfaces()
+                if ifaces:
+                    text += "\n\nDriver no Windows: " + "; ".join(
+                        f"interface {'—' if i.mi is None else i.mi}: {i.service or 'nenhum'}" for i in ifaces)
+            QMessageBox.warning(self, "Fonte de sinal", text)
             return
         self.cfg.update(source=name, sample_rate=src.sample_rate, gain=opts["gain"], ppm=opts["ppm"])
         if src.check_freq(self.engine.vfo):  # frequência salva fora do alcance deste dongle
@@ -503,6 +513,8 @@ class MainWindow(QMainWindow):
         self._apply_receiver_settings()
         self.rx_panel.set_running(True)
         tuner = getattr(src, "tuner", "")
+        if getattr(src, "library", ""):
+            tuner += f" · biblioteca {src.library}"
         self.rx_panel.info.setText(f"{src.name} {tuner} — {src.sample_rate / 1e6:g} MS/s, bloco {src.block_size}")
         self.status_src.setText(f"● {src.name} {src.sample_rate / 1e6:g} MS/s")
         self._update_lcd()
@@ -1088,6 +1100,9 @@ class MainWindow(QMainWindow):
     # ================================================================== configurações / web
     def _setting_changed(self, key, value):
         self.cfg[key] = value
+        if key == "rtl_library":
+            from ..sources.rtlsdr_source import set_preference
+            set_preference(value)
         if key == "ui_level":
             self.apply_level(value)
         elif key == "lcd_theme":

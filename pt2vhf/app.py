@@ -125,6 +125,13 @@ def selftest() -> int:
             say(f"[INFO] Biblioteca: {info['error']}")
         if sys.platform == "win32" and getattr(sys, "frozen", False):
             check("Driver RTL-SDR Blog incluído (suporte ao V4)", blog)
+            from .sources.rtlsdr_source import load_library
+            try:
+                load_library("standard")
+                check("Biblioteca padrão incluída (recurso se o driver Blog não abrir o dongle)", True)
+            except Exception as ex:  # noqa: BLE001
+                check(f"Biblioteca padrão ({ex})", False)
+            load_library("blog")
             from .sources.rtl_driver import wdi_simple_path
             check("Instalador do driver WinUSB incluído (wdi-simple)", wdi_simple_path() is not None)
             from .updater import helper_script

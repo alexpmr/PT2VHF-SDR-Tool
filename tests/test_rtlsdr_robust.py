@@ -112,3 +112,36 @@ def test_tuning_range_v4():
     assert tuning_range("R828D", False, 0, "RTLSDRBlog Blog V4")[0] == 24e6
     assert tuning_range("R820T", True, 0, "")[0] == 24e6
     assert tuning_range("R820T", False, 2, "")[1] == 28.8e6
+
+
+def test_access_denied_with_blog_falls_back_to_standard(monkeypatch):
+    """0.4.0: a DLL do driver Blog dava LIBUSB_ERROR_ACCESS; a 0.4.1 abre com a biblioteca padrão."""
+    from pathlib import Path
+
+    from pt2vhf.sources import rtlsdr_source as rs
+
+    class Denied:
+        def __init__(self, idx):
+            raise IOError('<LIBUSB_ERROR_ACCESS (-3): Access denied (insufficient permissions)> "Could not open SDR"')
+    tried = []
+
+    def fake_class(kind):
+        tried.append(kind)
+        return Denied if kind == "blog" else FakeRtl
+    monkeypatch.setattr(rs, "_rtlsdr_class", fake_class)
+    monkeypatch.setattr(rs, "_bundled_blog_dir", lambda: Path("."))
+    monkeypatch.setattr(rs.sys, "platform", "win32")
+    monkeypatch.setitem(rs._LIB_INFO, "blog_failed", False)
+    rs.set_preference("auto")
+    s = rs.RtlSdrSource(1_200_000, 145.5e6)
+    assert tried == ["blog", "standard"] and s.library == "padrão"
+    assert "biblioteca padrão" in " ".join(s.pop_messages())
+    s.close()
+    # escolhendo só o driver Blog, o erro aparece com a explicação do acesso negado
+    rs.set_preference("blog")
+    try:
+        rs.RtlSdrSource(1_200_000, 145.5e6)
+        raise AssertionError("deveria falhar")
+    except rs.SourceError as e:
+        assert "Acesso negado" in str(e)
+    rs.set_preference("auto")

@@ -2,6 +2,17 @@
 
 Todas as mudanças relevantes do PT2VHF SDR Tool.
 
+## [0.4.1] — 2026-11-07
+### Corrigido
+- **RTL-SDR não abria na 0.4.0 (LIBUSB_ERROR_ACCESS)** em computadores onde a 0.3.0 funcionava: se a biblioteca do
+  driver RTL-SDR Blog não conseguir abrir o dongle, o programa usa automaticamente a biblioteca padrão (a da 0.3.0)
+  e avisa qual foi usada.
+- Ao desligar e ligar de novo, espera o dongle ser liberado antes de reabrir.
+
+### Adicionado
+- Configurações → **Biblioteca do RTL-SDR**: Automático, Driver RTL-SDR Blog ou Padrão.
+- Mensagem de erro com explicação do "acesso negado" e o driver instalado em cada interface do dongle (Windows).
+
 ## [0.4.0] — 2026-11-07
 ### Corrigido
 - **Mudar de banda não trava mais o programa** (relatado com RTL-SDR Blog V4): a interface nunca chama o dongle;

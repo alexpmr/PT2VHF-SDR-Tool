@@ -53,8 +53,17 @@ class SettingsPanel(QWidget):
         self.smeter.setSuffix(" dB")
         self.smeter.setValue(float(cfg.get("s_meter_cal", 0.0)))
         self.smeter.setToolTip("Somado à leitura do S-meter para calibrar com um gerador ou rádio de referência")
+        self.rtl_lib = QComboBox()
+        for label, val in (("Automático (RTL-SDR Blog; se não abrir, a padrão)", "auto"),
+                           ("Driver RTL-SDR Blog (V4, HF pelo conversor)", "blog"),
+                           ("Padrão (como na 0.3.0)", "standard")):
+            self.rtl_lib.addItem(label, val)
+        i = self.rtl_lib.findData(cfg.get("rtl_library", "auto"))
+        self.rtl_lib.setCurrentIndex(max(i, 0))
+        self.rtl_lib.setToolTip("Biblioteca usada para abrir o RTL-SDR (vale na próxima vez que clicar em Ligar)")
         f.addRow(self.auto_tune)
         f.addRow("Calibração do S-meter:", self.smeter)
+        f.addRow("Biblioteca do RTL-SDR:", self.rtl_lib)
         col1.addWidget(g)
 
         g = QGroupBox("Atualizações (somente www.pt2vhf.com)")
@@ -114,6 +123,7 @@ class SettingsPanel(QWidget):
         self.auto_tune.toggled.connect(lambda v: self.changed.emit("auto_tune", v))
         self.smeter.valueChanged.connect(lambda v: self.changed.emit("s_meter_cal", float(v)))
         self.auto_update.toggled.connect(lambda v: self.changed.emit("auto_update", v))
+        self.rtl_lib.currentIndexChanged.connect(lambda _i: self.changed.emit("rtl_library", self.rtl_lib.currentData()))
         now.clicked.connect(self.checkUpdatesNow)
         for sig in (self.web_on.toggled, self.web_lan.toggled, self.web_port.valueChanged):
             sig.connect(lambda *_: self.webApply.emit())

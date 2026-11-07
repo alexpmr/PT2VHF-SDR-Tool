@@ -67,17 +67,37 @@ class _DllWithStubs:
 _DLL_DIR_HANDLES = []  # os.add_dll_directory: manter a referência (senão o diretório é removido)
 
 
-def load_library():
-    """Carrega a librtlsdr (no Windows, a do driver RTL-SDR Blog incluída no pacote). Retorna o objeto da DLL."""
-    if "rtlsdr.librtlsdr" in sys.modules:
-        return sys.modules["rtlsdr.librtlsdr"].librtlsdr
+_PREF = {"lib": "auto"}          # auto | blog | standard (Configurações → Biblioteca do RTL-SDR)
+_CLOSING: list[threading.Thread] = []  # fechamentos em segundo plano ainda em andamento
+
+
+def set_preference(lib: str):
+    _PREF["lib"] = lib if lib in ("auto", "blog", "standard") else "auto"
+
+
+def _unload():
+    for m in [k for k in sys.modules if k == "rtlsdr" or k.startswith("rtlsdr.") or k == "pyrtlsdrlib"]:
+        sys.modules.pop(m, None)
+
+
+def load_library(kind: str | None = None):
+    """Carrega a librtlsdr. kind: 'blog' (DLL do driver RTL-SDR Blog incluída no pacote, Windows),
+    'standard' (a do pyrtlsdrlib, usada até a 0.3.0) ou None (preferência atual). Retorna o objeto da DLL."""
+    if kind is None:
+        pref = _PREF["lib"]
+        kind = "standard" if pref == "standard" or (pref == "auto" and _LIB_INFO.get("blog_failed")) else "blog"
     blog = _bundled_blog_dir() if sys.platform == "win32" else None
-    if blog is not None:
+    if kind == "blog" and blog is None:
+        kind = "standard"
+    if "rtlsdr.librtlsdr" in sys.modules and _LIB_INFO.get("kind") == kind:
+        return sys.modules["rtlsdr.librtlsdr"].librtlsdr
+    _unload()
+    if kind == "blog":
         try:
             import ctypes
             import types
-            _DLL_DIR_HANDLES.append(os.add_dll_directory(str(blog)))
-            os.environ["PATH"] = str(blog) + os.pathsep + os.environ.get("PATH", "")
+            if not _DLL_DIR_HANDLES:
+                _DLL_DIR_HANDLES.append(os.add_dll_directory(str(blog)))
             for dep in ("msvcr100.dll", "libusb-1.0.dll", "pthreadVC2.dll"):
                 if (blog / dep).is_file():
                     ctypes.CDLL(str(blog / dep))
@@ -86,16 +106,23 @@ def load_library():
             fake.load_librtlsdr = lambda: wrapped  # o pyrtlsdr usa este carregador primeiro
             sys.modules["pyrtlsdrlib"] = fake
             from rtlsdr.librtlsdr import librtlsdr
-            _LIB_INFO.update(name=str(blog / "rtlsdr.dll"), blog=True)
+            _LIB_INFO.update(name=str(blog / "rtlsdr.dll"), blog=True, kind="blog")
             return librtlsdr
         except Exception as e:  # noqa: BLE001
             log.warning("Driver RTL-SDR Blog não carregou (%s); usando a biblioteca padrão", e)
             _LIB_INFO["error_blog"] = f"{type(e).__name__}: {e}"
-            for m in ("pyrtlsdrlib", "rtlsdr.librtlsdr", "rtlsdr.rtlsdr", "rtlsdr"):
-                sys.modules.pop(m, None)
+            _LIB_INFO["blog_failed"] = True
+            _unload()
     from rtlsdr.librtlsdr import librtlsdr
-    _LIB_INFO.update(name=getattr(librtlsdr, "_name", "") or "", blog=False)
+    _LIB_INFO.update(name=getattr(librtlsdr, "_name", "") or "", blog=False, kind="standard")
     return librtlsdr
+
+
+def _rtlsdr_class(kind: str):
+    """Classe RtlSdr usando a biblioteca pedida (recarrega o pyrtlsdr se for preciso trocar)."""
+    import importlib
+    load_library(kind)
+    return importlib.import_module("rtlsdr").RtlSdr
 
 
 def library_info() -> dict:
@@ -162,6 +189,7 @@ class RtlSdrSource(IQSource):
         self._watch_thread: threading.Thread | None = None
         self._busy_since = 0.0
         self._recovering = threading.Lock()
+        self.library = ""
         self.sdr = self._open()
         self.tuner = self._tuner_name()
         self.product = self._product_name()
@@ -169,13 +197,40 @@ class RtlSdrSource(IQSource):
 
     # ------------------------------------------------------------ abertura
     def _default_factory(self, index: int):
-        try:
-            load_library()
-            from rtlsdr import RtlSdr
-        except Exception as e:  # noqa: BLE001
-            raise SourceError("Biblioteca librtlsdr não encontrada. Reinstale o PT2VHF SDR Tool.\n"
-                              f"Detalhe: {e}") from e
-        return RtlSdr(index)
+        """Abre o dongle. Automático: driver RTL-SDR Blog e, se ele não abrir (ex.: LIBUSB_ERROR_ACCESS),
+        a biblioteca padrão — a mesma que funcionava na 0.3.0."""
+        for t in list(_CLOSING):  # um fechamento anterior ainda segura o dongle (WinUSB é exclusivo)
+            t.join(timeout=3)
+            if not t.is_alive():
+                _CLOSING.remove(t)
+        pref = _PREF["lib"]
+        order = {"blog": ["blog"], "standard": ["standard"]}.get(pref, ["blog", "standard"])
+        if _bundled_blog_dir() is None or sys.platform != "win32":
+            order = ["standard"]
+        errors = []
+        for kind in order:
+            try:
+                cls = _rtlsdr_class(kind)
+            except Exception as e:  # noqa: BLE001
+                errors.append((kind, e))
+                continue
+            try:
+                dev = cls(index)
+            except Exception as e:  # noqa: BLE001
+                errors.append((kind, e))
+                if kind == "blog":
+                    _LIB_INFO["blog_failed"] = True
+                    _LIB_INFO["error_blog"] = f"{type(e).__name__}: {e}"
+                continue
+            if errors:
+                self._messages.put("RTL-SDR aberto com a biblioteca padrão (a do driver RTL-SDR Blog não abriu: "
+                                   f"{errors[0][1]}).")
+            self.library = "RTL-SDR Blog" if kind == "blog" else "padrão"
+            return dev
+        if not errors:
+            raise SourceError("Biblioteca librtlsdr indisponível. Reinstale o PT2VHF SDR Tool.")
+        detail = "; ".join(f"{'driver RTL-SDR Blog' if k == 'blog' else 'biblioteca padrão'}: {e}" for k, e in errors)
+        raise RuntimeError(detail)
 
     def _open(self):
         try:
@@ -183,10 +238,16 @@ class RtlSdrSource(IQSource):
         except SourceError:
             raise
         except Exception as e:  # noqa: BLE001
-            raise SourceError(
-                f"Não foi possível abrir o RTL-SDR #{self.device_index}: {e}\n\n"
-                "Se for a primeira vez, use Ajuda → Preparar RTL-SDR (instala o driver WinUSB) "
-                "ou o Zadig, e reconecte o dongle.") from e
+            msg = f"Não foi possível abrir o RTL-SDR #{self.device_index}: {e}\n\n"
+            if "ACCESS" in str(e).upper():
+                msg += ("Acesso negado ao dongle: outro programa (SDR#, SDR++, Sat Tool…) ou outra cópia do "
+                        "PT2VHF SDR Tool pode estar usando o RTL-SDR, ou o driver da interface 0 não é WinUSB.\n"
+                        "Feche os outros programas, desconecte e reconecte o dongle. Se continuar, use "
+                        "Ajuda → Preparar RTL-SDR e, em Configurações, teste a opção Biblioteca do RTL-SDR → Padrão.")
+            else:
+                msg += ("Se for a primeira vez, use Ajuda → Preparar RTL-SDR (instala o driver WinUSB) "
+                        "ou o Zadig, e reconecte o dongle.")
+            raise SourceError(msg) from e
         sdr.sample_rate = self.sample_rate
         try:
             sdr.center_freq = int(self.center_freq)
@@ -299,7 +360,9 @@ class RtlSdrSource(IQSource):
                 sdr.close()
             except Exception:  # noqa: BLE001
                 pass
-        threading.Thread(target=bg, daemon=True, name="rtl-close").start()
+        t = threading.Thread(target=bg, daemon=True, name="rtl-close")
+        _CLOSING.append(t)
+        t.start()
 
     # ------------------------------------------------------------ controle (fila + tempo limite)
     def _control_loop(self):
