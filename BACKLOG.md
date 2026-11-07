@@ -4,6 +4,14 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Painel Áudio / DSP sem barra de rolagem horizontal (registrado em 07/11/2026)
+- O bloco da direita (Áudio / DSP) mostra barra de rolagem horizontal: o conteúdo é mais largo que o painel
+  (vê-se na captura da 0.3.0: equalizador cortado em "3.2k", campos de NB/Notch encostados na borda).
+- Reorganizar os elementos para caber sempre na largura do painel, sem rolagem horizontal: linhas que hoje
+  juntam rótulo + controle + botão passam a quebrar em duas, sliders do equalizador com largura flexível,
+  campos com largura mínima menor; só a rolagem vertical continua (quando a altura não couber).
+- Conferir em 1366×768, 1600×900 e 1920×1080, e com o painel estreito.
+
 ### Aba Configurações + servidor web para acompanhar a sessão pela rede (registrado em 07/11/2026)
 - Criar a **aba/janela Configurações** reunindo as opções do programa (hoje espalhadas pelos painéis).
 - Nela, opção **Servidor web (rede local)**, como no PT2VHF APRS Client (conferir a implementação "web
