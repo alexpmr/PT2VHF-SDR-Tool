@@ -55,12 +55,17 @@ def _segment_polys(w: float, h: float, t: float):
 class LCDDisplay(QWidget):
     freqChanged = Signal(float)
     stepRequested = Signal(int)  # +1 / -1 passos
+    modeClicked = Signal(str)     # tecla de modo no display (inclui "AUTO")
+    neighborRequested = Signal(int)  # ◀ -1 / ▶ +1: transmissão vizinha
+    autoTuneToggled = Signal()       # tecla A-SINT
+
+    KEYS = ["◀", "AUTO", "NFM", "WFM", "AM", "USB", "LSB", "CW", "DSB", "RAW", "A-SINT", "▶"]
 
     N_DIGITS = 10  # 4 MHz . 3 kHz . 3 Hz
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(170)
+        self.setMinimumHeight(205)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
@@ -77,6 +82,9 @@ class LCDDisplay(QWidget):
         self._peak = -127.0
         self._peak_t = 0.0
         self.flags: dict[str, bool] = {}
+        self.mode_key = "NFM"      # tecla de modo acesa (o modo real ou "AUTO")
+        self.auto_tune = False
+        self._key_rects: list[tuple[QRectF, str]] = []
         self.ctcss_text = ""
         self.squelch_open = False
         self._digit_rects: list[tuple[QRectF, int]] = []
@@ -130,7 +138,7 @@ class LCDDisplay(QWidget):
         tags = [(self.vfo_name, True), (self.mode, True),
                 (f"BW {self._fmt_hz(self.bandwidth)}", True),
                 (f"STEP {self._fmt_hz(self.step)}", True)]
-        for name in ("AGC", "NB", "NR", "NOTCH", "EQ", "SQL", "TSQ", "SCAN", "REC", "REPLAY"):
+        for name in ("AGC", "NB", "NR", "NOTCH", "EQ", "SQL", "TSQ", "SCAN", "VOX", "REC", "REPLAY"):
             tags.append((name, self.flags.get(name, False)))
         x = x0
         for text, active in tags:
@@ -162,7 +170,7 @@ class LCDDisplay(QWidget):
 
         # --- frequência
         fy = y0 + H * 0.17
-        dh = H * 0.46
+        dh = H * 0.40
         dw = dh * 0.52
         small = 0.62
         spacing = dw * 0.28
@@ -197,19 +205,20 @@ class LCDDisplay(QWidget):
 
         # --- painel direito: memória / banda / CTCSS / relógio
         rx = max(freq_right + 70, r.right() - 260)
-        mono.setPixelSize(int(H * 0.09))
+        mono.setPixelSize(int(H * 0.075))
         p.setFont(mono)
         p.setPen(sub)
         lines = [self.mem_label or "MEM --", self.band_label or "",
                  self.ctcss_text or "", f"{self.s_text}  {self.signal_dbm:6.1f} dBm",
                  time.strftime("%H:%M:%S") + "  " + time.strftime("%H:%MZ", time.gmtime())]
-        lh = H * 0.1
+        lh = H * 0.082
         for k, line in enumerate(lines):
-            p.drawText(QRectF(rx, fy - H * 0.02 + k * lh, r.right() - rx - 10, lh),
+            p.drawText(QRectF(rx, fy - H * 0.035 + k * lh, r.right() - rx - 10, lh),
                        Qt.AlignRight | Qt.AlignVCenter, line)
 
         # --- S-meter
-        self._draw_smeter(p, QRectF(x0, fy + dh + H * 0.09, W - 28, H * 0.22), on, ghost, sub)
+        self._draw_smeter(p, QRectF(x0, fy + dh + H * 0.05, W - 28, H * 0.19), on, ghost, sub)
+        self._draw_keys(p, QRectF(x0, r.bottom() - H * 0.155, W - 28, H * 0.12), on, ghost, bg1)
 
         if self.entry_active:
             p.setPen(on)
@@ -218,6 +227,32 @@ class LCDDisplay(QWidget):
             p.drawText(QRectF(x0, fy - H * 0.01, 300, H * 0.08), Qt.AlignLeft,
                        "ENTRADA DIRETA (MHz) — Enter confirma, Esc cancela")
         p.end()
+
+    def _draw_keys(self, p: QPainter, r: QRectF, on, ghost, bg):
+        """Teclas clicáveis do painel: modos, AUTO, auto-sintonia e transmissão vizinha."""
+        self._key_rects = []
+        f = QFont("Consolas")
+        f.setBold(True)
+        f.setPixelSize(max(10, int(r.height() * 0.62)))
+        p.setFont(f)
+        gap = 5.0
+        weights = [0.7 if k in ("◀", "▶") else 1.25 if k in ("AUTO", "A-SINT") else 1.0 for k in self.KEYS]
+        unit = (r.width() - gap * (len(self.KEYS) - 1)) / sum(weights)
+        x = r.left()
+        for k, w in zip(self.KEYS, weights):
+            box = QRectF(x, r.top(), unit * w, r.height())
+            active = (k == self.mode_key) or (k == "A-SINT" and self.auto_tune)
+            p.setPen(QPen(on, 1.2))
+            if active:
+                p.setBrush(on)
+                p.drawRoundedRect(box, 4, 4)
+                p.setPen(bg)
+            else:
+                p.setBrush(Qt.NoBrush)
+                p.drawRoundedRect(box, 4, 4)
+            p.drawText(box, Qt.AlignCenter, k)
+            self._key_rects.append((box, k))
+            x += unit * w + gap
 
     def _draw_digit(self, p: QPainter, rect: QRectF, ch: str, on: QColor, ghost: QColor, skew):
         polys = _segment_polys(rect.width(), rect.height(), rect.width() * 0.2)
@@ -288,6 +323,8 @@ class LCDDisplay(QWidget):
         return None
 
     def mouseMoveEvent(self, ev):
+        over_key = any(rect.contains(ev.position()) for rect, _k in self._key_rects)
+        self.setCursor(Qt.PointingHandCursor if over_key else Qt.ArrowCursor)
         h = -1
         for i, (rect, _place) in enumerate(self._digit_rects):
             if rect.contains(ev.position()):
@@ -319,6 +356,17 @@ class LCDDisplay(QWidget):
 
     def mousePressEvent(self, ev):
         self.setFocus()
+        for rect, k in self._key_rects:
+            if rect.contains(ev.position()):
+                if k == "◀":
+                    self.neighborRequested.emit(-1)
+                elif k == "▶":
+                    self.neighborRequested.emit(+1)
+                elif k == "A-SINT":
+                    self.autoTuneToggled.emit()
+                else:
+                    self.modeClicked.emit(k)
+                return
         for rect, place in self._digit_rects:
             if rect.contains(ev.position()):
                 up = ev.position().y() < rect.center().y()

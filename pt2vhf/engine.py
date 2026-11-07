@@ -51,7 +51,11 @@ class Engine:
         self.decoders_enabled = {"aprs": True, "dtmf": True, "ctcss": True}
         self.tone_squelch: float | None = None  # CTCSS exigido para abrir o áudio
         self.hold_center = False  # True durante a varredura: o VFO não move o centro
-        self.activity_rec: ActivityRecorder | None = None
+        self.activity_rec: ActivityRecorder | None = None   # Scanner: um arquivo por transmissão
+        self.vox_rec: ActivityRecorder | None = None        # botão Gravar áudio com VOX
+        self.audio_listeners: list = []
+        self.iq_vox = False                                 # IQ só com transmissão
+        self._iq_open_until = 0.0
         self.timeshift_seconds = 20.0
         self.timeshift: TimeShiftBuffer | None = None
         self.replay_pos: int | None = None
@@ -60,6 +64,7 @@ class Engine:
         self.events: queue.Queue = queue.Queue()
         self.wf_lines: deque = deque(maxlen=200)
         self.spectrum: np.ndarray | None = None
+        self.spectrum_center = 0.0
         self.status = {"signal_db": -150.0, "sq_open": False, "ctcss": None, "dropped": 0,
                        "cpu": 0.0, "running": False, "audio_level": 0.0}
         self._cmds: queue.Queue = queue.Queue()
@@ -120,10 +125,13 @@ class Engine:
             self.source = None
         self.stop_audio_recording()
         self.stop_iq_recording()
-        if self.activity_rec is not None:
-            ev = self.activity_rec.close()
-            if ev:
-                self.events.put(("activity", ev, ev["start"]))
+        for attr, kind in (("activity_rec", "activity"), ("vox_rec", "vox")):
+            rec = getattr(self, attr)
+            if rec is not None:
+                ev = rec.close()
+                setattr(self, attr, None)
+                if ev:
+                    self.events.put((kind, ev, ev["start"]))
         self.status["running"] = False
 
     @property
@@ -180,7 +188,10 @@ class Engine:
         if force or abs(vfo - src.center_freq) > margin:
             # mantém o VFO afastado do pico DC do RTL-SDR
             new_c = vfo + fs / 8 if fs >= 900_000 else vfo
-            src.set_center_freq(new_c)
+            if src.set_center_freq(new_c) is False:  # fora do alcance do dongle: mantém o centro
+                lim = fs / 2 * 0.95
+                rx.set_offset(min(max(vfo - src.center_freq, -lim), lim))
+                return
             self.wf_lines.clear()
         rx.set_offset(vfo - src.center_freq)
 
@@ -298,7 +309,7 @@ class Engine:
 
         blk = blk - np.mean(blk)  # remove DC (pico central do RTL-SDR)
         with self._lock:
-            if self._iq_rec:
+            if self._iq_rec and (not self.iq_vox or rx.squelch.is_open or time.monotonic() < self._iq_open_until):
                 self._iq_rec.write(blk)
 
         fs = src.sample_rate
@@ -308,6 +319,7 @@ class Engine:
             spec = compute_spectrum(blk, self.fft_size, max_frames=6)
             if spec is not None:
                 self.spectrum = spec
+                self.spectrum_center = src.center_freq
                 self.wf_lines.append((spec, src.center_freq, fs))
 
         center = src.center_freq
@@ -357,10 +369,12 @@ class Engine:
         if self.decoders_enabled.get("ctcss"):
             tone = self.ctcss.process(raw) if rx.mode == "NFM" else None
             self.status["ctcss"] = tone
+        tone_ok = True
         if self.tone_squelch and rx.mode == "NFM":
             tone = self.status.get("ctcss")
             if tone is None or abs(tone - self.tone_squelch) > 1.0:
                 audio = np.zeros_like(audio)
+                tone_ok = False
         if rx.mode == "NFM":
             if self.decoders_enabled.get("aprs"):
                 self.afsk.process(raw)
@@ -372,20 +386,29 @@ class Engine:
         self.status["audio_level"] = float(np.max(np.abs(audio))) if len(audio) else 0.0
         if self.audio is not None:
             self.audio.write(audio)
+        for listener in self.audio_listeners:  # ex.: servidor web (áudio no navegador)
+            listener(audio)
         with self._lock:
             if self._audio_rec and len(audio):
                 self._audio_rec.write(audio)
-        if self.activity_rec is not None:
-            sq_active = rx.squelch.threshold_db > -149 or self.tone_squelch is not None
-            opened = sq_active and rx.squelch.is_open and bool(np.any(audio))
-            ev = self.activity_rec.process(rx.rec_audio, opened, self.vfo, rx.mode, rx.signal_db)
-            if ev:
-                self.events.put(("activity", ev, ev["start"]))
+        sq_active = rx.squelch.threshold_db > -149 or self.tone_squelch is not None
+        opened = sq_active and rx.squelch.is_open and tone_ok
+        if opened:
+            self._iq_open_until = time.monotonic() + 1.5
+        for rec, kind in ((self.activity_rec, "activity"), (self.vox_rec, "vox")):
+            if rec is not None:
+                ev = rec.process(rx.rec_audio_raw, opened, self.vfo, rx.mode, rx.signal_db)
+                if ev:
+                    self.events.put((kind, ev, ev["start"]))
         if self.audio_tap:
             self.audio_tap(audio, raw)
 
     def _loop(self):
         while self._running:
+            pop = getattr(self.source, "pop_messages", None)
+            if pop is not None:
+                for msg in pop():
+                    self.events.put(("source_msg", msg, time.time()))
             blk = self.source.read(timeout=0.5) if self.source else None
             if blk is None:
                 if self.source and not self.source._running:

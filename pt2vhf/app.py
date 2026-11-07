@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 
 
@@ -25,6 +26,11 @@ def main():
     if args.selftest:
         sys.exit(selftest())
 
+    if sys.platform == "win32":  # o instalador (AppMutex) detecta o programa aberto
+        import ctypes
+        ctypes.windll.kernel32.CreateMutexW(None, False, "PT2VHF_SDR_Tool_Running")
+    if args.screenshot:
+        os.environ["PT2VHF_NO_STARTUP_DIALOGS"] = "1"
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
 
@@ -53,6 +59,7 @@ def selftest() -> int:
     import tempfile
     import threading
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    os.environ["PT2VHF_NO_STARTUP_DIALOGS"] = "1"
     from . import __version__
     from .dsp.assist import detect_mode
     from .dsp.receiver import Receiver
@@ -106,11 +113,32 @@ def selftest() -> int:
     except Exception as ex:  # noqa: BLE001
         check(f"Interface ({ex})", False)
     try:
-        from rtlsdr.librtlsdr import librtlsdr
-        n = librtlsdr.rtlsdr_get_device_count()
-        check(f"Biblioteca RTL-SDR carregada ({n} dispositivo(s))", True)
+        from .sources.rtlsdr_source import library_info, list_devices
+        info = library_info()
+        n = len(list_devices())
+        blog = info.get("blog", False)
+        check(f"Biblioteca RTL-SDR carregada ({n} dispositivo(s)) — "
+              + ("driver RTL-SDR Blog (V4)" if blog else "versão padrão"), not info.get("error"))
+        if sys.platform == "win32" and getattr(sys, "frozen", False):
+            check("Driver RTL-SDR Blog incluído (suporte ao V4)", blog)
+            from .sources.rtl_driver import wdi_simple_path
+            check("Instalador do driver WinUSB incluído (wdi-simple)", wdi_simple_path() is not None)
+            from .updater import helper_script
+            check("Auxiliar de atualização incluído", helper_script().is_file())
     except Exception as ex:  # noqa: BLE001
         check(f"Biblioteca RTL-SDR ({ex})", False)
+    try:
+        import urllib.request
+        from .webserver import WebServer
+        web = WebServer(lambda: {"ok": 1}, lambda: None, port=0)
+        web.port = 0
+        web.start()
+        port = web._httpd.server_address[1]
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/state", timeout=5) as r:
+            check("Interface web", r.status == 200)
+        web.stop()
+    except Exception as ex:  # noqa: BLE001
+        check(f"Interface web ({ex})", False)
     try:
         import sounddevice
         check(f"Áudio (PortAudio {sounddevice.get_portaudio_version()[1]})", True)

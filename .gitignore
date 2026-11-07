@@ -9,3 +9,6 @@ venv/
 *.wav
 .idea/
 .vscode/
+drivers/
+packaging/rtlsdr_blog/
+release/

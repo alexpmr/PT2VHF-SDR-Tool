@@ -69,6 +69,15 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 - Plano de bandas (IARU R2 / Brasil): HF, PX (11 m), 6 m, FM broadcast, aviação, 2 m, marítimo, 70 cm…
 - VFO A/B, A⇄B, A=B.
 
+### Novidades da 0.4
+- **Modo AUTO**, **auto-sintonizar ao selecionar** (tecla A-SINT), **◀ ▶ transmissão vizinha** e **modos clicáveis
+  no display**.
+- **Níveis de interface** Essencial / Intermediário / Avançado (menu Exibir ou barra do waterfall).
+- **Gravação VOX** (pré-gravação de 0,5 s; arquivo único ou por transmissão; também IQ).
+- **Aba Configurações** e **interface web** local/LAN: display, waterfall, APRS e áudio no navegador.
+- **RTL-SDR robusto**: reconexão automática, aviso de faixa sem suporte, driver RTL-SDR Blog (V4) e
+  **Preparar RTL-SDR** (driver WinUSB, como o Zadig).
+
 ### Assistente de sintonia, voltar no tempo e receptores extras
 - **Auto-sintonia SSB**: corrige o VFO pela estrutura harmônica da voz (sem mexer no áudio); modo contínuo opcional.
 - **Detectar modo**: WFM, NFM, AM, CW ou USB/LSB, ajustando modo, filtro e sintonia.

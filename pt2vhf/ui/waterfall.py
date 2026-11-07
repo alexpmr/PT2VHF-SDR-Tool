@@ -43,6 +43,7 @@ class MHzAxis(pg.AxisItem):
 class SpectrumWaterfall(QWidget):
     tuneRequested = Signal(float)
     passbandChanged = Signal(float, float)  # low, high relativos ao VFO (Hz)
+    panRequested = Signal(float)            # arrastou para fora da faixa recebida: novo centro (Hz)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -114,6 +115,12 @@ class SpectrumWaterfall(QWidget):
         self._markers: list = []
         self._band_items: list = []
         self.glw.scene().sigMouseClicked.connect(self._clicked)
+        from PySide6.QtCore import QTimer
+        self._pan_timer = QTimer(self)
+        self._pan_timer.setSingleShot(True)
+        self._pan_timer.timeout.connect(self._pan_check)
+        self.spec.getViewBox().sigRangeChangedManually.connect(lambda *_: self._pan_timer.start(350))
+        self.wf.getViewBox().sigRangeChangedManually.connect(lambda *_: self._pan_timer.start(350))
         self.glw.viewport().installEventFilter(self)
         self._apply_levels()
 
@@ -285,6 +292,16 @@ class SpectrumWaterfall(QWidget):
                     return
                 self.tuneRequested.emit(self._snap(f))
                 return
+
+    def _pan_check(self):
+        """Depois de arrastar: se a área visível saiu da faixa recebida, pede novo centro."""
+        lo, hi = (v * 1e6 for v in self.spec.viewRange()[0])
+        vc, span = (lo + hi) / 2, hi - lo
+        if span <= 0 or self.fs <= 0:
+            return
+        outside = lo < self.center - self.fs / 2 or hi > self.center + self.fs / 2
+        if outside and abs(vc - self.center) > 0.1 * self.fs and span < self.fs * 1.05:
+            self.panRequested.emit(vc)
 
     def _region_changed(self):
         if self._updating_region:

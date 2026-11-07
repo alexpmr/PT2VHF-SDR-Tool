@@ -31,7 +31,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.build_windows
     runs-on: windows-latest
     needs: tests
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: pwsh
@@ -51,11 +51,57 @@ jobs:
         run: |
           $v = python packaging/make_version_info.py
           "version=$v" >> $env:GITHUB_OUTPUT
+      - name: Driver RTL-SDR Blog (suporte ao V4)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $rel = gh api repos/rtlsdrblog/rtl-sdr-blog/releases/latest | ConvertFrom-Json
+          "Release do driver RTL-SDR Blog: $($rel.tag_name)"
+          New-Item -ItemType Directory -Force blogdl, packaging\rtlsdr_blog | Out-Null
+          foreach ($a in $rel.assets) {
+            if ($a.name -like '*.zip') {
+              "Baixando $($a.name)"
+              Invoke-WebRequest -Uri $a.browser_download_url -OutFile "blogdl\$($a.name)"
+              Expand-Archive -Force "blogdl\$($a.name)" "blogdl\$($a.name -replace '\.zip$','')"
+            }
+          }
+          Get-ChildItem -Recurse blogdl -Filter *.dll | ForEach-Object { $_.FullName }
+          $dll = Get-ChildItem -Recurse blogdl -Filter rtlsdr.dll | Where-Object { $_.FullName -match 'x64|64' } | Select-Object -First 1
+          if (-not $dll) { throw 'rtlsdr.dll x64 do driver RTL-SDR Blog não encontrado na release' }
+          Copy-Item $dll.FullName packaging\rtlsdr_blog\
+          foreach ($dep in @('libusb-1.0.dll', 'pthreadVC2.dll')) {
+            $f = Join-Path $dll.DirectoryName $dep
+            if (Test-Path $f) { Copy-Item $f packaging\rtlsdr_blog\ }
+          }
+          if (-not (Test-Path packaging\rtlsdr_blog\libusb-1.0.dll)) { throw 'libusb-1.0.dll ausente junto do rtlsdr.dll' }
+          "Driver RTL-SDR Blog $($rel.tag_name) (GPLv2): https://github.com/rtlsdrblog/rtl-sdr-blog" | Out-File packaging\rtlsdr_blog\LICENSE.txt
+          Get-ChildItem packaging\rtlsdr_blog
+      - name: libwdi wdi-simple (driver WinUSB do RTL-SDR, como no Sat Tool)
+        shell: cmd
+        env:
+          WDK_URL: https://go.microsoft.com/fwlink/p/?LinkID=253170
+        run: |
+          git clone --depth 1 --branch v1.5.1 https://github.com/pbatard/libwdi.git ..\libwdi || exit /b 1
+          cd ..\libwdi
+          rem Somente WinUSB: retira libusb0/libusbK do embedder (o PT2VHF nunca instala esses drivers).
+          powershell -NoProfile -Command "(Get-Content msvc\config.h) | Where-Object { $_ -notmatch '^#define LIBUSB(0|K)_DIR' } | Set-Content msvc\config.h" || exit /b 1
+          findstr /L /C:"#define LIBUSB0_DIR" /C:"#define LIBUSBK_DIR" msvc\config.h && exit /b 1
+          curl -sSL %WDK_URL% -o wdk-redist.msi || exit /b 1
+          msiexec /a wdk-redist.msi /qn TARGETDIR=%CD%\wdk
+          if not exist "wdk\Windows Kits\8.0\redist\wdf\x64" (echo WDK redist ausente & exit /b 1)
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul
+          msbuild libwdi.sln /m /p:Configuration=Release,Platform=Win32,BuildMacros="WDK_DIR=\"../wdk/Windows Kits/8.0\"" || exit /b 1
+          msbuild libwdi.sln /m /p:Configuration=Release,Platform=x64,BuildMacros="WDK_DIR=\"../wdk/Windows Kits/8.0\"" || exit /b 1
+          if not exist x64\Release\examples\wdi-simple.exe exit /b 1
+          mkdir %GITHUB_WORKSPACE%\drivers
+          copy /y x64\Release\examples\wdi-simple.exe %GITHUB_WORKSPACE%\drivers\ || exit /b 1
+          copy /y COPYING-LGPL %GITHUB_WORKSPACE%\drivers\libwdi-COPYING-LGPL.txt
+          %GITHUB_WORKSPACE%\drivers\wdi-simple.exe --help | findstr /C:"WinUSB" || exit /b 1
       - name: PyInstaller (pasta + portátil)
         run: pyinstaller --noconfirm pt2vhf.spec
       - name: Autoteste dos executáveis
         run: |
-          foreach ($exe in @("dist\PT2VHF-SDR-Tool\PT2VHF-SDR-Tool.exe", "dist\PT2VHF-SDR-Tool-portable.exe")) {
+          foreach ($exe in @("dist\PT2VHF-SDR-Tool\PT2VHF-SDR-Tool.exe", "dist\PT2VHF-SDR-Tool-Portable.exe")) {
             $p = Start-Process -FilePath $exe -ArgumentList "--selftest" -Wait -PassThru
             Get-Content "$env:TEMP\pt2vhf-sdr-selftest.log"
             if ($p.ExitCode -ne 0) { throw "Autoteste falhou: $exe" }
@@ -66,21 +112,23 @@ jobs:
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; }
           & $iscc "/DAppVersion=${{ steps.ver.outputs.version }}" packaging\installer.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC falhou" }
-      - name: Instalar em silêncio e testar o programa instalado
+      - name: Instalar em silêncio (sem administrador) e testar o programa instalado
         run: |
-          $setup = "dist\PT2VHF-SDR-Tool-${{ steps.ver.outputs.version }}-win-x64-setup.exe"
-          $p = Start-Process -FilePath $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/CURRENTUSER","/DIR=C:\pt2vhf-sdr-test" -Wait -PassThru
+          $setup = "dist\PT2VHF-SDR-Tool-v${{ steps.ver.outputs.version }}-Win11-x64-Setup.exe"
+          $p = Start-Process -FilePath $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/CURRENTUSER" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Instalação falhou" }
-          if (-not (Test-Path "C:\pt2vhf-sdr-test\unins000.exe")) { throw "Desinstalador ausente" }
-          $p = Start-Process -FilePath "C:\pt2vhf-sdr-test\PT2VHF-SDR-Tool.exe" -ArgumentList "--selftest" -Wait -PassThru
+          $dir = Join-Path $env:LOCALAPPDATA "Programs\PT2VHF SDR Tool"
+          if (-not (Test-Path "$dir\unins000.exe")) { throw "Instalação por usuário não encontrada em $dir" }
+          if (-not (Test-Path "$dir\_internal\drivers\wdi-simple.exe")) { throw "wdi-simple.exe ausente da instalação" }
+          $p = Start-Process -FilePath "$dir\PT2VHF-SDR-Tool.exe" -ArgumentList "--selftest" -Wait -PassThru
           Get-Content "$env:TEMP\pt2vhf-sdr-selftest.log"
           if ($p.ExitCode -ne 0) { throw "Programa instalado falhou no autoteste" }
       - name: Pacotes finais e SHA-256
         run: |
           $v = "${{ steps.ver.outputs.version }}"
           New-Item -ItemType Directory -Force release | Out-Null
-          Copy-Item "dist\PT2VHF-SDR-Tool-$v-win-x64-setup.exe" release\
-          Copy-Item "dist\PT2VHF-SDR-Tool-portable.exe" "release\PT2VHF-SDR-Tool-$v-win-x64-portable.exe"
+          Copy-Item "dist\PT2VHF-SDR-Tool-v$v-Win11-x64-Setup.exe" release\
+          Copy-Item "dist\PT2VHF-SDR-Tool-Portable.exe" "release\PT2VHF-SDR-Tool-v$v-Win11-x64-Portable.exe"
           Get-ChildItem release | ForEach-Object { "{0}  {1}  {2}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Length, $_.Name } | Tee-Object release\SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:

@@ -77,6 +77,10 @@ class IQSource:
     def set_center_freq(self, hz: float):
         self.center_freq = float(hz)
 
+    def check_freq(self, hz: float) -> str:
+        """'' se a fonte alcança a frequência; senão, explicação para o usuário."""
+        return ""
+
     def set_gain(self, db: float | None):
         """None = AGC do sintonizador."""
 

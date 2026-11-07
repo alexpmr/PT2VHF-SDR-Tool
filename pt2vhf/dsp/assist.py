@@ -255,3 +255,54 @@ def adaptive_passband(iq: np.ndarray, fs: int, mode: str, low: float, high: floa
     minimum = {"AM": 2_500, "NFM": 4_000, "WFM": 50_000}.get(mode, 1_500)
     half = min(max(half, minimum), lim)
     return -half, half
+
+
+def _peak_offset(iq: np.ndarray, fs: int, lo: float, hi: float) -> float | None:
+    """Frequência do pico mais forte em [lo, hi] com interpolação parabólica (sub-bin)."""
+    nfft = 65536 if fs > 48_000 else 16384
+    nfft = min(nfft, 1 << int(np.floor(np.log2(max(len(iq), 1024)))))
+    f, p = _psd(iq, fs, nfft)
+    m = (f >= lo) & (f <= hi)
+    if m.sum() < 3:
+        return None
+    idx = np.flatnonzero(m)
+    k = idx[int(np.argmax(p[m]))]
+    if 0 < k < len(p) - 1:
+        a, b, c = p[k - 1], p[k], p[k + 1]
+        den = a - 2 * b + c
+        d = 0.5 * (a - c) / den if den != 0 else 0.0
+        return float(f[k] + d * (f[1] - f[0]))
+    return float(f[k])
+
+
+def fine_tune(iq: np.ndarray, fs: int, mode: str, vfo: float, step: float = 0.0,
+              search_hz: float | None = None) -> tuple[float, str] | None:
+    """Correção (Hz, explicação) para ficar exatamente na transmissão perto do VFO; None se não houver sinal.
+
+    AM/CW: portadora. NFM/WFM/DSB: centro do sinal (encaixado no canal do passo quando coerente).
+    USB/LSB: portadora suprimida pelos harmônicos da voz.
+    """
+    iq = np.asarray(iq, np.complex64)
+    if mode in ("USB", "LSB"):
+        r = estimate_ssb_offset(iq, fs, mode)
+        return None if r is None else (r[0], f"voz SSB (confiança {r[1] * 100:.0f}%)")
+    search = search_hz or {"CW": 1_500, "AM": 6_000, "WFM": 120_000}.get(mode, 15_000)
+    band = occupied_band(iq, fs, search_hz=search + 5_000)
+    if band is None:
+        return None
+    lo, hi, _ = band
+    if mode in ("AM", "CW"):
+        pk = _peak_offset(iq, fs, max(lo, -search), min(hi, search))
+        if pk is None:
+            return None
+        delta, why = pk, "portadora"
+    else:
+        delta, why = (lo + hi) / 2, "centro do sinal"
+    if abs(delta) > search:
+        return None
+    target = vfo + delta
+    if step and mode in ("NFM", "WFM", "AM") and step >= 2_500:
+        snapped = round(target / step) * step
+        if abs(snapped - target) <= 0.3 * step:
+            target, why = snapped, why + f", canal de {step / 1e3:g} kHz"
+    return target - vfo, why

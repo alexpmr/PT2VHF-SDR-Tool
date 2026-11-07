@@ -2,6 +2,38 @@
 
 Todas as mudanças relevantes do PT2VHF SDR Tool.
 
+## [0.4.0] — 2026-11-07
+### Corrigido
+- **Mudar de banda não trava mais o programa** (relatado com RTL-SDR Blog V4): a interface nunca chama o dongle;
+  os ajustes passam por uma fila com tempo limite; um vigia percebe quando as amostras param, reconecta
+  sozinho e reaplica frequência, ganho, ppm e bias-T; frequência fora do alcance do dongle é recusada com aviso.
+- Ao arrastar o waterfall para fora da faixa recebida, o receptor passa a cobrir a região visível
+  (não fica mais preta até clicar em "Total").
+- Painel Áudio / DSP sem rolagem horizontal (os controles se ajustam à largura).
+
+### Adicionado
+- **Driver RTL-SDR Blog** incluído no Windows (suporte completo ao V4, HF pelo conversor interno).
+- **Preparar RTL-SDR**: instala o driver WinUSB (como o Zadig) pelo instalador ou pelo menu Ajuda;
+  **Diagnóstico do RTL-SDR**.
+- **Modo AUTO**: detecta o tipo da transmissão e aplica modo, filtro e sintonia ("AUTO·NFM" no display).
+- **Auto-sintonizar ao selecionar** uma transmissão (clique, memória, scanner): portadora em AM/CW, centro
+  do sinal em FM (encaixado no canal) e portadora suprimida em SSB pelos harmônicos da voz (tecla A-SINT).
+- **Teclas ◀ ▶** para saltar para a transmissão vizinha, já sintonizada.
+- **Modos clicáveis dentro do display** (AUTO, NFM, WFM, AM, USB, LSB, CW, DSB, RAW).
+- **Três níveis de interface**: Essencial, Intermediário e Avançado.
+- **Gravação VOX**: só grava com transmissão, com 0,5 s de pré-gravação; arquivo único sem os silêncios
+  ou um por transmissão; VOX também para IQ.
+- **Aba Configurações** e **interface web** (local ou rede LAN com chave): o navegador replica display,
+  waterfall e APRS e toca o áudio, que continua saindo no computador.
+- **Anúncio ao abrir** divulgando o site e os aplicativos PT2VHF.
+
+### Alterado
+- **OTA no padrão dos programas PT2VHF**: botão de versão, verificação automática, instalação automática quando
+  o programa está livre (ou "Atualizar agora / Depois" com adiamento de 24 h), auxiliar externo que instala e
+  reabre, e resultado mostrado na abertura seguinte.
+- **Instalador no padrão dos programas PT2VHF**: instalação por usuário (sem administrador), opção de preparar o
+  RTL-SDR, nomes `PT2VHF-SDR-Tool-vX.Y.Z-Win11-x64-Setup.exe` / `-Portable.exe`.
+
 ## [0.3.0] — 2026-11-07
 ### Adicionado
 - **Assistente de sintonia** (age no VFO e no filtro, não no áudio):

@@ -132,55 +132,96 @@ class WavRecorder:
 
 
 class ActivityRecorder:
-    """Grava automaticamente cada transmissão (enquanto o squelch está aberto).
+    """Gravação tipo VOX: grava só enquanto há transmissão (squelch aberto).
 
-    Cria um WAV por atividade em <pasta>/<AAAA-MM-DD>/HHMMSS_<freq>MHz_<modo>.wav,
-    descarta gravações curtas demais e divide as muito longas.
+    - pré-gravação (`preroll_s`) para não cortar o começo da fala e "cauda" após o squelch fechar;
+    - `single_file=False`: um WAV por transmissão em <pasta>/<AAAA-MM-DD>/HHMMSS_<freq>MHz_<modo>.wav,
+      descartando as curtas demais e dividindo as muito longas;
+    - `single_file=True`: um único WAV por sessão, só com as transmissões (sem os silêncios).
+    Cada transmissão concluída gera um evento (dict) com arquivo, frequência, modo, início e duração.
     """
 
     def __init__(self, folder: str, rate: int = 48_000, tail_s: float = 1.5,
-                 min_s: float = 1.0, max_s: float = 300.0):
+                 min_s: float = 1.0, max_s: float = 300.0, preroll_s: float = 0.5,
+                 single_file: bool = False):
         self.folder = Path(folder)
         self.rate = rate
         self.tail_s, self.min_s, self.max_s = tail_s, min_s, max_s
+        self.preroll = int(rate * preroll_s)
+        self.single_file = single_file
+        self._pre: deque[np.ndarray] = deque()
+        self._pre_n = 0
         self._rec: WavRecorder | None = None
+        self._session: WavRecorder | None = None
         self._closed_for = 0.0
+        self._tx_samples = 0
         self._info: dict = {}
 
     @property
     def active(self) -> bool:
-        return self._rec is not None
+        return self._info != {}
+
+    @property
+    def session_path(self) -> Path | None:
+        return self._session.path if self._session else None
+
+    def _new_file(self, freq, mode, tag=""):
+        now = datetime.now()
+        name = f"{now:%H%M%S}_{freq / 1e6:.4f}MHz_{mode}{tag}.wav"
+        path = self.folder / f"{now:%Y-%m-%d}" / name
+        k = 2
+        while path.exists():  # duas transmissões no mesmo segundo
+            path = path.with_name(f"{name[:-4]}_{k}.wav")
+            k += 1
+        return WavRecorder(path, self.rate, 1)
+
+    def _keep_preroll(self, audio):
+        if self.preroll <= 0 or not len(audio):
+            return
+        self._pre.append(audio.astype(np.float32).copy())
+        self._pre_n += len(audio)
+        while self._pre and self._pre_n - len(self._pre[0]) >= self.preroll:
+            self._pre_n -= len(self._pre.popleft())
 
     def process(self, audio: np.ndarray, opened: bool, freq: float, mode: str, level_db: float):
         dt = len(audio) / self.rate
-        if self._rec is None:
+        if not self._info:
             if not opened:
+                self._keep_preroll(audio)
                 return None
-            now = datetime.now()
-            name = f"{now:%H%M%S}_{freq / 1e6:.4f}MHz_{mode}.wav"
-            path = self.folder / f"{now:%Y-%m-%d}" / name
-            k = 2
-            while path.exists():  # duas transmissões no mesmo segundo
-                path = path.with_name(f"{name[:-4]}_{k}.wav")
-                k += 1
-            self._rec = WavRecorder(path, self.rate, 1)
-            self._info = {"file": str(path), "freq": freq, "mode": mode, "start": time.time(),
+            if self.single_file:
+                if self._session is None:
+                    self._session = self._new_file(freq, mode, "_VOX")
+                self._rec = self._session
+            else:
+                self._rec = self._new_file(freq, mode)
+            self._info = {"file": str(self._rec.path), "freq": freq, "mode": mode, "start": time.time(),
                           "peak_db": level_db}
             self._closed_for = 0.0
+            self._tx_samples = 0
+            self._pre_written = self._pre_n
+            for chunk in self._pre:
+                self._rec.write(chunk)
+            self._pre.clear()
+            self._pre_n = 0
         if len(audio):
             self._rec.write(audio)
-        self._info["peak_db"] = max(self._info["peak_db"], level_db) if opened else self._info["peak_db"]
+            self._tx_samples += len(audio)
+        if opened:
+            self._info["peak_db"] = max(self._info["peak_db"], level_db)
         self._closed_for = 0.0 if opened else self._closed_for + dt
-        dur = self._rec.samples / self.rate
+        dur = self._tx_samples / self.rate
         if self._closed_for >= self.tail_s or dur >= self.max_s or abs(freq - self._info["freq"]) > 1:
             return self._finish()
         return None
 
     def _finish(self):
         rec, info = self._rec, dict(self._info)
-        self._rec = None
+        self._info = {}
+        info["duration"] = max(0.0, self._tx_samples / self.rate - self._closed_for)  # sem a pré-gravação
+        if self.single_file:
+            return info if info["duration"] >= self.min_s else None
         rec.close()
-        info["duration"] = max(0.0, rec.samples / self.rate - self._closed_for)
         if info["duration"] < self.min_s:
             try:
                 rec.path.unlink()
@@ -190,6 +231,8 @@ class ActivityRecorder:
         return info
 
     def close(self):
-        if self._rec is not None:
-            return self._finish()
-        return None
+        ev = self._finish() if self._info else None
+        if self._session is not None:
+            self._session.close()
+            self._session = None
+        return ev

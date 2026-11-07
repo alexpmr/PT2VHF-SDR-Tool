@@ -64,6 +64,7 @@ class Receiver:
         self.muted = False
         self.signal_db = -150.0
         self.rec_audio = np.zeros(0, np.float32)
+        self.rec_audio_raw = np.zeros(0, np.float32)
         self.keep_if = False
         self.last_if = np.zeros(0, np.complex64)
         self.nco = NCO(self.input_rate)
@@ -170,7 +171,8 @@ class Receiver:
         a = self.nr.process(a)
         a = self.eq.process(a)
         # áudio para gravação: independe do volume e do mudo
-        self.rec_audio = soft_limiter(a) if open_ else np.zeros_like(a)
+        self.rec_audio_raw = soft_limiter(a)  # sem squelch: pré-gravação do VOX
+        self.rec_audio = self.rec_audio_raw if open_ else np.zeros_like(a)
         if not open_ or self.muted:
             a = np.zeros_like(a)
         else:

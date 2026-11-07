@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -24,10 +25,13 @@ from ..scanner import ScannerConfig, SpectrumScanner
 from .lcd import THEMES, LCDDisplay
 from .assist_panels import AssistBox, ExtrasPanel, TimeShiftBox, UpdateController
 from .listening import FavoritesBar, PresetDialog, ScannerPanel
+from .settings_panel import SettingsPanel
 from .panels import AudioPanel, DecoderPanel, MemoryPanel, ModePanel, ReceiverPanel
 from .waterfall import COLORMAPS, SpectrumWaterfall
 
 log = logging.getLogger(__name__)
+
+LEVELS = ["Essencial", "Intermediário", "Avançado"]
 
 STYLE = """
 QMainWindow, QWidget { background: #161a20; color: #d8dee6; font-size: 12px; }
@@ -59,6 +63,7 @@ QToolButton#favButton:checked { background: #c9871e; color: #120c02; font-weight
 QLabel#favStar { color: #f0b44a; font-size: 20px; padding: 0 4px; }
 QLabel#hintLabel { color: #7d8894; font-style: italic; }
 QLabel#infoLabel { color: #9aa6b2; }
+QPushButton#versionButton { background: transparent; border: 1px solid #39444f; padding: 1px 8px; color: #f0b44a; }
 QToolBar#wfToolbar { background: transparent; border: 0; spacing: 6px; }
 """
 
@@ -86,11 +91,16 @@ class MainWindow(QMainWindow):
                      "B": {"freq": self.cfg["vfo_b_freq"], "mode": "NFM", "bw": 12000}}
         self.active_vfo = "A"
         self.current_mem: MemoryChannel | None = None
+        self.auto_mode = bool(self.cfg.get("auto_mode", False))
+        self.auto_tune = bool(self.cfg.get("auto_tune", True))
+        self._sel_gen = 0
+        self._neighbor_hops = 0
         self.scan = None
 
         self._build_ui()
         self._wire()
         self._restore_layout()
+        self.apply_level(self.cfg.get("ui_level", "Intermediário"))
         self._apply_receiver_settings()
         self._refresh_markers()
 
@@ -135,8 +145,15 @@ class MainWindow(QMainWindow):
         self.tshift = TimeShiftBox(self.cfg.get("timeshift_s", 20))
         self.audio_panel.layout().insertWidget(self.audio_panel.layout().count() - 1, self.tshift)
         self.extras_panel = ExtrasPanel()
+        self.settings_panel = SettingsPanel(self.cfg, LEVELS, list(THEMES))
+        self.web = None
+        from collections import deque
+        self._web_aprs = deque(maxlen=30)
+        self._web_state = {}
         self.transcriber = None
-        self.updates = UpdateController(self)
+        self.version_btn = QPushButton(f"v{__version__}")
+        self.version_btn.setObjectName("versionButton")
+        self.updates = UpdateController(self, self.version_btn)
         self._assist_busy = False
         self.docks = {}
         for key, title, w, area in (("rx", "Receptor", _scroll(self.rx_panel), Qt.LeftDockWidgetArea),
@@ -145,7 +162,8 @@ class MainWindow(QMainWindow):
                                     ("mem", "Memórias / Varredura", _scroll(self.mem_panel), Qt.BottomDockWidgetArea),
                                     ("scan", "Scanner", _scroll(self.scan_panel), Qt.BottomDockWidgetArea),
                                     ("dec", "Decodificadores", _scroll(self.dec_panel), Qt.BottomDockWidgetArea),
-                                    ("extras", "Receptores extras", _scroll(self.extras_panel), Qt.BottomDockWidgetArea)):
+                                    ("extras", "Receptores extras", _scroll(self.extras_panel), Qt.BottomDockWidgetArea),
+                                    ("settings", "Configurações", _scroll(self.settings_panel), Qt.BottomDockWidgetArea)):
             d = QDockWidget(title, self)
             d.setObjectName(f"dock_{key}")
             d.setWidget(w)
@@ -156,6 +174,7 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.docks["mem"], self.docks["scan"])
         self.tabifyDockWidget(self.docks["scan"], self.docks["dec"])
         self.tabifyDockWidget(self.docks["dec"], self.docks["extras"])
+        self.tabifyDockWidget(self.docks["extras"], self.docks["settings"])
         self.docks["mem"].raise_()
         self.wf.setMinimumHeight(300)
         self.resizeDocks([self.docks["mem"]], [300], Qt.Vertical)
@@ -165,7 +184,7 @@ class MainWindow(QMainWindow):
         self.status_audio = QLabel("Áudio: OK" if self.audio.available else "Áudio indisponível")
         if not self.audio.available:
             self.status_audio.setToolTip(self.audio.error)
-        for w in (self.status_src, self.status_cpu, self.status_audio):
+        for w in (self.status_src, self.status_cpu, self.status_audio, self.version_btn):
             self.statusBar().addPermanentWidget(w)
         self._build_menu()
 
@@ -228,6 +247,20 @@ class MainWindow(QMainWindow):
         self.lcd_theme.setCurrentText(self.cfg["lcd_theme"])
         row.addWidget(QLabel("Display:"))
         row.addWidget(self.lcd_theme)
+        self.level_combo = QComboBox()
+        self.level_combo.addItems(LEVELS)
+        self.level_combo.setToolTip("Quantidade de recursos na tela: Essencial, Intermediário ou Avançado")
+        row.addWidget(QLabel("Interface:"))
+        row.addWidget(self.level_combo)
+        # nível mínimo (0 essencial, 1 intermediário, 2 avançado) de cada item da barra
+        lv = {self.fft: 2, self.avg: 2, self.peak: 2, self.wf_min: 1, self.wf_max: 1, self.speed: 1, self.cmap: 1}
+        self._tb_levels = []
+        for a in row.actions():
+            w = row.widgetForAction(a)
+            level = lv.get(w, 0)
+            if isinstance(w, QLabel):
+                level = {"Piso": 1, "Teto": 1, "Média": 2}.get(w.text(), 0)
+            self._tb_levels.append((a, level))
         return row
 
     def _build_menu(self):
@@ -244,10 +277,27 @@ class MainWindow(QMainWindow):
         for d in self.docks.values():
             v.addAction(d.toggleViewAction())
         v.addSeparator()
+        from PySide6.QtGui import QActionGroup
+        grp = QActionGroup(self)
+        self._level_actions = []
+        for name in LEVELS:
+            a = QAction(name, self, checkable=True)
+            a.triggered.connect(lambda _=False, n=name: self.apply_level(n))
+            grp.addAction(a)
+            v.addAction(a)
+            self._level_actions.append(a)
+        v.addSeparator()
         a = QAction("Restaurar layout padrão", self)
         a.triggered.connect(self._reset_layout)
         v.addAction(a)
         h = mb.addMenu("A&juda")
+        a = QAction("Preparar RTL-SDR (driver WinUSB)…", self)
+        a.triggered.connect(self._prepare_rtlsdr)
+        h.addAction(a)
+        a = QAction("Diagnóstico do RTL-SDR…", self)
+        a.triggered.connect(self._diagnose_rtlsdr)
+        h.addAction(a)
+        h.addSeparator()
         a = QAction("Verificar atualizações…", self)
         a.triggered.connect(lambda: self.updates.check(manual=True))
         h.addAction(a)
@@ -268,8 +318,12 @@ class MainWindow(QMainWindow):
                                         self.audio_panel, self.mem_panel, self.dec_panel)
         lcd.freqChanged.connect(self.tune)
         lcd.stepRequested.connect(lambda n: self.tune(self.engine.vfo + n * self.step, snap=True))
-        wf.tuneRequested.connect(self.tune)
+        wf.tuneRequested.connect(self.select_transmission)
+        lcd.modeClicked.connect(self.choose_mode)
+        lcd.neighborRequested.connect(self.jump_neighbor)
+        lcd.autoTuneToggled.connect(lambda: self._set_auto_tune(not self.auto_tune))
         wf.passbandChanged.connect(self._set_passband)
+        wf.panRequested.connect(self._pan_to)
 
         rp.startRequested.connect(self.start_source)
         rp.stopRequested.connect(self.stop_source)
@@ -278,7 +332,7 @@ class MainWindow(QMainWindow):
         rp.biasTeeChanged.connect(lambda v: self._src_call("set_bias_tee", v, cfg="bias_tee"))
         rp.directSamplingChanged.connect(lambda v: self._src_call("set_direct_sampling", v, cfg="direct_sampling"))
 
-        mp.modeChanged.connect(self.set_mode)
+        mp.modeChanged.connect(self.choose_mode)
         mp.bandwidthChanged.connect(self.set_bandwidth)
         mp.stepChanged.connect(self.set_step)
         mp.bandSelected.connect(self._goto_band)
@@ -301,6 +355,8 @@ class MainWindow(QMainWindow):
         ap.eqChanged.connect(self._set_eq)
         ap.recordAudio.connect(self._record_audio)
         ap.recordIQ.connect(self._record_iq)
+        ap.vox.setChecked(bool(self.cfg.get("vox", False)))
+        ap.vox.toggled.connect(lambda v: (self.cfg.__setitem__("vox", v), self._rec_flag()))
         ap.deviceChanged.connect(self._audio_device)
 
         mem.recallRequested.connect(self.recall_memory)
@@ -337,6 +393,7 @@ class MainWindow(QMainWindow):
         self.speed.currentIndexChanged.connect(lambda _: self._set_engine("wf_speed", self.speed.currentData()))
         self.avg.valueChanged.connect(lambda v: (setattr(self.wf, "avg_alpha", v / 100), self.cfg.__setitem__("spectrum_avg", v / 100)))
         self.peak.toggled.connect(lambda v: (setattr(self.wf, "peak_hold", v), self.wf.clear_peak()))
+        self.level_combo.currentTextChanged.connect(self.apply_level)
         self.lcd_theme.currentTextChanged.connect(lambda n: (self.lcd.set_theme(n), self.cfg.__setitem__("lcd_theme", n)))
 
         ab = self.assist
@@ -359,21 +416,34 @@ class MainWindow(QMainWindow):
         xp.tuneMainRequested.connect(lambda f, m: (self.set_mode(m), self.tune(f)))
 
         self.scan_panel.transcribe.toggled.connect(self._toggle_transcription)
-        if self.cfg.get("check_updates", True):
-            from .. import updater as _upd
-            if _upd.install_kind() != "source":
-                QTimer.singleShot(5000, lambda: self.updates.check(manual=False))
+        sp2 = self.settings_panel
+        sp2.changed.connect(self._setting_changed)
+        sp2.checkUpdatesNow.connect(lambda: self.updates.check(manual=True))
+        sp2.webApply.connect(self._web_apply)
+        sp2.webOpen.connect(self._web_open)
+        sp2.webCopy.connect(self._web_copy)
+        if self.cfg.get("web_enabled", False):
+            QTimer.singleShot(700, self._web_apply)
+        # padrão PT2VHF: anúncio ao abrir, resultado da última atualização e verificação automática
+        if not os.environ.get("PT2VHF_NO_STARTUP_DIALOGS"):
+            QTimer.singleShot(1800, self._startup_notices)
+        QTimer.singleShot(12_000, lambda: self.updates.check(manual=False))
+        self._update_timer = QTimer(self)
+        self._update_timer.timeout.connect(lambda: self.updates.check(manual=False))
+        self._update_timer.start(6 * 3600 * 1000)
 
         # atalhos (estilo KiwiSDR / SDR#)
         for keys, fn in (
-            ("Alt+N", lambda: self.set_mode("NFM")), ("Alt+W", lambda: self.set_mode("WFM")),
-            ("Alt+A", lambda: self.set_mode("AM")), ("Alt+U", lambda: self.set_mode("USB")),
-            ("Alt+L", lambda: self.set_mode("LSB")), ("Alt+C", lambda: self.set_mode("CW")),
+            ("Alt+N", lambda: self.choose_mode("NFM")), ("Alt+W", lambda: self.choose_mode("WFM")),
+            ("Alt+A", lambda: self.choose_mode("AM")), ("Alt+U", lambda: self.choose_mode("USB")),
+            ("Alt+L", lambda: self.choose_mode("LSB")), ("Alt+C", lambda: self.choose_mode("CW")),
             ("Ctrl+Right", lambda: self.tune(self.engine.vfo + self.step, snap=True)),
             ("Ctrl+Left", lambda: self.tune(self.engine.vfo - self.step, snap=True)),
             ("Ctrl+Up", lambda: self.tune(self.engine.vfo + 10 * self.step, snap=True)),
             ("Ctrl+Down", lambda: self.tune(self.engine.vfo - 10 * self.step, snap=True)),
             ("Ctrl+Shift+M", lambda: self.audio_panel.mute.toggle()),
+            ("Alt+O", lambda: self.choose_mode("AUTO")),
+            ("Alt+Left", lambda: self.jump_neighbor(-1)), ("Alt+Right", lambda: self.jump_neighbor(+1)),
             ("Ctrl+B", lambda: self._vfo_action("swap")),
             ("Ctrl+S", self._auto_squelch),
             ("Ctrl+L", self._auto_levels),
@@ -411,10 +481,24 @@ class MainWindow(QMainWindow):
                     raise SourceError(f"Taxa do arquivo ({src.sample_rate} S/s) precisa ser múltipla de 240 kHz.")
                 self.engine.vfo = src.center_freq
         except SourceError as e:
-            QMessageBox.warning(self, "Fonte de sinal", str(e))
             self.rx_panel.set_running(False)
+            if name == "RTL-SDR":
+                from ..sources import rtl_driver
+                need, reason, _pid = rtl_driver.needs_preparation()
+                if need and QMessageBox.question(
+                        self, "RTL-SDR", f"{e}\n\n{reason}\nInstalar agora o driver WinUSB (como o Zadig)?") \
+                        == QMessageBox.Yes:
+                    ok, msg = rtl_driver.prepare()
+                    QMessageBox.information(self, "Preparar RTL-SDR",
+                                            msg + ("\n\nReconecte o dongle e clique em Ligar." if ok else ""))
+                    return
+            QMessageBox.warning(self, "Fonte de sinal", str(e))
             return
         self.cfg.update(source=name, sample_rate=src.sample_rate, gain=opts["gain"], ppm=opts["ppm"])
+        if src.check_freq(self.engine.vfo):  # frequência salva fora do alcance deste dongle
+            self.statusBar().showMessage(src.check_freq(self.engine.vfo), 12000)
+            self.engine.vfo = 145.570e6
+            self.vfos[self.active_vfo]["freq"] = self.engine.vfo
         self.engine.start(src)
         self._apply_receiver_settings()
         self.rx_panel.set_running(True)
@@ -432,6 +516,25 @@ class MainWindow(QMainWindow):
         self.status_src.setText("Parado")
         self.audio_panel.rec_audio.setChecked(False)
         self.audio_panel.rec_iq.setChecked(False)
+
+    def _prepare_rtlsdr(self):
+        from ..sources import rtl_driver
+        need, reason, _pid = rtl_driver.needs_preparation()
+        if not need:
+            QMessageBox.information(self, "RTL-SDR", "Nada a preparar: nenhum RTL-SDR sem o driver WinUSB foi "
+                                    "encontrado. Conecte o dongle e tente de novo, se necessário.")
+            return
+        if QMessageBox.question(self, "Preparar RTL-SDR", f"{reason}\n\nInstalar o driver WinUSB somente na "
+                                "interface 0 do dongle? O Windows pedirá permissão de administrador uma vez.") \
+                != QMessageBox.Yes:
+            return
+        ok, msg = rtl_driver.prepare()
+        (QMessageBox.information if ok else QMessageBox.warning)(self, "Preparar RTL-SDR",
+                                                                 msg + ("\n\nReconecte o dongle e clique em Ligar." if ok else ""))
+
+    def _diagnose_rtlsdr(self):
+        from ..sources import rtl_driver
+        QMessageBox.information(self, "Diagnóstico do RTL-SDR", rtl_driver.diagnose())
 
     def _src_call(self, method, value, cfg=None):
         if cfg:
@@ -491,12 +594,30 @@ class MainWindow(QMainWindow):
         if snap and self.step > 0:
             freq = round(freq / self.step) * self.step
         freq = min(max(float(freq), 24_000.0), 1_766_000_000.0)
+        if not self._freq_supported(freq):
+            return False
         self.engine.tune(freq)
         self.vfos[self.active_vfo]["freq"] = freq
         self.cfg["vfo_freq" if self.active_vfo == "A" else "vfo_b_freq"] = freq
         if self.current_mem and abs(self.current_mem.freq - freq) > 1:
             self.current_mem = None
         self._sync_views()
+
+    def _freq_supported(self, freq: float) -> bool:
+        """Recusa (com aviso, sem travar) frequências que o dongle não alcança."""
+        src = self.engine.source
+        fs = self.engine.sample_rate
+        if src is None or abs(freq - src.center_freq) < fs / 2 * 0.9:
+            return True
+        problem = src.check_freq(freq + fs / 8)
+        if not problem:
+            return True
+        self.statusBar().showMessage(problem, 12000)
+        box = QMessageBox(QMessageBox.Information, "Frequência fora do alcance", problem, QMessageBox.Ok, self)
+        box.setModal(False)
+        box.show()
+        self._sync_views()
+        return False
 
     def set_mode(self, mode: str, width: float | None = None):
         self.mode = mode
@@ -532,6 +653,8 @@ class MainWindow(QMainWindow):
         self._sync_views()
 
     def _goto_band(self, band):
+        if not self._freq_supported((band.start + band.end) / 2):
+            return
         self.set_step(band.step)
         self.set_mode(band.mode)
         self.tune((band.start + band.end) / 2, snap=True)
@@ -622,14 +745,40 @@ class MainWindow(QMainWindow):
         self.engine.audio = self.audio
         self.status_audio.setText("Áudio: OK" if self.audio.available else "Áudio indisponível")
 
+    def _vox_ready(self) -> bool:
+        """VOX precisa de squelch: com o squelch aberto tudo seria gravado."""
+        if self.audio_panel.squelch.value() > -150 or self.engine.tone_squelch is not None:
+            return True
+        r = QMessageBox.question(self, "VOX", "O squelch está aberto: o VOX gravaria o ruído o tempo todo.\n\n"
+                                 "Ajustar o squelch automaticamente (6 dB acima do ruído atual)?")
+        if r == QMessageBox.Yes:
+            self._auto_squelch()
+            return True
+        return False
+
     def _record_audio(self, on):
+        ap = self.audio_panel
         if on:
             if not self.engine.running:
-                self.audio_panel.rec_audio.setChecked(False)
+                ap.rec_audio.setChecked(False)
                 return
-            p = self.engine.start_audio_recording(self.cfg["recordings_dir"])
-            self.statusBar().showMessage(f"Gravando áudio em {p}", 5000)
+            if ap.vox.isChecked():
+                if not self._vox_ready():
+                    ap.rec_audio.setChecked(False)
+                    return
+                folder = str(Path(self.cfg["recordings_dir"]) / "vox")
+                single = bool(ap.vox_files.currentData())
+                self.engine.vox_rec = ActivityRecorder(folder, AUDIO_RATE, min_s=0.5, single_file=single)
+                self.statusBar().showMessage(f"Gravando com VOX em {folder}", 6000)
+            else:
+                p = self.engine.start_audio_recording(self.cfg["recordings_dir"])
+                self.statusBar().showMessage(f"Gravando áudio em {p}", 5000)
         else:
+            rec, self.engine.vox_rec = self.engine.vox_rec, None
+            if rec is not None:
+                ev = rec.close()
+                if ev:
+                    self.scan_panel.add_activity(ev, self._mem_name(ev["freq"]))
             self.engine.stop_audio_recording()
         self._rec_flag()
 
@@ -638,13 +787,22 @@ class MainWindow(QMainWindow):
             if not self.engine.running:
                 self.audio_panel.rec_iq.setChecked(False)
                 return
+            vox = self.audio_panel.vox.isChecked()
+            if vox and not self._vox_ready():
+                self.audio_panel.rec_iq.setChecked(False)
+                return
+            self.engine.iq_vox = vox
             p = self.engine.start_iq_recording(self.cfg["recordings_dir"])
-            self.statusBar().showMessage(f"Gravando IQ em {p}", 5000)
+            self.statusBar().showMessage(f"Gravando IQ{' (VOX)' if vox else ''} em {p}", 5000)
         else:
             self.engine.stop_iq_recording()
         self._rec_flag()
 
+    def _rec_flag_vox(self):
+        self.lcd.flags["VOX"] = self.audio_panel.vox.isChecked()
+
     def _rec_flag(self):
+        self._rec_flag_vox()
         self.lcd.flags["REC"] = self.engine.recording_audio or self.engine.recording_iq
         self.lcd.update()
 
@@ -668,6 +826,7 @@ class MainWindow(QMainWindow):
     def recall_memory(self, ch: MemoryChannel):
         self._stop_scan()
         self._recall(ch)
+        self._after_select()
 
     def _recall(self, ch: MemoryChannel):
         self.set_mode(ch.mode, ch.bandwidth)
@@ -894,6 +1053,239 @@ class MainWindow(QMainWindow):
             self._rec_flag()
         self.lcd.update()
 
+    # ================================================================== anúncio / OTA
+    def _startup_notices(self):
+        from .assist_panels import show_welcome
+        show_welcome(self)
+        self.updates.show_last_result()
+
+    def operation_busy(self) -> str:
+        """Motivo para adiar a atualização automática, ou '' se o programa está livre."""
+        e = self.engine
+        if e.recording_audio or e.recording_iq or e.vox_rec is not None:
+            return "gravação em andamento"
+        if e.activity_rec is not None and e.activity_rec.active:
+            return "gravando uma transmissão"
+        if self.sscan is not None and self.sscan.running:
+            return "scanner em andamento"
+        if self.scan is not None:
+            return "varredura de memórias"
+        if e.replay_pos is not None:
+            return "reproduzindo (voltar no tempo)"
+        from PySide6.QtWidgets import QApplication
+        if QApplication.activeModalWidget() is not None:
+            return "janela de diálogo aberta"
+        return ""
+
+    def quit_for_update(self):
+        """Fecha tudo para o auxiliar externo instalar a atualização (ele reabre o programa)."""
+        self._quitting_for_update = True
+        self.close()
+        from PySide6.QtWidgets import QApplication
+        QApplication.quit()
+        QTimer.singleShot(8000, lambda: os._exit(0))
+
+    # ================================================================== configurações / web
+    def _setting_changed(self, key, value):
+        self.cfg[key] = value
+        if key == "ui_level":
+            self.apply_level(value)
+        elif key == "lcd_theme":
+            self.lcd_theme.setCurrentText(value)
+        elif key == "auto_tune":
+            self._set_auto_tune(bool(value))
+        elif key == "my_locator":
+            self.dec_panel.locator.setText(value)
+        self.cfg.save()
+
+    def _web_apply(self):
+        from ..webserver import WebServer
+        sp = self.settings_panel
+        self.cfg.update(web_enabled=sp.web_on.isChecked(), web_allow_lan=sp.web_lan.isChecked(),
+                        web_port=sp.web_port.value())
+        if self.web is not None:
+            if self.web.audio.push in self.engine.audio_listeners:
+                self.engine.audio_listeners.remove(self.web.audio.push)
+            self.web.stop()
+            self.web = None
+        if not sp.web_on.isChecked():
+            sp.web_status.setText("Interface web desativada")
+            return
+        eng = self.engine
+        web = WebServer(lambda: self._web_state,
+                        lambda: (eng.spectrum, eng.spectrum_center, eng.sample_rate) if eng.spectrum is not None else None,
+                        lan=sp.web_lan.isChecked(), port=sp.web_port.value())
+        try:
+            web.start()
+        except OSError as e:
+            sp.web_status.setText(f"Não foi possível abrir a porta {sp.web_port.value()}: {e}")
+            return
+        self.web = web
+        eng.audio_listeners.append(web.audio.push)
+        local = web.url(False)
+        txt = f"Ativa: {local}"
+        if web.lan:
+            txt += f"\nRede local: {web.url(True)}"
+        sp.web_status.setText(txt)
+
+    def _web_open(self):
+        if self.web is None:
+            self.settings_panel.web_on.setChecked(True)
+        if self.web is not None:
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+            QDesktopServices.openUrl(QUrl(self.web.url(False)))
+
+    def _web_copy(self):
+        if self.web is None:
+            return
+        from PySide6.QtWidgets import QApplication
+        QApplication.clipboard().setText(self.web.url())
+        self.statusBar().showMessage("Endereço da interface web copiado", 4000)
+
+    def _update_web_state(self):
+        if self.web is None:
+            return
+        st = self.engine.status
+        dbm, s_txt = dbfs_to_s_units(st["signal_db"], self.cfg["s_meter_cal"])
+        self._web_state = {
+            "version": __version__, "freq": self.engine.vfo, "mode": self.lcd.mode, "bw": self.high - self.low,
+            "s_text": s_txt, "dbm": dbm, "sq_open": bool(st["sq_open"]),
+            "ctcss": st.get("ctcss"), "mem": self.lcd.mem_label, "scan": bool(self.lcd.flags.get("SCAN")),
+            "replay": bool(self.lcd.flags.get("REPLAY")), "running": self.engine.running,
+            "aprs": list(self._web_aprs)}
+
+    # ================================================================== modo AUTO / auto-sintonia / vizinho
+    def choose_mode(self, mode: str):
+        """Tecla de modo (display, painel ou atalho). "AUTO" detecta e aplica sozinho."""
+        if mode == "AUTO":
+            self.auto_mode = True
+            self.cfg["auto_mode"] = True
+            self._sync_views()
+            self._after_select()
+            return
+        self.auto_mode = False
+        self.cfg["auto_mode"] = False
+        self.set_mode(mode)
+
+    def _set_auto_tune(self, on: bool):
+        self.auto_tune = bool(on)
+        self.cfg["auto_tune"] = self.auto_tune
+        self.statusBar().showMessage("Auto-sintonia ao selecionar: " + ("ligada" if on else "desligada"), 4000)
+        self._sync_views()
+
+    def select_transmission(self, freq: float):
+        """Clique no waterfall/espectro: sintoniza e, se ligado, ajusta exatamente na transmissão."""
+        if self.tune(freq) is not False:
+            self._after_select()
+
+    def _after_select(self, from_scanner: bool = False):
+        if not self.engine.running or not (self.auto_mode or self.auto_tune):
+            return
+        self._sel_gen += 1
+        gen = self._sel_gen
+        vfo, mode, step = self.engine.vfo, self.mode, self.step
+        if self.auto_mode:
+            from ..dsp.assist import detect_mode
+            kind, secs = "auto_mode", 2.5
+            fn = lambda iq, fs, v, m: detect_mode(iq, fs, v)  # noqa: E731
+        else:
+            from ..dsp.assist import fine_tune
+            kind, secs = "auto_tune", (4.0 if mode in ("USB", "LSB") else 0.6)
+            fn = lambda iq, fs, v, m: fine_tune(iq, fs, m, v, step)  # noqa: E731
+
+        def cb(iq, fs):
+            try:
+                res = fn(iq, fs, vfo, mode)
+            except Exception as e:  # noqa: BLE001
+                log.warning("auto: %s", e)
+                res = None
+            self.engine.events.put((kind, {"res": res, "vfo": vfo, "gen": gen}, time.time()))
+        QTimer.singleShot(250, lambda: self.engine.capture_if(secs, cb) if gen == self._sel_gen else None)
+
+    def _auto_result(self, kind, d):
+        if d["gen"] != self._sel_gen or abs(self.engine.vfo - d["vfo"]) > 1:
+            return  # outra seleção aconteceu no meio da análise
+        res = d["res"]
+        if res is None:
+            return
+        if kind == "auto_mode":
+            if res.confidence < 0.55:
+                return
+            grid = {"CW": 10, "USB": 1, "LSB": 1}.get(res.mode, 100)
+            target = round((d["vfo"] + res.center_offset) / grid) * grid
+            if res.mode != self.mode:
+                self.set_mode(res.mode, res.bandwidth)
+            self.tune(target)
+            self.statusBar().showMessage(f"AUTO: {res.mode} — {res.reason}", 6000)
+            if res.mode in ("NFM", "WFM", "AM") and self.auto_tune:
+                self._after_select_tune_only()
+        else:
+            delta, why = res
+            if abs(delta) < (2 if self.mode in ("USB", "LSB", "CW") else 20):
+                return
+            self.tune(d["vfo"] + delta)
+            self.statusBar().showMessage(f"Auto-sintonia: {delta:+.0f} Hz ({why})", 6000)
+
+    def _after_select_tune_only(self):
+        was = self.auto_mode
+        self.auto_mode = False
+        try:
+            self._after_select()
+        finally:
+            self.auto_mode = was
+
+    def _pan_to(self, center: float):
+        """Arraste do waterfall: o receptor passa a cobrir a região visível (o VFO anda junto)."""
+        eng = self.engine
+        if not eng.running or eng.hold_center or not eng.source.tunable:
+            return
+        problem = eng.source.check_freq(center)
+        if problem:
+            self.statusBar().showMessage(problem, 8000)
+            return
+        delta = center - eng.source.center_freq
+        if self.tune(eng.vfo + delta) is False:
+            return
+        eng.set_center(center)
+        self.statusBar().showMessage(f"Waterfall: região {center / 1e6:.3f} MHz", 3000)
+
+    def jump_neighbor(self, direction: int):
+        """◀ / ▶: salta para a próxima transmissão ativa e sintoniza nela."""
+        if not self.engine.running or self.engine.spectrum is None:
+            self.statusBar().showMessage("Ligue o receptor para procurar transmissões.", 4000)
+            return
+        from ..scanner import detect_signals
+        src, fs = self.engine.source, self.engine.sample_rate
+        center = self.engine.spectrum_center
+        if abs(center - src.center_freq) > 1:  # espectro ainda é do centro anterior: espera o novo
+            QTimer.singleShot(150, lambda: self.jump_neighbor(direction))
+            return
+        vfo = self.engine.vfo
+        res = max(500, min(self.step, 5000))
+        dets, _floor = detect_signals(self.engine.spectrum, center, fs, center - fs / 2, center + fs / 2, res, 10)
+        sep = max((self.high - self.low) * 0.6, 1500)
+        locks = self.sscan.cfg.lockouts if self.sscan is not None else set()
+        cands = [d.freq for d in dets if (d.freq - vfo) * direction > sep
+                 and not any(abs(d.freq - x) < sep for x in locks)]
+        if cands:
+            self._neighbor_hops = 0
+            target = min(cands, key=lambda f: abs(f - vfo))
+            self.select_transmission(target)
+            self.statusBar().showMessage(f"Transmissão vizinha: {target / 1e6:.5f} MHz", 4000)
+            return
+        if self._neighbor_hops >= 20:
+            self._neighbor_hops = 0
+            self.statusBar().showMessage("Nenhuma transmissão encontrada nessa direção.", 5000)
+            return
+        self._neighbor_hops += 1
+        nxt = vfo + direction * fs * 0.4
+        self.statusBar().showMessage(f"Procurando transmissão… {nxt / 1e6:.3f} MHz", 2000)
+        if self.tune(nxt) is False:
+            self._neighbor_hops = 0
+            return
+        QTimer.singleShot(700, lambda: self.jump_neighbor(direction))
+
     # ================================================================== assistente de sintonia
     def _assist_capture(self, seconds, kind, fn, busy_text, manual=True):
         if not self.engine.running:
@@ -1041,13 +1433,17 @@ class MainWindow(QMainWindow):
         self.wf.step = self.step
         self.wf.set_vfo(vfo, self.low, self.high)
         self.mode_panel.show_mode(self.mode, self.high - self.low, self.step)
+        if self.auto_mode:
+            self.mode_panel.mode_btns["AUTO"].setChecked(True)
         self._update_lcd()
 
     def _update_lcd(self):
         self.fav_bar.mark_current(self.engine.vfo)
         lcd = self.lcd
         lcd.set_freq(self.engine.vfo)
-        lcd.mode = self.mode
+        lcd.mode = f"AUTO·{self.mode}" if self.auto_mode else self.mode
+        lcd.mode_key = "AUTO" if self.auto_mode else self.mode
+        lcd.auto_tune = self.auto_tune
         lcd.bandwidth = self.high - self.low
         lcd.step = self.step
         lcd.vfo_name = f"VFO {self.active_vfo}" if self.current_mem is None else "MEM"
@@ -1078,6 +1474,7 @@ class MainWindow(QMainWindow):
                         self.statusBar().showMessage(f"Scanner: sinal em {ev[1] / 1e6:.4f} MHz "
                                                      f"{self._mem_name(ev[1])}", 4000)
                         self._sync_views()
+                        self._after_select(from_scanner=True)
                     elif ev[0] == "resume":
                         self._sync_views()
             self._update_hits()
@@ -1107,15 +1504,22 @@ class MainWindow(QMainWindow):
             n += 1
             if kind == "aprs":
                 self.dec_panel.add_aprs(data, ts)
+                self._web_aprs.appendleft({"t": time.strftime("%H:%M:%S", time.localtime(ts)), "src": data.source,
+                                           "type": data.type, "pos": data.position_str(),
+                                           "text": (data.comment or data.message or "")[:80]})
                 self.statusBar().showMessage(f"APRS: {data.raw}", 4000)
             elif kind == "dtmf":
                 self.dec_panel.add_dtmf(data, ts)
+            elif kind == "vox":
+                self.scan_panel.add_activity(data, self._mem_name(data["freq"]))
             elif kind == "activity":
                 self.scan_panel.add_activity(data, self._mem_name(data["freq"]))
                 if self.transcriber is not None:
                     self.transcriber.submit(data["file"])
             elif kind == "transcription":
                 self.scan_panel.set_transcription(*data)
+            elif kind in ("auto_mode", "auto_tune"):
+                self._auto_result(kind, data)
             elif kind in ("assist_tune", "assist_mode", "assist_filter"):
                 self._assist_result(kind, data)
             elif kind == "replay":
@@ -1123,9 +1527,13 @@ class MainWindow(QMainWindow):
             elif kind == "replay_end":
                 self.lcd.flags["REPLAY"] = False
                 self.tshift.status.setText("Ao vivo")
+            elif kind == "source_msg":
+                self.statusBar().showMessage(data, 10000)
+                self.rx_panel.info.setText(data)
             elif kind == "error":
                 self.statusBar().showMessage(data, 8000)
         self._scan_tick()
+        self._update_web_state()
         if self.engine.replay_pos is not None:
             self.tshift.status.setText(f"Reproduzindo {self.engine.replay_seconds_behind():.0f} s atrás — "
                                        "a recepção ao vivo continua no waterfall")
@@ -1144,6 +1552,38 @@ class MainWindow(QMainWindow):
 
     def _reset_layout(self):
         self.restoreState(self._default_state)
+        self.apply_level(self.cfg.get("ui_level", "Intermediário"))
+
+    def apply_level(self, name: str):
+        """Mostra/esconde recursos conforme o nível (as configurações nunca se perdem)."""
+        if name not in LEVELS:
+            name = "Intermediário"
+        lvl = LEVELS.index(name)
+        self.cfg["ui_level"] = name
+        for combo in (self.level_combo,):
+            combo.blockSignals(True)
+            combo.setCurrentText(name)
+            combo.blockSignals(False)
+        for act in getattr(self, "_level_actions", []):
+            act.setChecked(act.text() == name)
+        dock_lvl = {"rx": 0, "mode": 0, "audio": 0, "mem": 0, "scan": 1, "dec": 1, "extras": 2}
+        for key, dock in self.docks.items():
+            dock.setVisible(lvl >= dock_lvl.get(key, 0))
+        group_lvl = {"Sintonizador": 0, "AGC / Ruído": 2, "Equalizador": 1, "Saída / Gravação": 1,
+                     "Voltar no tempo": 2, "Assistente de sintonia": 1}
+        from PySide6.QtWidgets import QFormLayout, QGroupBox
+        for panel in (self.rx_panel, self.mode_panel, self.audio_panel):
+            for g in panel.findChildren(QGroupBox):
+                need = group_lvl.get(g.title())
+                if need is not None:
+                    g.setVisible(lvl >= need)
+        rp, mp = self.rx_panel, self.mode_panel
+        for w in (rp.ppm, rp.bias, rp.direct, mp.cw_pitch, mp.deemph, mp.nfm_deemph):
+            form = w.parentWidget().layout()
+            if isinstance(form, QFormLayout):
+                form.setRowVisible(w, lvl >= 2)
+        for a, need in getattr(self, "_tb_levels", []):
+            a.setVisible(lvl >= need)
 
     def _show_shortcuts(self):
         QMessageBox.information(self, "Atalhos", (
@@ -1156,6 +1596,8 @@ class MainWindow(QMainWindow):
             " Esc parar varredura."))
 
     def closeEvent(self, ev):
+        if self.web is not None:
+            self.web.stop()
         if self.transcriber is not None:
             self.transcriber.stop()
         s = QSettings("PT2VHF", "SDRTool")
@@ -1175,6 +1617,7 @@ def _scroll(w):
     from PySide6.QtWidgets import QFrame, QScrollArea
     sa = QScrollArea()
     sa.setWidgetResizable(True)
+    sa.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)  # o conteúdo se ajusta à largura
     sa.setFrameShape(QFrame.NoFrame)
     sa.setWidget(w)
     return sa

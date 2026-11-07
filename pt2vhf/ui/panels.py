@@ -240,12 +240,14 @@ class ModePanel(QWidget):
         mg = QGroupBox("Modo")
         ml = QGridLayout(mg)
         self.mode_btns = {}
-        for i, m in enumerate(MODES):
+        for i, m in enumerate(["AUTO"] + [k for k in MODES if k != "RAW"] + ["RAW"]):
             b = QPushButton(m)
+            if m == "AUTO":
+                b.setToolTip("Detecta o tipo da transmissão e aplica modo, filtro e sintonia automaticamente")
             b.setCheckable(True)
             b.setAutoExclusive(True)
             b.clicked.connect(lambda _=False, mm=m: self.modeChanged.emit(mm))
-            ml.addWidget(b, i // 4, i % 4)
+            ml.addWidget(b, i // 3, i % 3)
             self.mode_btns[m] = b
         lay.addWidget(mg)
 
@@ -333,6 +335,21 @@ class ModePanel(QWidget):
 
 
 # =============================================================================
+def _compact(widget):
+    """Formulários quebram em duas linhas quando o painel é estreito (rótulo em cima)."""
+    from PySide6.QtWidgets import QSizePolicy
+    for form in widget.findChildren(QFormLayout):
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+    widgets = [w for cls in (QComboBox, QDoubleSpinBox, QSpinBox, QSlider) for w in widget.findChildren(cls)]
+    for w in widgets:
+        w.setMinimumWidth(40)
+        if w.sizePolicy().horizontalPolicy() == QSizePolicy.Fixed:
+            continue
+        w.setSizePolicy(QSizePolicy.Ignored if isinstance(w, QComboBox) else QSizePolicy.Expanding,
+                        w.sizePolicy().verticalPolicy())
+
+
 class AudioPanel(QWidget):
     volumeChanged = Signal(float)
     muteChanged = Signal(bool)
@@ -464,6 +481,13 @@ class AudioPanel(QWidget):
         rr.addWidget(self.rec_audio)
         rr.addWidget(self.rec_iq)
         f.addRow(rr)
+        self.vox = QCheckBox("VOX: gravar só quando houver transmissão")
+        self.vox.setToolTip("Grava apenas enquanto o squelch estiver aberto (com 0,5 s antes, para não cortar a fala)")
+        f.addRow(self.vox)
+        self.vox_files = QComboBox()
+        self.vox_files.addItem("Arquivo único (sem os silêncios)", True)
+        self.vox_files.addItem("Um arquivo por transmissão", False)
+        f.addRow("Arquivos VOX:", self.vox_files)
         lay.addWidget(g)
         lay.addStretch(1)
 
@@ -488,6 +512,7 @@ class AudioPanel(QWidget):
         self.rec_iq.toggled.connect(self.recordIQ)
         self.device.currentIndexChanged.connect(lambda _: self.deviceChanged.emit(self.device.currentData()))
         self._sq(self.squelch.value(), emit=False)
+        _compact(self)
 
     def _sq(self, v, emit=True):
         self.sq_label.setText("aberto" if v <= -150 else f"{v} dB")

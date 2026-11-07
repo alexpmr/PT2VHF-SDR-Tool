@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 # Build (Windows):  pyinstaller --noconfirm pt2vhf.spec
 #   dist/PT2VHF-SDR-Tool/PT2VHF-SDR-Tool.exe   -> pasta usada pelo instalador (Inno Setup)
-#   dist/PT2VHF-SDR-Tool-portable.exe          -> versão portátil (um único .exe)
+#   dist/PT2VHF-SDR-Tool-Portable.exe          -> versão portátil (um único .exe)
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
 binaries, datas = [], []
@@ -13,6 +13,16 @@ for pkg in ("pyrtlsdrlib", "_sounddevice_data"):
         hiddenimports += collect_submodules(pkg)
     except Exception:
         pass
+
+import os
+datas += [("scripts/apply-update.ps1", "scripts")]
+for f in ("drivers/wdi-simple.exe", "drivers/libwdi-COPYING-LGPL.txt"):
+    if os.path.isfile(f):
+        datas.append((f, "drivers"))
+for f in ("rtlsdr.dll", "libusb-1.0.dll", "pthreadVC2.dll", "LICENSE.txt"):
+    p = os.path.join("packaging", "rtlsdr_blog", f)
+    if os.path.isfile(p):
+        (binaries if f.endswith(".dll") else datas).append((p, "rtlsdr_blog"))
 
 EXCLUDES = ["tkinter", "matplotlib", "IPython", "pytest",
             "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
@@ -33,6 +43,6 @@ exe_dir = EXE(pyz, a.scripts, [], exclude_binaries=True, name="PT2VHF-SDR-Tool",
 coll = COLLECT(exe_dir, a.binaries, a.datas, name="PT2VHF-SDR-Tool")
 
 # portátil (arquivo único)
-exe_one = EXE(pyz, a.scripts, a.binaries, a.datas, [], name="PT2VHF-SDR-Tool-portable",
+exe_one = EXE(pyz, a.scripts, a.binaries, a.datas, [], name="PT2VHF-SDR-Tool-Portable",
               console=False, icon="packaging/pt2vhf.ico", version="packaging/version_info.txt",
               runtime_tmpdir=None)

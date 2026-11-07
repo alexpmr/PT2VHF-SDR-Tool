@@ -3,8 +3,9 @@ e atualização pelo site oficial."""
 from __future__ import annotations
 
 import threading
+import time
 
-from PySide6.QtCore import QObject, Qt, QUrl, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QGridLayout, QGroupBox,
                                QHBoxLayout, QLabel, QMessageBox, QProgressDialog, QPushButton,
@@ -194,82 +195,204 @@ class ExtrasPanel(QWidget):
 
 
 class UpdateController(QObject):
-    """Consulta e aplica atualizações do www.pt2vhf.com sem travar a interface."""
+    """OTA no padrão dos programas PT2VHF (Sat Tool): verificação automática, instalação automática
+    quando o programa está livre (opção padrão) ou pergunta "Atualizar agora / Depois" (adia 24 h)."""
 
-    _checked = Signal(object, str, bool)   # info, erro, manual
+    RETRY_FAIL_S = 6 * 3600
+    SNOOZE_S = 24 * 3600
+    _checked = Signal(object, str, bool)
     _progress = Signal(int, int)
     _downloaded = Signal(object, str)
 
-    def __init__(self, window):
+    def __init__(self, window, button: QPushButton):
         super().__init__(window)
         self.win = window
+        self.btn = button
+        self.kind = updater.install_kind()
+        self.available = None
         self._dlg = None
+        self._busy_download = False
+        self._prompted = ""
+        self._silent = False
         self._checked.connect(self._on_checked)
         self._progress.connect(self._on_progress)
         self._downloaded.connect(self._on_downloaded)
+        self.btn.setText(f"v{__version__}")
+        self.btn.setToolTip("Verificar versões em www.pt2vhf.com e atualizar")
+        self.btn.clicked.connect(self.on_button)
 
+    # ------------------------------------------------------------ consulta
     def check(self, manual: bool = False):
+        if self.kind == "source" and not manual:
+            return
+
         def run():
             try:
-                info = updater.check()
+                info = updater.check(self.kind if self.kind != "source" else "installer")
                 self._checked.emit(info, "", manual)
             except updater.UpdateError as e:
                 self._checked.emit(None, str(e), manual)
         threading.Thread(target=run, daemon=True).start()
+
+    def on_button(self):
+        if self.available is not None and self.available.file is not None and self.kind != "source":
+            self.start(silent=False)
+        else:
+            self.check(manual=True)
+
+    def _cfg(self):
+        return self.win.cfg
 
     def _on_checked(self, info, err, manual):
         if err:
             if manual:
                 QMessageBox.warning(self.win, "Atualizações", err)
             return
+        self.available = info
         if info is None:
+            self.btn.setText(f"v{__version__}")
             if manual:
                 QMessageBox.information(self.win, "Atualizações",
                                         f"Você já está na versão mais recente ({__version__}).")
             return
-        kind = updater.install_kind()
-        box = QMessageBox(self.win)
-        box.setWindowTitle("Nova versão disponível")
-        box.setText(f"<b>PT2VHF SDR Tool {info.version}</b> está disponível (você tem a {__version__}).")
-        box.setInformativeText((info.notes or "") + "\n\nDownloads e atualizações oficiais: somente www.pt2vhf.com.")
-        can_auto = kind in ("installer", "portable") and info.file is not None
-        b_now = box.addButton("Atualizar agora", QMessageBox.AcceptRole) if can_auto else None
-        b_page = box.addButton("Abrir página de download", QMessageBox.ActionRole)
-        box.addButton("Mais tarde", QMessageBox.RejectRole)
-        box.exec()
-        if b_now is not None and box.clickedButton() is b_now:
-            self._start_download(info, kind)
-        elif box.clickedButton() is b_page:
-            QDesktopServices.openUrl(QUrl(info.page))
+        self.btn.setText(f"Nova versão {info.version} · atualizar")
+        if self.kind == "source" or info.file is None:
+            if manual:
+                QMessageBox.information(self.win, "Atualizações",
+                                        f"A versão {info.version} está disponível em {info.page}.")
+                QDesktopServices.openUrl(QUrl(info.page))
+            return
+        if manual:
+            self.start(silent=False)
+        elif self._cfg().get("auto_update", True):
+            self.try_auto()
+        else:
+            self.maybe_prompt()
 
-    def _start_download(self, info, kind):
-        self._dlg = QProgressDialog("Baixando atualização de www.pt2vhf.com…", None, 0, 100, self.win)
-        self._dlg.setWindowModality(Qt.WindowModal)
-        self._dlg.setMinimumDuration(0)
-        self._dlg.show()
+    # ------------------------------------------------------------ automático / pergunta
+    def try_auto(self):
+        info = self.available
+        if info is None or self._busy_download:
+            return
+        failed = self._cfg().get("update_failed") or {}
+        if failed.get("version") == info.version and time.time() - float(failed.get("at") or 0) < self.RETRY_FAIL_S:
+            return
+        busy = self.win.operation_busy()
+        if busy:
+            self.btn.setText(f"Nova versão {info.version} · instala ao ficar livre")
+            self.btn.setToolTip("Atualização automática adiada: " + busy)
+            QTimer.singleShot(60_000, self.try_auto)
+            return
+        self.start(silent=True)
+
+    def maybe_prompt(self):
+        info = self.available
+        if info is None or self._busy_download or self._prompted == info.version:
+            return
+        snooze = self._cfg().get("update_prompt_snooze") or {}
+        if snooze.get("version") == info.version and time.time() - float(snooze.get("at") or 0) < self.SNOOZE_S:
+            return
+        from PySide6.QtWidgets import QApplication
+        if QApplication.activeModalWidget() is not None:
+            QTimer.singleShot(5000, self.maybe_prompt)
+            return
+        self._prompted = info.version
+        box = QMessageBox(self.win)
+        box.setIcon(QMessageBox.Question)
+        box.setWindowTitle("Nova versão disponível")
+        box.setText(f"PT2VHF SDR Tool {info.version} está disponível (instalada: {__version__}).\n\n"
+                    "Deseja atualizar agora?")
+        now = box.addButton("Atualizar agora", QMessageBox.AcceptRole)
+        box.addButton("Depois", QMessageBox.RejectRole)
+        box.exec()
+        if box.clickedButton() is now:
+            self.start(silent=False)
+        else:
+            self._cfg()["update_prompt_snooze"] = {"version": info.version, "at": time.time()}
+            self._cfg().save()
+
+    # ------------------------------------------------------------ download e instalação
+    def start(self, silent: bool):
+        info = self.available
+        if info is None or info.file is None or self._busy_download:
+            return
+        self._busy_download, self._silent = True, silent
+        if not silent:
+            self._dlg = QProgressDialog("Baixando e verificando atualização de www.pt2vhf.com…", None, 0, 100, self.win)
+            self._dlg.setWindowModality(Qt.WindowModal)
+            self._dlg.setMinimumDuration(0)
+            self._dlg.show()
+        self.btn.setText("Atualização em andamento…")
 
         def run():
             try:
                 p = updater.download(info, progress=lambda a, b: self._progress.emit(a, b))
-                self._downloaded.emit((p, kind), "")
+                self._downloaded.emit(p, "")
             except updater.UpdateError as e:
                 self._downloaded.emit(None, str(e))
         threading.Thread(target=run, daemon=True).start()
 
     def _on_progress(self, got, total):
+        pct = min(99, int(got * 100 / max(total, 1)))
         if self._dlg:
-            self._dlg.setValue(int(got * 100 / max(total, 1)))
+            self._dlg.setValue(pct)
+        if self._silent:
+            self.btn.setText(f"Atualizando para {self.available.version}… {pct}%")
 
-    def _on_downloaded(self, res, err):
+    def _on_downloaded(self, path, err):
+        self._busy_download = False
         if self._dlg:
             self._dlg.close()
+            self._dlg = None
         if err:
-            QMessageBox.warning(self.win, "Atualização", err)
+            self.btn.setText("Falha ao atualizar · tentar novamente")
+            self._cfg()["update_failed"] = {"version": self.available.version, "at": time.time()}
+            self._cfg().save()
+            if not self._silent:
+                QMessageBox.warning(self.win, "Atualização", err)
             return
-        path, kind = res
         try:
-            updater.apply(path, kind)
+            updater.apply(path, self.kind, self.available.version)
         except updater.UpdateError as e:
-            QMessageBox.warning(self.win, "Atualização", str(e))
+            QMessageBox.critical(self.win, "Atualização não aplicada", str(e))
             return
-        self.win.close()
+        self.win.quit_for_update()
+
+    # ------------------------------------------------------------ resultado da anterior
+    def show_last_result(self):
+        res = updater.read_update_result()
+        if not res:
+            return
+        status, version, detail = res
+        if status == "ok":
+            QMessageBox.information(self.win, "Atualização concluída",
+                                    f"PT2VHF SDR Tool atualizado para a versão {version or __version__}.")
+        else:
+            QMessageBox.warning(self.win, "Atualização não concluída",
+                                f"A atualização não terminou: {detail}\n\nBaixe a versão nova em "
+                                "www.pt2vhf.com/sdr ou tente de novo pelo botão de versão.")
+
+
+def show_welcome(parent):
+    """Anúncio de abertura (padrão dos programas PT2VHF): convite às demais aplicações e ao site."""
+    from PySide6.QtWidgets import QDialog, QDialogButtonBox
+    dlg = QDialog(parent)
+    dlg.setWindowTitle("PT2VHF SDR Tool")
+    lay = QVBoxLayout(dlg)
+    title = QLabel("Feito por radioamadores, para radioamadores")
+    title.setStyleSheet("font-size:18px;font-weight:700")
+    text = QLabel("Obrigado por usar o PT2VHF SDR Tool! Conheça também as outras aplicações gratuitas "
+                  "desenvolvidas para a comunidade: APRS Client, APRS Android, Prop Tool, Mesh Analyzer, "
+                  "Sat Tool, Prog Tool, QSL Manager e mais. Downloads e atualizações oficiais somente pelo site.")
+    text.setWordWrap(True)
+    link = QLabel('<a href="https://www.pt2vhf.com" style="color:#6cc7ff;font-weight:700">www.PT2VHF.com</a>')
+    link.setOpenExternalLinks(True)
+    bb = QDialogButtonBox()
+    close = bb.addButton("Fechar", QDialogButtonBox.RejectRole)
+    close.setDefault(True)
+    bb.rejected.connect(dlg.reject)
+    for w in (title, text, link):
+        lay.addWidget(w)
+    lay.addWidget(bb)
+    dlg.setMinimumWidth(520)
+    dlg.exec()
