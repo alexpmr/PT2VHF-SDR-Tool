@@ -4,7 +4,15 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
-(nenhum)
+### Campos de configuração com a largura do conteúdo, não da página inteira (registrado em 07/11/2026)
+- Hoje, nas abas de configuração (Configurações → Receptor, Modo / Filtro, Geral · Web · Atualizações e demais
+  ajustes), as listas suspensas e campos se esticam por toda a largura da janela — ex.: **Fonte**, **Dispositivo**,
+  Amostragem, Nível da interface, Tema, Biblioteca do RTL-SDR.
+- Pedido: cada menu/campo com a largura suficiente para o texto que mostra (o item mais longo da lista), sem ocupar
+  a largura toda da página; rótulo e campo alinhados à esquerda, como nos demais programas PT2VHF.
+- Vale para **todas** as opções de configurações e ajustes (incluindo os painéis Áudio / DSP, Scanner,
+  Decodificadores e Receptores extras quando tiverem o mesmo problema); conferir também em janela maximizada e
+  com o painel estreito (sem cortar texto nem criar rolagem horizontal).
 
 ## Concluídos
 - 0.5.0 — itens registrados em 07/11/2026: RTL-SDR voltou a abrir (dithering -1 + LIBUSB_ERROR_ACCESS da 0.4.1);
