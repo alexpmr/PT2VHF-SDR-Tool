@@ -4,6 +4,15 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Pular para a transmissão vizinha (esquerda/direita) com auto-sintonia (registrado em 07/11/2026)
+- Botões/teclas **◀ sinal anterior | sinal seguinte ▶** (ex.: no display e atalhos de teclado) que saltam
+  para a próxima portadora/transmissão ativa abaixo ou acima da frequência atual, já sintonizando exatamente
+  nela (mesma lógica do item "Auto-sintonizar ao selecionar uma transmissão").
+- Usar a detecção de sinais do scanner (`detect_signals`) no espectro atual; se não houver sinal na faixa
+  visível, avançar o centro do receptor na direção escolhida até achar (respeitando bloqueios do scanner).
+- Opcional: com o modo AUTO ligado, aplicar também o modo detectado; ignorar o pico DC e sinais abaixo da
+  sensibilidade configurada.
+
 ### Painel Áudio / DSP sem barra de rolagem horizontal (registrado em 07/11/2026)
 - O bloco da direita (Áudio / DSP) mostra barra de rolagem horizontal: o conteúdo é mais largo que o painel
   (vê-se na captura da 0.3.0: equalizador cortado em "3.2k", campos de NB/Notch encostados na borda).
