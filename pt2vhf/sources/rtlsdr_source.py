@@ -48,7 +48,7 @@ def load_library():
             os.add_dll_directory(str(blog))
             os.environ["PATH"] = str(blog) + os.pathsep + os.environ.get("PATH", "")
             import ctypes
-            for dep in ("libusb-1.0.dll", "pthreadVC2.dll"):
+            for dep in ("msvcr100.dll", "libusb-1.0.dll", "pthreadVC2.dll"):
                 if (blog / dep).is_file():
                     ctypes.CDLL(str(blog / dep))
             ctypes.CDLL(str(blog / "rtlsdr.dll"))

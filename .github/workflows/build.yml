@@ -68,12 +68,8 @@ jobs:
           Get-ChildItem -Recurse blogdl -Filter *.dll | ForEach-Object { $_.FullName }
           $dll = Get-ChildItem -Recurse blogdl -Filter rtlsdr.dll | Where-Object { $_.FullName -match 'x64|64' } | Select-Object -First 1
           if (-not $dll) { throw 'rtlsdr.dll x64 do driver RTL-SDR Blog não encontrado na release' }
-          Copy-Item $dll.FullName packaging\rtlsdr_blog\
-          foreach ($dep in @('libusb-1.0.dll', 'pthreadVC2.dll')) {
-            $f = Join-Path $dll.DirectoryName $dep
-            if (Test-Path $f) { Copy-Item $f packaging\rtlsdr_blog\ }
-          }
-          if (-not (Test-Path packaging\rtlsdr_blog\libusb-1.0.dll)) { throw 'libusb-1.0.dll ausente junto do rtlsdr.dll' }
+          # todas as DLLs da pasta x64 (rtlsdr.dll + dependências: pthreadVC2, msvcr100, libusb se separada)
+          Get-ChildItem $dll.DirectoryName -Filter *.dll | Copy-Item -Destination packaging\rtlsdr_blog\
           "Driver RTL-SDR Blog $($rel.tag_name) (GPLv2): https://github.com/rtlsdrblog/rtl-sdr-blog" | Out-File packaging\rtlsdr_blog\LICENSE.txt
           Get-ChildItem packaging\rtlsdr_blog
       - name: libwdi wdi-simple (driver WinUSB do RTL-SDR, como no Sat Tool)

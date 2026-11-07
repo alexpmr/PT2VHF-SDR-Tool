@@ -19,10 +19,11 @@ datas += [("scripts/apply-update.ps1", "scripts")]
 for f in ("drivers/wdi-simple.exe", "drivers/libwdi-COPYING-LGPL.txt"):
     if os.path.isfile(f):
         datas.append((f, "drivers"))
-for f in ("rtlsdr.dll", "libusb-1.0.dll", "pthreadVC2.dll", "LICENSE.txt"):
-    p = os.path.join("packaging", "rtlsdr_blog", f)
-    if os.path.isfile(p):
-        (binaries if f.endswith(".dll") else datas).append((p, "rtlsdr_blog"))
+blog_dir = os.path.join("packaging", "rtlsdr_blog")
+if os.path.isdir(blog_dir):
+    for f in os.listdir(blog_dir):
+        p = os.path.join(blog_dir, f)
+        (binaries if f.lower().endswith(".dll") else datas).append((p, "rtlsdr_blog"))
 
 EXCLUDES = ["tkinter", "matplotlib", "IPython", "pytest",
             "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
