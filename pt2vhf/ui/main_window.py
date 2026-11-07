@@ -7,7 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDockWidget, QHBoxLayout, QLabel, QMainWindow,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDockWidget, QLabel, QMainWindow,
                                QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget)
 
 from .. import APP_NAME, __version__
@@ -59,6 +59,7 @@ QToolButton#favButton:checked { background: #c9871e; color: #120c02; font-weight
 QLabel#favStar { color: #f0b44a; font-size: 20px; padding: 0 4px; }
 QLabel#hintLabel { color: #7d8894; font-style: italic; }
 QLabel#infoLabel { color: #9aa6b2; }
+QToolBar#wfToolbar { background: transparent; border: 0; spacing: 6px; }
 """
 
 
@@ -113,7 +114,7 @@ class MainWindow(QMainWindow):
         self.fav_bar = FavoritesBar()
         self.fav_bar.refresh(self.bank.channels, self.engine.vfo)
         cl.addWidget(self.fav_bar)
-        cl.addLayout(self._build_wf_toolbar())
+        cl.addWidget(self._build_wf_toolbar())
         self.wf = SpectrumWaterfall()
         self.wf.set_colormap(self.cfg["wf_colormap"])
         self.wf.set_levels(self.cfg["wf_min_db"], self.cfg["wf_max_db"])
@@ -141,10 +142,10 @@ class MainWindow(QMainWindow):
         for key, title, w, area in (("rx", "Receptor", _scroll(self.rx_panel), Qt.LeftDockWidgetArea),
                                     ("mode", "Modo / Filtro", _scroll(self.mode_panel), Qt.LeftDockWidgetArea),
                                     ("audio", "Áudio / DSP", _scroll(self.audio_panel), Qt.RightDockWidgetArea),
-                                    ("mem", "Memórias / Varredura", self.mem_panel, Qt.BottomDockWidgetArea),
-                                    ("scan", "Scanner", self.scan_panel, Qt.BottomDockWidgetArea),
-                                    ("dec", "Decodificadores", self.dec_panel, Qt.BottomDockWidgetArea),
-                                    ("extras", "Receptores extras", self.extras_panel, Qt.BottomDockWidgetArea)):
+                                    ("mem", "Memórias / Varredura", _scroll(self.mem_panel), Qt.BottomDockWidgetArea),
+                                    ("scan", "Scanner", _scroll(self.scan_panel), Qt.BottomDockWidgetArea),
+                                    ("dec", "Decodificadores", _scroll(self.dec_panel), Qt.BottomDockWidgetArea),
+                                    ("extras", "Receptores extras", _scroll(self.extras_panel), Qt.BottomDockWidgetArea)):
             d = QDockWidget(title, self)
             d.setObjectName(f"dock_{key}")
             d.setWidget(w)
@@ -156,6 +157,8 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(self.docks["scan"], self.docks["dec"])
         self.tabifyDockWidget(self.docks["dec"], self.docks["extras"])
         self.docks["mem"].raise_()
+        self.wf.setMinimumHeight(300)
+        self.resizeDocks([self.docks["mem"]], [300], Qt.Vertical)
 
         self.status_src = QLabel("Parado")
         self.status_cpu = QLabel("")
@@ -167,8 +170,10 @@ class MainWindow(QMainWindow):
         self._build_menu()
 
     def _build_wf_toolbar(self):
-        row = QHBoxLayout()
-        row.setSpacing(6)
+        from PySide6.QtWidgets import QSizePolicy, QToolBar
+        row = QToolBar()
+        row.setObjectName("wfToolbar")
+        row.setMovable(False)  # QToolBar recolhe o que não cabe no botão »
         self.fft = QComboBox()
         for n in (1024, 2048, 4096, 8192, 16384, 32768):
             self.fft.addItem(f"FFT {n}", n)
@@ -208,14 +213,16 @@ class MainWindow(QMainWindow):
         row.addWidget(QLabel("Média"))
         row.addWidget(self.avg)
         row.addWidget(self.peak)
-        row.addSpacing(10)
+        row.addSeparator()
         row.addWidget(QLabel("Zoom:"))
         for label, span in (("Total", None), ("500k", 500e3), ("200k", 200e3), ("50k", 50e3), ("10k", 10e3)):
             b = QPushButton(label)
             b.setFixedHeight(24)
             b.clicked.connect(lambda _=False, s=span: self.wf.reset_zoom() if s is None else self.wf.zoom_to_vfo(s))
             row.addWidget(b)
-        row.addStretch(1)
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        row.addWidget(spacer)
         self.lcd_theme = QComboBox()
         self.lcd_theme.addItems(list(THEMES))
         self.lcd_theme.setCurrentText(self.cfg["lcd_theme"])
@@ -951,7 +958,8 @@ class MainWindow(QMainWindow):
                 self.assist.done("Nenhum sinal claro perto da frequência atual.")
                 return
             self.set_mode(res.mode, res.bandwidth)
-            self.tune(d["vfo"] + res.center_offset)
+            grid = {"CW": 10, "USB": 1, "LSB": 1}.get(res.mode, 100)
+            self.tune(round((d["vfo"] + res.center_offset) / grid) * grid)
             self.assist.done(f"{res.mode} — {res.reason} (confiança {res.confidence * 100:.0f}%).")
         else:
             if res is None:

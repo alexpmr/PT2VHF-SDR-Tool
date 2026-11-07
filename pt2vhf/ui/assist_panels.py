@@ -111,6 +111,7 @@ class ExtrasPanel(QWidget):
         for c, h in enumerate(["Ativo", "Frequência", "Modo", "Volume", "Squelch", "Nível", ""]):
             lab = QLabel(f"<b>{h}</b>")
             self.grid.addWidget(lab, 0, c)
+        self.grid.setColumnStretch(7, 1)
         self.lay.addLayout(self.grid)
         self.lay.addStretch(1)
         self.rows: list[dict] = []
@@ -129,9 +130,11 @@ class ExtrasPanel(QWidget):
         mode.addItems([m for m in MODES if m != "RAW"])
         mode.setCurrentText(ex.rx.mode)
         vol = QSlider(Qt.Horizontal)
+        vol.setMaximumWidth(160)
         vol.setRange(0, 100)
         vol.setValue(int(ex.rx.volume * 100))
         sq = QSlider(Qt.Horizontal)
+        sq.setMaximumWidth(160)
         sq.setRange(-150, 0)
         sq.setValue(int(ex.rx.squelch.threshold_db))
         level = QLabel("—")
