@@ -48,7 +48,19 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
   (histerese/confiança mínima); mostrar no display o modo detectado (ex.: "AUTO·NFM").
 - Em SSB, combinar com a auto-sintonia pelos harmônicos da voz.
 
-### Waterfall para ao mudar de banda com RTL-SDR Blog V4 e não volta (registrado em 07/11/2026)
+### PRIORIDADE — Mudar de banda para a recepção e trava o programa (RTL-SDR Blog V4) (registrado em 07/11/2026)
+- **Novo relato (07/11/2026):** dependendo da banda escolhida, para de receber e **a aplicação trava**
+  (não só o waterfall). Mesmo item do relato anterior, mais grave.
+- **Pontos prováveis de travamento (código):** a troca de frequência (`set_center_freq` da librtlsdr) roda
+  na thread DSP ao mesmo tempo que a leitura assíncrona; se o USB/sintonizador não responde, a thread fica
+  presa. Ao desligar, a interface espera a thread (`engine.stop`, 3 s) e depois chama `sdr.close()` na
+  própria thread da interface, que pode bloquear indefinidamente → janela congelada.
+- **Corrigir também:** nenhuma chamada à librtlsdr na thread da interface; trocas de frequência/ganho
+  serializadas numa única thread do dispositivo, com tempo limite; se o dispositivo não responder,
+  abandonar a leitura, avisar e oferecer reconexão sem congelar a janela; testar todas as bandas do
+  seletor no V4 (incluindo HF) e num RTL-SDR comum.
+
+#### Relato anterior: waterfall para ao mudar de banda com RTL-SDR Blog V4 e não volta
 - **Relato:** com um RTL-SDR Blog V4, ao mudar de banda o waterfall parou; voltando para 2 m continua parado.
   O waterfall tem que ficar contínuo enquanto o dispositivo estiver detectado.
 - **Causa provável (código):** em `RtlSdrSource._run`, se `read_samples_async` termina sem exceção
