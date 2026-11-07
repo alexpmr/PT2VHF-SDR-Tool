@@ -4,6 +4,16 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Lembrar o estado do receptor ao sair e reconectar ao abrir (registrado em 07/11/2026)
+- Hoje o programa sempre abre desligado e com a fonte "Simulador" selecionada por padrão; o usuário precisa escolher
+  o RTL-SDR e clicar em Ligar a cada abertura.
+- Ao fechar, memorizar: fonte (RTL-SDR, rtl_tcp, SoapySDR, arquivo, simulador), dispositivo/endereço, taxa de amostragem,
+  ganho/ppm/bias-T/amostragem direta e se o receptor estava **ligado**.
+- Ao abrir: se foi fechado **ligado com um dispositivo real**, reconectar automaticamente na mesma fonte, frequência e
+  modo (sem cair no simulador); se o dispositivo não estiver presente ou não abrir, avisar sem travar e deixar a fonte
+  escolhida pronta para tentar de novo. O simulador só é padrão na primeira execução (sem configuração salva).
+- Opção em Configurações: "Reconectar o receptor ao abrir" (ligada por padrão).
+
 ### PRIORIDADE — 0.4.1 ainda não abre o RTL-SDR (dithering -1 + LIBUSB_ERROR_ACCESS) (registrado em 07/11/2026)
 - **Relato do mantenedor (com imagem):** "driver RTL-SDR Blog: Error code -1 when setting PLL dithering mode;
   biblioteca padrão: <LIBUSB_ERROR_ACCESS (-3)>…". Driver no Windows: interface 0 WinUSB, interface 1 WinUSB (correto).
