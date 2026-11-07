@@ -67,6 +67,11 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
   recebida, mudar a frequência central do receptor para a região visível e o waterfall acompanhar.
 - **Pista:** hoje o arraste só move a visualização (pyqtgraph) dentro da faixa já amostrada; não há
   re-sintonia do centro quando a área visível sai da largura de amostragem.
+- **Observação do mantenedor (07/11/2026):** ao arrastar, a área nova que entra na tela fica **preta**;
+  clicando em **Zoom: Total** volta a mostrar tudo. Confirma a pista: o arraste leva a visualização para
+  fora da faixa recebida (sem dados = preto) e "Total" só reenquadra a faixa já amostrada.
+  Corrigir: arrastar deve re-sintonizar o centro para a região visível (dados reais no lugar do preto);
+  enquanto o receptor muda, não exibir área vazia.
 
 ### OTA igual aos demais programas PT2VHF (registrado em 07/11/2026)
 - Alinhar a atualização automática ao comportamento dos outros programas (ex.: Sat Tool, Prog Tool,
