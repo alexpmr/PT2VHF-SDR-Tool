@@ -4,6 +4,15 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Auto-sintonizar ao selecionar uma transmissão (registrado em 07/11/2026)
+- Ao selecionar uma transmissão (clique no waterfall/espectro, scanner, memória) e a frequência não estiver
+  exatamente na dela, ajustar automaticamente para a frequência correta.
+- Por modo: portadora (AM/CW), centro do sinal (NFM/WFM, inclusive estações com desvio de frequência) e,
+  em SSB, a portadora suprimida pelos harmônicos da voz (auto-sintonia SSB já existente).
+- Reaproveitar o assistente atual (`detect_mode`/`occupied_band`/`estimate_ssb_offset`), que hoje só roda
+  pelos botões; opção para ligar/desligar e indicação no display da correção aplicada.
+- Relaciona-se com o modo AUTO (que também escolhe o modo).
+
 ### Anúncio ao abrir o app, como nos demais programas (registrado em 07/11/2026)
 - Ao abrir, mostrar o aviso/anúncio no mesmo padrão dos outros programas PT2VHF: divulgar o site oficial
   www.pt2vhf.com (downloads e atualizações somente por lá) e os demais aplicativos PT2VHF.
