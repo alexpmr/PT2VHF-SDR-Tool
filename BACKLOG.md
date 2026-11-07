@@ -4,7 +4,14 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
-(nenhum)
+### Interface web: abrir de outro computador direto pelo IP, sem chave (registrado em 07/11/2026)
+- Hoje, com "Permitir outros dispositivos da rede local (LAN)", o endereço precisa da chave temporária
+  (`http://IP:porta/?key=…`); sem ela o navegador recebe "Acesso negado".
+- Pedido: permitir abrir digitando só `http://IP:porta/` em outro computador da rede.
+- Proposta: opção em Configurações → Interface web "Exigir chave na rede local" (desmarcada = acesso direto pelo IP),
+  com aviso de que qualquer dispositivo da rede poderá ver e ouvir a sessão (continua somente leitura);
+  aceitar apenas endereços de rede privada (10/8, 172.16/12, 192.168/16, link-local) quando sem chave;
+  mostrar o endereço `http://IP:porta/` pronto para copiar; manter a chave como opção para redes compartilhadas.
 
 ## Concluídos
 - 0.4.1 — 0.4.0 não abria o RTL-SDR (LIBUSB_ERROR_ACCESS): recurso automático para a biblioteca padrão (a da 0.3.0),
