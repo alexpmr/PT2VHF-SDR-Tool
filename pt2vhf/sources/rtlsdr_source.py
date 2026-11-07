@@ -42,7 +42,9 @@ class _DllWithStubs:
     """Embrulha a DLL do driver RTL-SDR Blog para o pyrtlsdr.
 
     O pyrtlsdr 0.5 liga funções que só existem em algumas compilações (GPIO, dithering, testmode);
-    as ausentes viram stubs que retornam -1 (recursos não usados pelo programa)."""
+    as ausentes viram stubs sem efeito que retornam 0 (sucesso). Retornar erro quebrava a abertura:
+    o pyrtlsdr chama rtlsdr_set_dithering logo após abrir o dongle (0.4.1: "Error code -1 when setting
+    PLL dithering mode", deixando o dongle preso)."""
 
     def __init__(self, dll):
         self._dll = dll
@@ -57,7 +59,7 @@ class _DllWithStubs:
                 raise
             if name not in self._stubs:
                 def stub(*_a, **_k):
-                    return -1
+                    return 0
                 stub.restype = None
                 stub.argtypes = None
                 self._stubs[name] = stub
@@ -215,7 +217,7 @@ class RtlSdrSource(IQSource):
                 errors.append((kind, e))
                 continue
             try:
-                dev = cls(index)
+                dev = self._construct(cls, index)
             except Exception as e:  # noqa: BLE001
                 errors.append((kind, e))
                 if kind == "blog":
@@ -231,6 +233,23 @@ class RtlSdrSource(IQSource):
             raise SourceError("Biblioteca librtlsdr indisponível. Reinstale o PT2VHF SDR Tool.")
         detail = "; ".join(f"{'driver RTL-SDR Blog' if k == 'blog' else 'biblioteca padrão'}: {e}" for k, e in errors)
         raise RuntimeError(detail)
+
+    @staticmethod
+    def _construct(cls, index):
+        """Cria o RtlSdr; se falhar depois de abrir o dongle, fecha o handle antes de seguir
+        (senão a próxima tentativa recebe LIBUSB_ERROR_ACCESS, pois o WinUSB é exclusivo)."""
+        dev = cls.__new__(cls)
+        try:
+            cls.__init__(dev, index)
+            return dev
+        except Exception:
+            handle = getattr(dev, "dev_p", None)
+            if handle is not None and getattr(handle, "value", None):
+                try:
+                    sys.modules["rtlsdr.librtlsdr"].librtlsdr.rtlsdr_close(handle)
+                except Exception as e:  # noqa: BLE001
+                    log.warning("Não foi possível liberar o dongle após a falha: %s", e)
+            raise
 
     def _open(self):
         try:

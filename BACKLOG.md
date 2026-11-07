@@ -4,6 +4,17 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### PRIORIDADE — 0.4.1 ainda não abre o RTL-SDR (dithering -1 + LIBUSB_ERROR_ACCESS) (registrado em 07/11/2026)
+- **Relato do mantenedor (com imagem):** "driver RTL-SDR Blog: Error code -1 when setting PLL dithering mode;
+  biblioteca padrão: <LIBUSB_ERROR_ACCESS (-3)>…". Driver no Windows: interface 0 WinUSB, interface 1 WinUSB (correto).
+- **Causa (confirmada no código do pyrtlsdr 0.5):** `RtlSdr.open()` chama `rtlsdr_set_dithering` logo após
+  `rtlsdr_open`; a DLL do driver Blog V1.4.0 não tem essa função e o substituto da 0.4.0/0.4.1 respondia -1 → o pyrtlsdr
+  abortava **com o dongle já aberto**, e a biblioteca padrão recebia ACCESS (WinUSB é exclusivo). Explica também o erro
+  da 0.4.0.
+- **Correção já feita no código (falta gerar e publicar a versão):** funções ausentes respondem 0 (sem efeito); se a
+  abertura falhar depois de abrir o dongle, o handle é fechado antes da próxima tentativa. Teste
+  `test_open_failure_after_handle_releases_dongle_and_stub_returns_ok` reproduz o cenário da imagem.
+
 ### Indicador de versão / atualização no topo da janela, como nos demais programas (registrado em 07/11/2026)
 - Hoje o botão de versão ("v0.4.x" / "Nova versão X · atualizar" / progresso) fica no canto inferior direito, na barra
   de status, e passa despercebido.

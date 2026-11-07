@@ -145,3 +145,44 @@ def test_access_denied_with_blog_falls_back_to_standard(monkeypatch):
     except rs.SourceError as e:
         assert "Acesso negado" in str(e)
     rs.set_preference("auto")
+
+
+def test_open_failure_after_handle_releases_dongle_and_stub_returns_ok(monkeypatch):
+    """0.4.1: o driver Blog abria o dongle e falhava no dithering (-1); o handle ficava preso e a
+    biblioteca padrão recebia LIBUSB_ERROR_ACCESS. Agora o stub responde 0 e o handle é liberado."""
+    import ctypes
+    import types
+    from pathlib import Path
+
+    from pt2vhf.sources import rtlsdr_source as rs
+
+    class Dll:
+        def rtlsdr_open(self):
+            return 0
+    w = rs._DllWithStubs(Dll())
+    assert w.rtlsdr_set_dithering(None, 1) == 0
+
+    closed = []
+    held = {"open": False}
+    fake_lib = types.SimpleNamespace(rtlsdr_close=lambda h: (closed.append(h.value), held.update(open=False)))
+    monkeypatch.setitem(rs.sys.modules, "rtlsdr.librtlsdr", types.SimpleNamespace(librtlsdr=fake_lib))
+
+    class OpensThenFails:
+        def __init__(self, idx):
+            self.dev_p = ctypes.c_void_p(1234)
+            held["open"] = True
+            raise IOError("Error code -1 when setting PLL dithering mode")
+
+    class NeedsFreeDongle(FakeRtl):
+        def __init__(self, idx):
+            if held["open"]:
+                raise IOError("<LIBUSB_ERROR_ACCESS (-3): Access denied (insufficient permissions)>")
+            super().__init__(idx)
+
+    monkeypatch.setattr(rs, "_rtlsdr_class", lambda kind: OpensThenFails if kind == "blog" else NeedsFreeDongle)
+    monkeypatch.setattr(rs, "_bundled_blog_dir", lambda: Path("."))
+    monkeypatch.setattr(rs.sys, "platform", "win32")
+    rs.set_preference("auto")
+    s = rs.RtlSdrSource(1_200_000, 145.5e6)
+    assert closed == [1234] and s.library == "padrão"
+    s.close()
