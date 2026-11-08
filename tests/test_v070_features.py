@@ -11,7 +11,7 @@ from pt2vhf.occupancy import OccupancyHistory
 
 def test_occupancy_minutes_and_persistence(tmp_path):
     path = tmp_path / "occupation.json"
-    now = time.time()
+    now = int(time.time() // 60) * 60 + 1
     h = OccupancyHistory(path)
     assert h.record(145.570e6, now)
     assert not h.record(145.570e6 + 1000, now + 4)

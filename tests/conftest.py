@@ -4,6 +4,9 @@ import os
 
 import pytest
 
+# Mantém o wrapper Python do QApplication vivo durante a finalização do PySide6.
+_QT_SESSION_APP = None
+
 # Os testes não podem abrir diálogos modais de abertura (anúncio do site / resultado de atualização).
 os.environ["PT2VHF_NO_STARTUP_DIALOGS"] = "1"
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -20,9 +23,17 @@ def qt_lifecycle():
     from PySide6.QtCore import QCoreApplication, QEvent
     from PySide6.QtWidgets import QApplication
 
+    global _QT_SESSION_APP
     app = QApplication.instance() or QApplication([])
+    app.setQuitOnLastWindowClosed(False)
+    _QT_SESSION_APP = app
     yield app
     QApplication.closeAllWindows()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    app.processEvents()
+    for w in list(QApplication.topLevelWidgets()):
+        w.close()
+        w.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
     app.processEvents()
     gc.collect()
