@@ -2,6 +2,13 @@
 
 Itens registrados pelo mantenedor. Não implementar até o pedido de versão nova.
 
+## Revisão da v0.11.0 — status por evidência
+- **LCD responsivo e matriz de bandas (implementados em código):** desenho em escala uniforme, botões em 5 colunas na área solicitada, sem banda abaixo dos modos. Faltam screenshots/homologação pelo operador em Windows e monitor pequeno.
+- **S-meter preso em sete barras (correção em código):** o valor inicial de -127 dBm acendia 7 segmentos mesmo antes de amostra válida. Agora o medidor inicia sem barras, exige leitura IQ recente, recalcula segmentos e informa dBFS/dBm no tooltip. Falta validar com antena/receptor físico e calibração.
+- **RS41 (hipótese técnica corrigida, P0 ainda aberto):** corrigida janela incompatível do fsk_demod (FI +12 kHz, máscara ±5 kHz); agora centro em 0 Hz e busca -5/+5 kHz. Teste de recepção de RS41 real continua obrigatório. A instalação fsk_demod/rs41mod continua separada.
+- **Não concluídos:** além da homologação RS41, continuam IA neural, SSTV, DMR/D-STAR/C4FM, ADS-B/AIS nativos, tradução integral da interface e voz, ACARS/POCSAG, NOAA/Meteor, KiwiSDR e demais itens descritos abaixo. Não declarar "100% do backlog atendido".
+- **Site:** não considerar publicação/OTA concluídos sem manifesto e arquivos públicos verificados.
+
 ## Falha P1 — S-meter / intensidade de sinal fixa em sete barras vermelhas (08/11/2026)
 - **Relato do operador:** o indicador gráfico de intensidade de sinal permanece exibindo **sete barras na cor vermelha**, sem acompanhar variações reais de intensidade ou a mudança de frequência, mesmo recebendo transmissões distintas. Tratar como **falha funcional aberta**, ainda sem causa comprovada.
 - **Fluxo existente a inspecionar:** `Receiver.process()` mede a potência do IQ filtrado em `rx.signal_db` (`pt2vhf/dsp/receiver.py`); `SDREngine.process_block()` publica `status["signal_db"]`; `MainWindow._tick()` converte `dbfs_to_s_units(..., s_meter_cal)` e chama `LCDDisplay.set_signal()`; `LCDDisplay._draw_smeter()` desenha a barra colorida e a indicação de pico. Investigar cada estágio para determinar se o valor congela no DSP, status, conversão/calibração, atualização do widget ou pintura; não presumir falha visual sem comparar medições.
@@ -17,7 +24,7 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 - **Layout do painel direito:** reorganizar a área do LCD para que a matriz não se sobreponha aos dígitos, unidade MHz, S-meter, indicadores BUSY/MEM/banda/CTCSS, hora ou dBm. Onde necessário, compactar/mover os indicadores secundários sem perder informação.
 - **Responsividade obrigatória:** quando a janela, o monitor, uma tela remota ou o modo apresentação dispuser de menos largura/altura, **reduzir o LCD inteiro proporcionalmente** (frequência, segmentos, S-meter, indicadores, fontes, teclas de modo, matriz de bandas, hitboxes), mantendo a proporção original e **sem cortar/podar** elementos, números ou controles. Ajustar o widget em resizeEvent/sizeHint/heightForWidth e usar escala única de desenho/layout; preservar o mapeamento correto de cliques/roda do mouse às coordenadas escaladas. Se necessário, usar margens internas/letterboxing em vez de crop/overflow.
 - **Aceite:** em janela larga, janela estreita e modo apresentação, todos os itens do LCD continuam visíveis; matriz completa com 5 colunas na região marcada; botões clicáveis e feedback de seleção; nenhum botão de banda abaixo da fileira de modos; evidências visuais/screenshot nos 5 temas; regressões automatizadas Qt para resize e clique em coordenadas escaladas.
-- **Status:** **pendente de implementação**; substitui a solução anterior da v0.10.0, que colocou bandas dentro do LCD porém no **local errado** e sem redução proporcional suficiente.
+- **Status:** correção implementada em código da v0.11.0; validação visual em monitores pequenos e no Windows permanece pendente.
 
 ## Revisão da v0.10.0 — implementação e critérios de aceite
 - **Interface (implementado em código):** abas principais ADS-B, AIS e Sondas Meteorológicas separadas; APRS/DTMF/CTCSS preservados dentro do Scanner; retirada a aba iGate RX. Confirmar em Windows Setup/Portable e resolução estreita.

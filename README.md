@@ -14,6 +14,16 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 
 ## Recursos
 
+### Novo na v0.11.0 — LCD responsivo, S-meter e RS41
+- **S-meter:** a ausência de amostras IQ recentes agora mostra "S-- / -- dBm" e nenhuma barra acesa; leituras válidas atualizam os segmentos proporcionalmente, com retenção de pico. O tooltip do LCD mostra os valores de entrada em dBFS, dBm aproximado e unidade S. Calibração absoluta em dBm requer comparação com referência.
+- **LCD:** painel de 1.100 × 255 unidades lógicas, renderizado vetorialmente com escala uniforme (letterboxing, sem cortes); ajuste proporcional de frequências, etiquetas, S-meter e teclas. A posição clicada é convertida às coordenadas lógicas, inclusive em janelas estreitas.
+- **Bandas:** matriz compacta de cinco colunas no lado direito do LCD, acima do S-meter, com aparência e destaque harmonizados com as teclas de modo e estado desabilitado para faixas não suportadas. Não existe mais grade sob as teclas de modo.
+- **RS41:** corrigida uma incompatibilidade entre a sintonia IQ antiga em +12 kHz e a máscara FSK moderna de ±5 kHz. A cadeia agora converte o IQ para banda-base (0 Hz) e utiliza a janela -5/+5 kHz adotada pelo radiosonde_auto_rx mais recente. Ainda requer binários externos e validação com sonda real; não declarar homologado.
+- **Testes:** verificações de geometria/redimensionamento, mapa de cliques após escala, seleção de tema, variação de barras sem sinal e com diferentes níveis, além da conversão IQ para 0 Hz.
+
+**Escopo:** esta versão corrige falhas prioritárias verificáveis. Não implementa integralmente o extenso backlog de IA neural, voz digital, SSTV, demodulação ADS-B/AIS nativa, NOAA/Meteor e idiomas completos.
+
+
 ### Novo na v0.10.0 — navegação, LCD, RF e rastros
 - **Interface**: abas principais ADS-B, AIS e Sondas Meteorológicas independentes; painel APRS/DTMF/CTCSS reunido no Scanner; iGate APRS-IS removido da navegação e sem envios.
 - **Sondas meteorológicas**: recepção RS41 e importação JSON na mesma área; medidores de blocos IQ, quadros JSON, quadros sem GPS, posições, perdas, estados dos processos e mensagens de erro de fsk_demod/rs41mod; gravação manual e limitada a 20 segundos de IQ complexo 48 kS/s (.c16) para diagnóstico.

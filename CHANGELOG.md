@@ -2,6 +2,18 @@
 
 Todas as mudanças relevantes do PT2VHF SDR Tool.
 
+## [0.11.0] — 2026-11-08
+### Implementado no código
+- LCD vetorial redimensionado proporcionalmente em telas/janelas menores, sem podar a frequência ou as teclas; mapeamento de clique e rolagem convertido de pixels para coordenadas lógicas.
+- Bandas em grade de 5 colunas na área superior direita do display, acima do S-meter, com tema, destaque e disponibilidade.
+- S-meter agora distingue ausência de dados IQ (sem barras) de leitura real, com atualização de amostras, estados e tooltip de dBFS/dBm aproximado/S. Função determinística de mapeamento do nível para 40 segmentos.
+- RS41: IQ recentrado em 0 Hz, combinando com filtro e máscara do fsk_demod -5/+5 kHz; antes havia portadora +12 kHz com máscara ±5 kHz, combinação incompatível.
+- Testes novos de escala do LCD, hitboxes, 5 colunas, sinal variável e RS41 em banda-base.
+### Homologação e pendências
+- Os testes de software e build não comprovam o funcionamento da decodificação RS41 real; binários externos fsk_demod/rs41mod e amostra RF validada ainda são necessários.
+- Os recursos avançados do backlog (IA neural, SSTV, voz digital, idiomas integrais, vários demoduladores RF) não estão concluídos.
+- Publicação no site/OTA é independente da release do GitHub.
+
 ## [0.10.0] — 2026-11-08
 ### Implementado
 - Eliminada aba principal genérica Decodificadores; APRS/DTMF/CTCSS movidos para o Scanner. ADS-B, AIS e Sondas Meteorológicas agora são painéis principais separados.
