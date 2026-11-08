@@ -2,6 +2,20 @@
 
 Todas as mudanças relevantes do PT2VHF SDR Tool.
 
+## [0.10.0] — 2026-11-08
+### Implementado
+- Eliminada aba principal genérica Decodificadores; APRS/DTMF/CTCSS movidos para o Scanner. ADS-B, AIS e Sondas Meteorológicas agora são painéis principais separados.
+- Removida a interface APRS iGate RX e seu acionamento; nenhum envio APRS-IS pelo receptor.
+- Teclas de seleção de bandas integradas dentro do LCD, preservando temas, botões de modos e desabilitação visual para frequências não suportadas.
+- Diagnóstico RS41: métricas de IQ, JSON, quadros sem GPS, perdas, erro dos subprocessos, captura de IQ para diagnóstico, estatísticas FSK e informações sobre dependências ausentes.
+- Adicionada recuperação de quadros RS41 que chegam sem coordenadas; correção de flags do decodificador conforme radiosonde_auto_rx.
+- Rastros por estação no mapa OSM e exportação GPX/KML com escape seguro dos campos; CSV permanece.
+- Testes de compatibilidade e documentação de limitações.
+### Pendências / restrições
+- RS41 continua sem homologação com transmissão RF real; necessita fsk_demod e rs41mod externos. DFM/M10/M20/RS92 continuam pendentes.
+- Internacionalização integral, IA neural, SSTV, voz digital e demodulação nativa ADS-B/AIS permanecem no backlog.
+- A publicação no site oficial e a atualização OTA são verificadas separadamente da release GitHub.
+
 ## [0.9.0] — 2026-11-08
 ### Implementado em código
 - IQ ao vivo do SDR compartilhado com pipeline RS41: translação para +12 kHz e decimação a 48 kS/s, uso de fsk_demod + rs41mod externos, com fila limitada e telemetria em tabela/mapa.

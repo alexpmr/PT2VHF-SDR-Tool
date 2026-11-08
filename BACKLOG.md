@@ -2,13 +2,20 @@
 
 Itens registrados pelo mantenedor. Não implementar até o pedido de versão nova.
 
+## Revisão da v0.10.0 — implementação e critérios de aceite
+- **Interface (implementado em código):** abas principais ADS-B, AIS e Sondas Meteorológicas separadas; APRS/DTMF/CTCSS preservados dentro do Scanner; retirada a aba iGate RX. Confirmar em Windows Setup/Portable e resolução estreita.
+- **LCD (implementado em código):** teclas de bandas estão no contorno do LCD, com layout e cores dependentes do tema, mantendo teclas de modo e estados. Confirmar redimensionamento, modo apresentação e visualização em monitor estreito.
+- **Sondas (diagnóstico implementado; P0 ainda aberto):** exibição de perdas de IQ, quadros JSON, falhas dos subprocessos, linhas sem GPS e captura IQ por 20s. **Não afirmar que a RS41 já decodifica em RF real:** instalar e validar fsk_demod/rs41mod e realizar teste com gravação RS41.
+- **Rastros (implementado em código):** histórico/OSM/GPX/KML para sondas, ADS-B e AIS; feeds ADS-B/AIS continuam externos.
+- **Infraestrutura de publicação:** versionamento GitHub, artefatos Windows, atualização do manifesto/OTA no site com contagem cumulativa; site só é concluído quando live.
+
 ## Interface LCD — integrar teclas de seleção de bandas ao próprio display (registrado em 08/11/2026)
 - **Solicitação:** mover os botões de seleção rápida de bandas, atualmente exibidos em uma barra independente **abaixo** do display LCD, **para dentro do contorno/painel visual do LCD** (referência: imagem enviada pelo mantenedor em 08/11/2026).
 - **Layout:** inserir uma fileira ou duas fileiras compactas de teclas de banda na região inferior do LCD, compatíveis com a fileira existente de modos (AUTO/NFM/WFM/AM/USB/LSB/CW/DSB/RAW/A-SINT), **sem substituir as teclas de modos**, sem cobrir frequência, indicadores, medidor S, horário ou demais leituras. Priorizar largura fluida, displays pequenos e modo apresentação; se necessário, oferecer agrupamento/alternância de bandas sem rolagem horizontal obrigatória.
 - **Identidade visual:** as teclas passam a pertencer ao painel LCD, com fundo, bordas, tipografia, contraste e estado ativo coerentes com os temas visuais existentes (inclusive tema âmbar apresentado); evitar uma segunda barra escura solta na página.
 - **Comportamento preservado:** bandas configuradas como visíveis, seleção e destaque da banda ativa, sintonia e restauração de frequência/modo por banda, avisos/teclas esmaecidas para bandas fora do alcance do SDR, tooltips e atualização ao trocar dispositivo devem continuar funcionando.
 - **Aceite:** nenhuma barra independente de bandas abaixo do LCD; todos os botões de bandas visíveis na área interna do LCD, sem sobreposição de controles ou perda de informações, com screenshot em monitor normal e estreito e testes de tema/navegação.
-- **Status:** backlog de UI; **não implementado** até pedido explícito de nova versão.
+- **Status:** implementado no código da v0.10.0; **homologação visual em Windows ainda pendente**.
 
 ## Prioridade P0 — RS41 não decodifica sinal real (registrado em 08/11/2026)
 - **Relato confirmado pelo operador:** a transmissão de uma radiossonda **Vaisala RS41** aparece no waterfall do SDR Tool v0.9.0, na frequência correta, porém **nenhum quadro ou telemetria é decodificado**. Isso não é um caso de protocolo de sonda diferente. Status: **falha funcional aberta / sem homologação**. O pipeline IQ adicionado na v0.9.0 não atende ao critério de aceite.
