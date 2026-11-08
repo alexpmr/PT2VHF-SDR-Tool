@@ -24,7 +24,7 @@ class LiveCaptionWorker:
     """Acumula blocos de áudio e reconhece trechos em thread separada."""
 
     def __init__(self, on_result, on_error=None, sample_rate=48000, seconds=4.0,
-                 model_size="tiny", language=None, model=None):
+                 model_size="tiny", language=None, model=None, meta_provider=None):
         self.on_result = on_result
         self.on_error = on_error
         self.rate = int(sample_rate)
@@ -32,6 +32,7 @@ class LiveCaptionWorker:
         self.model_size = model_size
         self.language = language if language not in ("", "auto") else None
         self._model = model
+        self.meta_provider = meta_provider
         self._chunks = []
         self._pending_samples = 0
         self._queue: queue.Queue = queue.Queue(maxsize=2)
@@ -56,12 +57,12 @@ class LiveCaptionWorker:
         if float(np.max(np.abs(packet))) < 0.009:
             return
         try:
-            self._queue.put_nowait((packet, time.time()))
+            self._queue.put_nowait((packet, time.time(), self.meta_provider() if self.meta_provider else None))
         except queue.Full:
             # Preferimos a transmissão mais recente: nunca bloquear o receptor.
             try:
                 self._queue.get_nowait()
-                self._queue.put_nowait((packet, time.time()))
+                self._queue.put_nowait((packet, time.time(), self.meta_provider() if self.meta_provider else None))
             except queue.Empty:
                 pass
 
@@ -80,7 +81,7 @@ class LiveCaptionWorker:
                 continue
             if task is None:
                 return
-            audio, timestamp = task
+            audio, timestamp, meta = task
             try:
                 model = self._get_model()
                 # faster-whisper consome PCM float32 mono a 16 kHz.
@@ -90,7 +91,7 @@ class LiveCaptionWorker:
                 text = " ".join(x.text.strip() for x in segments).strip()
                 if text and not self._stop.is_set():
                     lang = getattr(info, "language", "") or (self.language or "")
-                    self.on_result(timestamp, text, find_callsigns(text), lang)
+                    self.on_result(timestamp, text, find_callsigns(text), lang, meta)
             except Exception as exc:  # noqa: BLE001
                 log.warning("Legendas ao vivo: %s", exc)
                 if self.on_error is not None and not self._stop.is_set():
