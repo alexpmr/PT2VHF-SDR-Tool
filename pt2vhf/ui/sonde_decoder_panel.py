@@ -17,9 +17,10 @@ class SondeDecoderPanel(QWidget):
 
     HEADERS = ("Hora", "Serial", "Latitude", "Longitude", "Altitude m",
                "Vel. km/h", "Vertical m/s", "Detalhes")
-    def __init__(self, cfg, parent=None):
+    def __init__(self, cfg, current_freq=None, parent=None):
         super().__init__(parent)
         self.cfg = cfg
+        self.current_freq = current_freq
         lay = QVBoxLayout(self)
         g = QGroupBox("Decodificar RS41 diretamente do sinal IQ do SDR atual")
         f = QFormLayout(g)
@@ -33,7 +34,13 @@ class SondeDecoderPanel(QWidget):
         self.rs_path = QLineEdit(str(cfg.get("sonde_rs41_path", "")))
         self.fsk_path.setPlaceholderText("fsk_demod (no PATH ou caminho do executável)")
         self.rs_path.setPlaceholderText("rs41mod (no PATH ou caminho do executável)")
-        f.addRow("Frequência central da sonda:", self.frequency)
+        hz_row = QHBoxLayout()
+        hz_row.addWidget(self.frequency)
+        self.use_current = QPushButton("Usar sintonia atual do SDR")
+        self.use_current.clicked.connect(self._use_current)
+        hz_row.addWidget(self.use_current)
+        hz_row.addStretch(1)
+        f.addRow("Frequência central da sonda:", hz_row)
         f.addRow("Programa fsk_demod:", self.fsk_path)
         f.addRow("Programa rs41mod:", self.rs_path)
         lay.addWidget(g)
@@ -68,6 +75,17 @@ class SondeDecoderPanel(QWidget):
         note.setWordWrap(True)
         note.setObjectName("hintLabel")
         lay.addWidget(note)
+
+    def _use_current(self):
+        if self.current_freq is None:
+            self.status.setText("Leitura da sintonia atual indisponível.")
+            return
+        f = float(self.current_freq()) / 1e6
+        if 400 <= f <= 406:
+            self.frequency.setValue(f)
+            self.status.setText(f"Frequência importada da sintonia atual: {f:.6f} MHz")
+        else:
+            self.status.setText("Sintonize primeiro a radiossonda entre 400 e 406 MHz.")
 
     def _start(self):
         hz = self.frequency.value() * 1e6

@@ -155,7 +155,7 @@ class MainWindow(QMainWindow):
         self.dec_panel = DecoderPanel(self.cfg)
         self.traffic_panel = TrafficFeedsPanel(self.cfg)
         self.dec_panel.tabs.addTab(self.traffic_panel, "ADS-B / AIS / Sondas")
-        self.sonde_panel = SondeDecoderPanel(self.cfg)
+        self.sonde_panel = SondeDecoderPanel(self.cfg, lambda: self.engine.vfo)
         self.dec_panel.tabs.addTab(self.sonde_panel, "RS41 · IQ ao vivo")
         self.igate_panel = IGatePanel(self.cfg)
         self.dec_panel.tabs.addTab(self.igate_panel, "APRS iGate RX")
