@@ -31,6 +31,7 @@ from .settings_panel import SettingsPanel
 from .bandkeys import BandKeys
 from .display_settings import DisplaySettings
 from .occupancy_panel import OccupancyPanel
+from .live_captions_panel import LiveCaptionsPanel
 from .analog import AnalogPanel
 from .panels import AudioPanel, DecoderPanel, MemoryPanel, ModePanel, ReceiverPanel
 from .waterfall import COLORMAPS, SpectrumWaterfall
@@ -148,6 +149,8 @@ class MainWindow(QMainWindow):
         self.scan_panel = ScannerPanel(self.cfg, self.bank.categories + ["Descobertas"])
         self.occupancy_panel = OccupancyPanel(self.occupancy)
         self.scan_panel.tabs.addTab(self.occupancy_panel, "Ocupação 24 h")
+        self.live_captions_panel = LiveCaptionsPanel(self.cfg)
+        self.scan_panel.tabs.addTab(self.live_captions_panel, "Legendas ao vivo")
         self.sscan: SpectrumScanner | None = None
         self._hits_t = 0.0
         self.assist = AssistBox()
@@ -161,6 +164,7 @@ class MainWindow(QMainWindow):
         self._web_aprs = deque(maxlen=30)
         self._web_state = {}
         self.transcriber = None
+        self.caption_worker = None
         self._assist_busy = False
         self._presenting = False
         self._quiet_start = False
@@ -190,6 +194,12 @@ class MainWindow(QMainWindow):
         self.analog_panel = AnalogPanel(self.cfg.get("analog_style", "Valvulado"))
         self.analog_panel.setVisible(bool(self.cfg.get("analog_enabled", False)))
         cl.addWidget(self.analog_panel)
+        self.caption_label = QLabel("")
+        self.caption_label.setWordWrap(True)
+        self.caption_label.setObjectName("bigLabel")
+        self.caption_label.setMinimumHeight(36)
+        self.caption_label.setVisible(False)
+        cl.addWidget(self.caption_label)
         self.band_bar = BandKeys(self.cfg.get("bands_visible"))
         cl.addWidget(self.band_bar)
         self.fav_bar = FavoritesBar()
@@ -347,6 +357,10 @@ class MainWindow(QMainWindow):
         self.weak_btn.setToolTip("Ativa NR, NB e AGC para melhorar a escuta; utiliza DSP clássico, não IA neural.")
         self.weak_btn.toggled.connect(self._weak_signal_toggled)
         row.addWidget(self.weak_btn)
+        self.live_btn = QPushButton("Legendas")
+        self.live_btn.setCheckable(True)
+        self.live_btn.setToolTip("Transcrição local em blocos da fonia que está sendo ouvida; faster-whisper opcional")
+        row.addWidget(self.live_btn)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         row.addWidget(spacer)
@@ -436,6 +450,7 @@ class MainWindow(QMainWindow):
     def _wire(self):
         lcd, wf, rp, mp, ap, mem, dp = (self.lcd, self.wf, self.rx_panel, self.mode_panel,
                                         self.audio_panel, self.mem_panel, self.dec_panel)
+        self.live_btn.toggled.connect(self._toggle_live_captions)
         self.band_bar.selected.connect(self._band_button)
         self.display_panel.bandsChanged.connect(self._set_visible_bands)
         self.display_panel.analogChanged.connect(self._analog_display_changed)
@@ -1634,6 +1649,43 @@ class MainWindow(QMainWindow):
         self.wf.set_extras([row["ex"].freq for row in self.extras_panel.rows if row["ex"].enabled])
 
     # ================================================================== transcrição
+    def _toggle_live_captions(self, on):
+        """Fonia ao vivo: processamento no CPU em worker, jamais na thread DSP."""
+        from ..transcribe import backend_available
+        from ..live_caption import LiveCaptionWorker
+        if on:
+            if not backend_available():
+                self.live_btn.blockSignals(True)
+                self.live_btn.setChecked(False)
+                self.live_btn.blockSignals(False)
+                QMessageBox.information(
+                    self, "Legendas locais", "O recurso exige faster-whisper e um modelo local."
+                    "\nInstale a dependência e deixe o modelo disponível antes de ativar."
+                    "\nA primeira utilização do backend pode baixar o modelo.")
+                return
+            self.caption_worker = LiveCaptionWorker(
+                on_result=lambda *args: self.engine.events.put(("live_caption", args, time.time())),
+                on_error=lambda msg: self.engine.events.put(("caption_error", msg, time.time())),
+                model_size=self.live_captions_panel.model.currentData(),
+                language=self.live_captions_panel.language.currentData(),
+                meta_provider=lambda: (float(self.engine.vfo), str(self.mode)),
+            )
+            self.engine.audio_listeners.append(self.caption_worker.feed)
+            self.caption_label.setText("Legendas locais ativadas — aguardando fonia…")
+            self.caption_label.setVisible(True)
+            self.cfg["live_caption_enabled"] = True
+        else:
+            if self.caption_worker is not None:
+                callback = self.caption_worker.feed
+                try:
+                    self.engine.audio_listeners.remove(callback)
+                except ValueError:
+                    pass
+                self.caption_worker.stop()
+                self.caption_worker = None
+            self.cfg["live_caption_enabled"] = False
+            self.caption_label.setVisible(False)
+
     def _toggle_transcription(self, on):
         from ..transcribe import Transcriber, backend_available
         if on and self.transcriber is None:
@@ -1809,6 +1861,15 @@ class MainWindow(QMainWindow):
                     self.transcriber.submit(data["file"])
             elif kind == "transcription":
                 self.scan_panel.set_transcription(*data)
+            elif kind == "live_caption":
+                stamp, recognized, calls, lang, meta = data
+                freq, mode = meta if meta is not None else (eng.vfo, self.mode)
+                self.live_captions_panel.add_caption(stamp, recognized, calls, lang, freq, mode)
+                self.caption_label.setText(f"{freq / 1e6:.5f} MHz · {mode}: {recognized}")
+                self._live_caption_last = stamp
+            elif kind == "caption_error":
+                self.caption_label.setText(f"Legendas: {data}")
+                self.statusBar().showMessage(f"Transcrição local: {data}", 10000)
             elif kind in ("auto_mode", "auto_tune"):
                 self._auto_result(kind, data)
             elif kind in ("assist_tune", "assist_mode", "assist_filter"):
@@ -1973,6 +2034,9 @@ class MainWindow(QMainWindow):
             self.web.stop()
         if self.transcriber is not None:
             self.transcriber.stop()
+        if self.caption_worker is not None:
+            self.caption_worker.stop()
+            self.caption_worker = None
         presenting = self._presenting
         if presenting:  # a geometria salva é a da janela normal
             self.set_presentation(False)
