@@ -123,6 +123,8 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._wire()
+        if self.audio_panel.neural.isChecked():
+            self._set_neural_audio(True, self.audio_panel.neural_strength.value() / 100)
         self._restore_layout()
         self.apply_level(self.cfg.get("ui_level", "Avançado"))
         self._language_selected()
@@ -390,7 +392,7 @@ class MainWindow(QMainWindow):
         row.addWidget(self.weak_btn)
         self.live_btn = QPushButton("Legendas")
         self.live_btn.setCheckable(True)
-        self.live_btn.setToolTip("Transcrição local em blocos da fonia que está sendo ouvida; faster-whisper opcional")
+        self.live_btn.setToolTip("Transcreve fonia com faster-whisper local. Baixe o modelo em Scanner > Legendas.")
         row.addWidget(self.live_btn)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -493,6 +495,7 @@ class MainWindow(QMainWindow):
                                         self.audio_panel, self.mem_panel, self.dec_panel)
         self.language_combo.currentIndexChanged.connect(self._language_selected)
         self.live_btn.toggled.connect(self._toggle_live_captions)
+        self.live_captions_panel.downloadRequested.connect(self._download_caption_model)
         self.band_bar.selected.connect(self._band_button)
         self.display_panel.bandsChanged.connect(self._set_visible_bands)
         self.display_panel.analogChanged.connect(self._analog_display_changed)
@@ -530,6 +533,7 @@ class MainWindow(QMainWindow):
         ap.manualGainChanged.connect(lambda v: self._rx(lambda rx: setattr(rx.agc, "manual_gain_db", v)))
         ap.nbChanged.connect(self._set_nb)
         ap.nrChanged.connect(self._set_nr)
+        ap.neuralChanged.connect(self._set_neural_audio)
         ap.notchChanged.connect(self._set_notch)
         ap.ctcssFilterChanged.connect(lambda v: self._rx(lambda rx: setattr(rx.tones, "highpass_enabled", v)))
         ap.lowpassChanged.connect(lambda v: self._rx(lambda rx: rx.tones.set_lowpass(v)))
@@ -1004,6 +1008,27 @@ class MainWindow(QMainWindow):
         self._rx(lambda rx: (setattr(rx.nr, "enabled", on), setattr(rx.nr, "strength", strength)))
         self.lcd.flags["NR"] = on
         self.lcd.update()
+
+    def _set_neural_audio(self, on: bool, strength: float):
+        from ..neural_audio import backend_available
+        on = bool(on)
+        if on and not backend_available():
+            self.audio_panel.neural.blockSignals(True)
+            self.audio_panel.neural.setChecked(False)
+            self.audio_panel.neural.blockSignals(False)
+            self.audio_panel.neural_status.setText(
+                "RNNoise indisponível. Reinstale a versão completa.")
+            self.cfg["neural_audio"] = False
+            self.engine.set_neural_audio(False)
+            return
+        self.cfg["neural_audio"] = on
+        self.cfg["neural_strength"] = float(strength)
+        self.engine.set_neural_audio(on, strength)
+        self.audio_panel.neural_status.setText(
+            f"RNNoise ativo · mistura {strength * 100:.0f}% · somente fonia"
+            if on else "Redução neural desligada")
+        self.statusBar().showMessage(
+            "IA RNNoise " + ("ativada" if on else "desativada"), 3000)
 
     def _set_notch(self, on, f):
         def apply(rx):
@@ -1765,29 +1790,53 @@ class MainWindow(QMainWindow):
         self.wf.set_extras([row["ex"].freq for row in self.extras_panel.rows if row["ex"].enabled])
 
     # ================================================================== transcrição
+    def _download_caption_model(self, size: str):
+        """Somente clique explícito baixa pesos em background."""
+        from ..live_caption import install_local_model, ALLOWED_MODELS
+        if size not in ALLOWED_MODELS or getattr(self, "_model_downloading", False):
+            return
+        self._model_downloading = True
+        self.live_captions_panel.set_downloading(True)
+        self.statusBar().showMessage(f"Baixando Whisper {size} para uso local...", 9000)
+
+        def work():
+            try:
+                path = install_local_model(size)
+                result = (size, True, str(path))
+            except Exception as exc:  # noqa: BLE001
+                result = (size, False, str(exc))
+            self.engine.events.put(("caption_model_download", result, time.time()))
+
+        import threading
+        threading.Thread(target=work, name="whisper-install", daemon=True).start()
+
     def _toggle_live_captions(self, on):
-        """Fonia ao vivo: processamento no CPU em worker, jamais na thread DSP."""
+        """Fonia ao vivo: inferência local em worker, nunca na thread DSP."""
         from ..transcribe import backend_available
-        from ..live_caption import LiveCaptionWorker
+        from ..live_caption import LiveCaptionWorker, model_installed
         if on:
-            if not backend_available():
+            size = self.live_captions_panel.model.currentData()
+            if not backend_available() or not model_installed(size):
                 self.live_btn.blockSignals(True)
                 self.live_btn.setChecked(False)
                 self.live_btn.blockSignals(False)
+                self.cfg["live_caption_enabled"] = False
+                self.tabs.setCurrentWidget(self.pages["scan"])
+                self.scan_panel.tabs.setCurrentWidget(self.live_captions_panel)
                 QMessageBox.information(
-                    self, "Legendas locais", "O recurso exige faster-whisper e um modelo local."
-                    "\nInstale a dependência e deixe o modelo disponível antes de ativar."
-                    "\nA primeira utilização do backend pode baixar o modelo.")
+                    self, "Transcrição local",
+                    f"Modelo Whisper {size} não disponível. Abra Scanner > Legendas "
+                    "e clique em 'Baixar modelo'. Depois, a operação será offline.")
                 return
             self.caption_worker = LiveCaptionWorker(
                 on_result=lambda *args: self.engine.events.put(("live_caption", args, time.time())),
                 on_error=lambda msg: self.engine.events.put(("caption_error", msg, time.time())),
-                model_size=self.live_captions_panel.model.currentData(),
+                model_size=size,
                 language=self.live_captions_panel.language.currentData(),
                 meta_provider=lambda: (float(self.engine.vfo), str(self.mode)),
             )
             self.engine.audio_listeners.append(self.caption_worker.feed)
-            self.caption_label.setText("Legendas locais ativadas — aguardando fonia…")
+            self.caption_label.setText("Transcrição local ativa — aguardando fonia...")
             self.caption_label.setVisible(True)
             self.cfg["live_caption_enabled"] = True
         else:
@@ -1805,15 +1854,18 @@ class MainWindow(QMainWindow):
     def _toggle_transcription(self, on):
         from ..transcribe import Transcriber, backend_available
         if on and self.transcriber is None:
-            if not backend_available():
+            from ..live_caption import model_installed
+            size = self.live_captions_panel.model.currentData()
+            if not backend_available() or not model_installed(size):
                 self.scan_panel.transcribe.setChecked(False)
-                QMessageBox.information(self, "Transcrição", (
-                    "A transcrição local usa o pacote opcional faster-whisper (o áudio não sai do computador).\n"
-                    "Instale com:  pip install faster-whisper\n"
-                    "Na primeira vez o modelo (~500 MB) é baixado automaticamente."))
+                QMessageBox.information(self, "Transcrição",
+                    "Baixe o modelo em Scanner > Legendas ao vivo. "
+                    "Nenhum modelo é baixado automaticamente.")
                 return
             self.transcriber = Transcriber(
-                lambda p, t, c: self.engine.events.put(("transcription", (p, t, c), time.time())))
+                lambda p, t, c: self.engine.events.put(("transcription", (p, t, c), time.time())),
+                model_size=size, language=(self.live_captions_panel.language.currentData()
+                                          if self.live_captions_panel.language.currentData() != "auto" else None))
         elif not on and self.transcriber is not None:
             self.transcriber.stop()
             self.transcriber = None
