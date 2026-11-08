@@ -72,6 +72,7 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 ### Novidades da 0.7
 - **Instrumentos analógicos**: S-meter de ponteiro e VU de áudio com estilos Valvulado, Militar e Estúdio, selecionáveis na aba Display.
 - **Atividade RF em 24 horas**: nova subaba no Scanner, com mapa de calor das detecções por frequência/hora, persistência e CSV. A amostragem não representa percentual de ocupação do espectro.
+- **Mapa APRS**: botão em Decodificadores para abrir no navegador as estações recebidas e seus rastros, sem transmitir dados ao APRS-IS (tiles OSM exigem Internet).
 - **Sinal fraco · DSP**: botão para combinação reversível de NB, NR e AGC. Não emprega IA neural.
 - **Legendas ao vivo**: transcrição local da fonia por blocos, com frequência, modo, idioma e indicativos, histórico e CSV. Requer `faster-whisper` e um modelo disponível; download e empacotamento do modelo ainda são opcionais.
 

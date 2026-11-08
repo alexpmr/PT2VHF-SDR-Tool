@@ -7,7 +7,7 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 > Revisão da versão 0.7.0 (08/11/2026): a 0.6.0 já incorporou teclas de banda,
 > memória por banda, centralização, padrões do receptor, prévias LCD e seleção das bandas exibidas.
 > A 0.7.0 adicionou instrumentos S/VU analógicos, mapa de detecções RF 24 h,
-> perfil de escuta "Sinal fraco" por DSP convencional e legendas locais com
+> perfil de escuta "Sinal fraco" por DSP convencional, mapa APRS local sem iGate e legendas locais com
 > faster-whisper **opcional**. Permanecem pendentes: IA neural, tradução,
 > decodificadores avançados, radiossondas e internacionalização integral.
 > Os detalhamentos abaixo permanecem como backlog até validação completa.

@@ -3,6 +3,7 @@
 ## Funcionalidades entregues no código
 - Instrumentos analógicos S-meter e VU vetoriais, com três estilos, selecionáveis em Configurações → Display.
 - Mapa de calor persistente por detecção do scanner (frequência/hora, janela móvel de 24 h), com exportação CSV.
+- Mapa das estações APRS recebidas com rastros por estação, em HTML local com OSM; não opera como iGate.
 - Perfil "Sinal fraco · DSP" (NB, NR e AGC) e restauração dos ajustes anteriores. Sem modelo neural.
 - Legendas de fonia em blocos de poucos segundos com histórico, hora, frequência, modo, idioma e indicativos e exportação CSV.
 

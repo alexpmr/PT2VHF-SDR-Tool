@@ -89,3 +89,16 @@ def test_weak_signal_dsp_preset(tmp_path, monkeypatch):
     assert (w.audio_panel.nb.isChecked(), w.audio_panel.nr.isChecked(),
             w.audio_panel.nr_str.value(), w.audio_panel.agc.isChecked()) == previous
     w.close()
+
+
+def test_aprs_map_renders_tracks_and_escapes_untrusted_text(tmp_path):
+    from pt2vhf.aprs_map import APRSMapHistory
+    hist = APRSMapHistory()
+    assert hist.add("PT2VHF", -15.8, -47.9, 123, "<script>alert('x')</script>")
+    assert hist.add("PT2VHF", -15.81, -47.91, 124, "Segunda posição")
+    assert not hist.add("INVALIDO", 122, -47)
+    path = hist.export_html(tmp_path / "mapa.html")
+    html = path.read_text(encoding="utf-8")
+    assert "L.polyline" in html and "PT2VHF" in html
+    assert "<script>alert('x')</script>" not in html
+    assert r"\u003cscript" in html
