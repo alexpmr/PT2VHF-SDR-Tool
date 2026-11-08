@@ -36,6 +36,8 @@ def test_sonde_channel_rejects_out_of_band():
     a, b = build_decoder_commands(402_500_000, "fsk_demod", "rs41mod")
     assert "--cs16" in a
     assert "--softin" in b
+    assert "--stats=5" in a
+    assert "--jsnsubfrm1" in b
     assert b[-1] == "402500000"
 
 

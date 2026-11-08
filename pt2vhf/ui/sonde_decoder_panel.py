@@ -6,7 +6,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout, QLabel,
     QLineEdit, QDoubleSpinBox, QPushButton, QTableWidget,
-    QTableWidgetItem, QAbstractItemView,
+    QTableWidgetItem, QAbstractItemView, QFileDialog, QPlainTextEdit,
 )
 from ..traffic import Track
 
@@ -14,6 +14,7 @@ from ..traffic import Track
 class SondeDecoderPanel(QWidget):
     startRequested = Signal(float, str, str)
     stopRequested = Signal()
+    captureRequested = Signal(str)
 
     HEADERS = ("Hora", "Serial", "Latitude", "Longitude", "Altitude m",
                "Vel. km/h", "Vertical m/s", "Detalhes")
@@ -52,11 +53,26 @@ class SondeDecoderPanel(QWidget):
         self.stop.clicked.connect(self.stopRequested.emit)
         row.addWidget(self.start)
         row.addWidget(self.stop)
+        self.capture = QPushButton("Salvar 20 s IQ (.c16)")
+        self.capture.setEnabled(False)
+        self.capture.clicked.connect(self._capture)
+        row.addWidget(self.capture)
         row.addStretch(1)
         lay.addLayout(row)
         self.status = QLabel("Aguardando. O waterfall sozinho não executa decodificação RS41.")
         self.status.setWordWrap(True)
         lay.addWidget(self.status)
+        self.diagnostics = QLabel("IQ 0 blocos · quadros 0 · posições 0 · perdidos 0")
+        self.diagnostics.setWordWrap(True)
+        self.diagnostics.setObjectName("infoLabel")
+        lay.addWidget(self.diagnostics)
+        self.log = QPlainTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setMaximumBlockCount(100)
+        self.log.setMaximumHeight(82)
+        self.log.setPlaceholderText("Erros e estatísticas dos decodificadores aparecerão aqui.")
+        lay.addWidget(self.log)
+        self._last_log = ""
         self.table = QTableWidget(0, len(self.HEADERS))
         self.table.setHorizontalHeaderLabels(self.HEADERS)
         self.table.verticalHeader().setVisible(False)
@@ -96,9 +112,49 @@ class SondeDecoderPanel(QWidget):
         self.cfg.save()
         self.startRequested.emit(hz, fsk, decoder)
 
+    def _capture(self):
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Salvar 20 s de IQ de diagnóstico", "RS41_48kHz_IQ.c16", "IQ int16 complexo (*.c16)")
+        if filename:
+            self.captureRequested.emit(filename)
+
     def running(self, on: bool):
         self.start.setEnabled(not on)
         self.stop.setEnabled(on)
+        self.capture.setEnabled(on)
+
+    def update_diagnostics(self, data):
+        iq, valid, total = data["iq_blocks"], data["positions"], data["json_frames"]
+        state = ("processo parado" if not data["fsk_alive"] or not data["decoder_alive"]
+                 else "aguardando quadros" if total == 0 else
+                 "quadros sem posição" if valid == 0 else "telemetria válida")
+        self.diagnostics.setText(
+            f"IQ {iq} blocos / {data['iq_samples']:,} amostras · "
+            f"JSON {total} · posições {valid} · sem GPS {data['unpositioned_frames']} · "
+            f"descartes {data['dropped']} · {state}")
+        error = data.get("error") or data.get("demod") or ""
+        if error and error != self._last_log:
+            self.log.appendPlainText(error)
+            self._last_log = error
+        if data.get("capture") and data["capture"] != self._last_log:
+            self.log.appendPlainText("Amostra IQ salva: " + data["capture"])
+            self._last_log = data["capture"]
+        if iq and not total and data["fsk_alive"] and data["decoder_alive"]:
+            self.status.setText("Sinal IQ recebido; nenhum quadro válido. Verifique ganho, SNR, PPM e versão dos decodificadores.")
+
+    def add_frame(self, data):
+        """Mostra quadros RS41 sem GPS para evitar descartes silenciosos."""
+        if not isinstance(data, dict):
+            return
+        row = 0
+        self.table.insertRow(row)
+        values = (time.strftime("%H:%M:%S"), str(data.get("id", data.get("serial", "—"))),
+                  "sem GPS", "sem GPS", "", "", "", "Frame: " + str(data.get("frame", "—")) +
+                  " · tipo: " + str(data.get("type", "RS41")))
+        for col, value in enumerate(values):
+            self.table.setItem(row, col, QTableWidgetItem(value))
+        if self.table.rowCount() > 300:
+            self.table.removeRow(300)
 
     def add_record(self, track: Track):
         row = 0

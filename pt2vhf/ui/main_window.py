@@ -568,6 +568,7 @@ class MainWindow(QMainWindow):
         self.sat_panel.tuneReceiveRequested.connect(self.tune)
         self.sonde_panel.startRequested.connect(self._start_sonde)
         self.sonde_panel.stopRequested.connect(self._stop_sonde)
+        self.sonde_panel.captureRequested.connect(self._capture_sonde_iq)
 
         self.fft.currentIndexChanged.connect(lambda _: self._set_engine("fft_size", self.fft.currentData()))
         self.cmap.currentTextChanged.connect(lambda n: (self.wf.set_colormap(n), self.cfg.__setitem__("wf_colormap", n)))
@@ -1397,6 +1398,7 @@ class MainWindow(QMainWindow):
             int(self.engine.sample_rate), freq,
             on_decoded=lambda track, raw: self.engine.events.put(("sonde_rx", (track, raw), time.time())),
             on_status=lambda msg: self.engine.events.put(("sonde_status", msg, time.time())),
+            on_frame=lambda raw: self.engine.events.put(("sonde_frame", raw, time.time())),
             fsk_path=fsk_path, decoder_path=rs41_path,
         )
         try:
@@ -1408,6 +1410,17 @@ class MainWindow(QMainWindow):
         self.sonde_worker = worker
         self.engine.iq_listeners.append(worker.feed)
         self.sonde_panel.running(True)
+
+    def _capture_sonde_iq(self, filename):
+        worker = getattr(self, "sonde_worker", None)
+        if worker is None:
+            self.sonde_panel.status.setText("Ligue a recepção RS41 antes de gravar IQ.")
+            return
+        try:
+            worker.start_capture(filename, 20)
+            self.sonde_panel.status.setText("Gravando 20 s de IQ complexo a 48 kS/s…")
+        except (OSError, RuntimeError) as exc:
+            self.sonde_panel.status.setText(f"Erro ao gravar IQ: {exc}")
 
     def _stop_sonde(self):
         worker = getattr(self, "sonde_worker", None)
@@ -1943,6 +1956,11 @@ class MainWindow(QMainWindow):
         elif self.rx_panel.start_btn.isChecked():
             self.stop_source()
 
+        if self.sonde_worker is not None:
+            now = time.monotonic()
+            if now - getattr(self, "_sonde_diag_time", 0.0) > 2.0:
+                self._sonde_diag_time = now
+                self.sonde_panel.update_diagnostics(self.sonde_worker.diagnostics())
         n = 0
         while not eng.events.empty() and n < 50:
             kind, data, ts = eng.events.get_nowait()
@@ -1962,6 +1980,8 @@ class MainWindow(QMainWindow):
                     f"{self.sonde_worker.received if self.sonde_worker else 0} quadros")
             elif kind == "sonde_status":
                 self.sonde_panel.status.setText(str(data))
+            elif kind == "sonde_frame":
+                self.sonde_panel.add_frame(data)
             elif kind == "dtmf":
                 self.dec_panel.add_dtmf(data, ts)
             elif kind == "vox":
