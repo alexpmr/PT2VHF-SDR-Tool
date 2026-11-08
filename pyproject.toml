@@ -9,7 +9,7 @@ description = "Receptor SDR com interface estilo rádio para radioamadores (RTL-
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "numpy>=1.26", "scipy>=1.11", "PySide6>=6.6", "pyqtgraph>=0.13.3",
+  "numpy>=1.26", "scipy>=1.11", "PySide6==6.11.3", "pyqtgraph>=0.13.3",
   "sounddevice>=0.4.6", "pyrtlsdr[lib]>=0.3.0",
 ]
 
