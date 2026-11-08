@@ -10,8 +10,8 @@ from pt2vhf.sonde_rx import ChannelIQ, build_decoder_commands
 from pt2vhf.satellites import parse_tles, receive_doppler_hz, look_angle, next_passes
 
 
-def test_sonde_iq_uses_current_sdr_center_and_offsets_to_positive_12khz():
-    """Um sinal VFO fixado em -150k da frequência central deve ir a +12k em 48k."""
+def test_sonde_iq_uses_current_sdr_center_and_offsets_to_baseband_zero():
+    """Uma RS41 em VFO-150k deve aparecer centrada em 0 Hz no IQ de 48k."""
     fs = 1_200_000
     f0 = 402_500_000
     center = f0 + 150_000
@@ -24,7 +24,7 @@ def test_sonde_iq_uses_current_sdr_center_and_offsets_to_positive_12khz():
     z = v[:, 0] + 1j * v[:, 1]
     mean_phase = np.angle(np.mean(z[120:] * z[119:-1].conjugate()))
     measured_hz = mean_phase * 48000 / (2 * np.pi)
-    assert abs(measured_hz - 12000) < 500
+    assert abs(measured_hz) < 500
 
 
 def test_sonde_channel_rejects_out_of_band():
@@ -35,6 +35,8 @@ def test_sonde_channel_rejects_out_of_band():
         build_decoder_commands(399_999_000, "fsk_demod", "rs41mod")
     a, b = build_decoder_commands(402_500_000, "fsk_demod", "rs41mod")
     assert "--cs16" in a
+    assert a[a.index("-b") + 1] == "-5000"
+    assert a[a.index("-u") + 1] == "5000"
     assert "--softin" in b
     assert "--stats=5" in a
     assert "--jsnsubfrm1" in b

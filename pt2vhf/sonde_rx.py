@@ -23,7 +23,7 @@ from scipy.signal import resample_poly, butter, sosfilt
 from .traffic import parse_radiosondes
 
 OUTPUT_RATE = 48000
-SIGNAL_OFFSET_HZ = 12000
+SIGNAL_OFFSET_HZ = 0  # centralizar portadora em 0 Hz; máscara FSK: -5 a +5 kHz
 
 
 def find_binary(executable: str, supplied_path: str = "") -> str:
@@ -42,7 +42,7 @@ def find_binary(executable: str, supplied_path: str = "") -> str:
 def build_decoder_commands(freq_hz: float, fsk_binary: str, rs41_binary: str):
     if not math.isfinite(freq_hz) or not 400e6 <= freq_hz <= 406e6:
         raise ValueError("A recepção RS41 configurada suporta a faixa 400–406 MHz")
-    demod = [fsk_binary, "--cs16", "-b", "1200", "-u", "22800",
+    demod = [fsk_binary, "--cs16", "-b", "-5000", "-u", "5000",
              "-s", "--mask", "5000", "--nsym=300", "-p", "5", "--stats=5",
              "2", "48000", "4800", "-", "-"]
     decoder = [rs41_binary, "--ptu2", "--json", "--jsnsubfrm1",
@@ -51,7 +51,7 @@ def build_decoder_commands(freq_hz: float, fsk_binary: str, rs41_binary: str):
 
 
 class ChannelIQ:
-    """Canal complexo centrado 12 kHz ABAIXO da portadora, saída IQ int16 48 kHz.
+    """Canal complexo centrado na portadora (0 Hz), saída IQ int16 48 kHz.
 
     Uma fase contínua é mantida entre blocos. Cada bloco é reamostrado com
     resample_poly; blocos grandes de SDR fornecem margem de filtro na entrada.
@@ -103,7 +103,8 @@ class ChannelIQ:
             joined = np.concatenate((prefix, translated))
             narrow = resample_poly(joined, self._up, self._down)[n_prefix_out:]
             self._tail = joined[-min(len(joined), 10 * self._down):].copy()
-        # O fsk_demod espera I/Q signed 16 bit little-endian, intercalado.
+        # O fsk_demod moderno espera I/Q signed 16 bit little-endian, intercalado,
+        # portadora no centro do canal (-5 a +5 kHz), não na antiga FI +12 kHz.
         vals = np.stack((narrow.real, narrow.imag), axis=-1)
         ints = np.round(np.clip(vals, -1, 1) * 30000).astype("<i2")
         return ints.tobytes()
