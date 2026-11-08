@@ -2,6 +2,14 @@
 
 Itens registrados pelo mantenedor. Não implementar até o pedido de versão nova.
 
+## Falha P1 — S-meter / intensidade de sinal fixa em sete barras vermelhas (08/11/2026)
+- **Relato do operador:** o indicador gráfico de intensidade de sinal permanece exibindo **sete barras na cor vermelha**, sem acompanhar variações reais de intensidade ou a mudança de frequência, mesmo recebendo transmissões distintas. Tratar como **falha funcional aberta**, ainda sem causa comprovada.
+- **Fluxo existente a inspecionar:** `Receiver.process()` mede a potência do IQ filtrado em `rx.signal_db` (`pt2vhf/dsp/receiver.py`); `SDREngine.process_block()` publica `status["signal_db"]`; `MainWindow._tick()` converte `dbfs_to_s_units(..., s_meter_cal)` e chama `LCDDisplay.set_signal()`; `LCDDisplay._draw_smeter()` desenha a barra colorida e a indicação de pico. Investigar cada estágio para determinar se o valor congela no DSP, status, conversão/calibração, atualização do widget ou pintura; não presumir falha visual sem comparar medições.
+- **Diagnóstico de escala:** verificar a inconsistência entre o comentário de faixa do S-meter e o limite efetivo da escala (`lo=-147 dBm`, `S9=-93 dBm`, `hi=-33 dBm`), o offset `s_meter_cal`, arredondamento do número de segmentos, retenção de pico (`_peak`) e regiões de cor vermelha. O medidor deve ser proporcional ao valor medido, não a uma quantidade fixa de barras ou ao squelch/AGC do áudio.
+- **Testes reproduzíveis:** comparar sem sinal/antena, ruído de fundo, portadora fraca, média e forte; trocar de frequência, modo, ganho e fonte (RTL-SDR real e simulador). Registrar amostras de `signal_db` (dBFS), dBm calibrado, unidade S e `lit/peak` em segmentos por segundo. Confirmar atualização contínua do valor digital e da barra, inclusive em tema âmbar e nos demais temas.
+- **Aceite:** o número de segmentos acesos sobe e desce acompanhando a potência do canal selecionado; o trecho vermelho só aparece ao ultrapassar o nível correspondente da escala; o marcador de pico decai no tempo correto; os valores numéricos e gráfico representam a **mesma leitura**. Ausência de sinal deve mostrar leitura baixa e sinal forte deve aumentar; testes automatizados com níveis IQ conhecidos e teste de bancada com SDR real.
+- **Status:** **pendente de correção e homologação**. Não marcar como resolvido apenas com alterações de aparência ou com testes do simulador.
+
 ## Ajuste P1 — grade de bandas no espaço direito do LCD e escala responsiva (08/11/2026)
 - **Referência visual:** imagem do mantenedor de 08/11/2026, com área delimitada em azul **à direita dos dígitos da frequência, acima do S-meter**, na porção livre do painel âmbar.
 - **Alteração de posição:** retirar a grade de bandas atualmente desenhada como duas fileiras **abaixo das teclas de modos**. Colocar as teclas diretamente na região marcada, **dentro do mesmo LCD**, sem barra/painel independente e sem esconder as teclas AUTO/NFM/WFM/AM/USB/LSB/CW/DSB/RAW/A-SINT.
