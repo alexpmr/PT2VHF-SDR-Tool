@@ -19,6 +19,7 @@ from ..dsp.demod import dbfs_to_s_units
 from ..dsp.receiver import AUDIO_RATE, MODES, passband_for
 from ..engine import Engine
 from ..memory import MemoryBank, MemoryChannel, band_for
+from ..occupancy import OccupancyHistory
 from ..sources.base import SourceError
 from ..audio import ActivityRecorder
 from ..presets import import_packs
@@ -29,6 +30,7 @@ from .listening import FavoritesBar, PresetDialog, ScannerPanel
 from .settings_panel import SettingsPanel
 from .bandkeys import BandKeys
 from .display_settings import DisplaySettings
+from .occupancy_panel import OccupancyPanel
 from .analog import AnalogPanel
 from .panels import AudioPanel, DecoderPanel, MemoryPanel, ModePanel, ReceiverPanel
 from .waterfall import COLORMAPS, SpectrumWaterfall
@@ -87,6 +89,7 @@ class MainWindow(QMainWindow):
         self.resize(1500, 950)
         self.cfg = Config()
         self.bank = MemoryBank(config_dir() / "memorias.json")
+        self.occupancy = OccupancyHistory(config_dir() / "ocupacao_24h.json")
         self.audio = AudioOutput(AUDIO_RATE, self.cfg["audio_device"])
         self.audio.start()
         self.engine = Engine(self.audio)
@@ -143,6 +146,8 @@ class MainWindow(QMainWindow):
         self.mem_panel = MemoryPanel(self.bank)
         self.dec_panel = DecoderPanel(self.cfg)
         self.scan_panel = ScannerPanel(self.cfg, self.bank.categories + ["Descobertas"])
+        self.occupancy_panel = OccupancyPanel(self.occupancy)
+        self.scan_panel.tabs.addTab(self.occupancy_panel, "Ocupação 24 h")
         self.sscan: SpectrumScanner | None = None
         self._hits_t = 0.0
         self.assist = AssistBox()
@@ -160,6 +165,8 @@ class MainWindow(QMainWindow):
         self._presenting = False
         self._quiet_start = False
         self._quiet_error = ""
+        self._weak_restore = None
+        self._last_occupancy_refresh = 0.0
 
         central = QWidget()
         outer = QVBoxLayout(central)
@@ -335,6 +342,11 @@ class MainWindow(QMainWindow):
         self.keep_center.setChecked(bool(self.cfg.get("wf_keep_vfo_centered", False)))
         self.keep_center.toggled.connect(self._toggle_keep_center)
         row.addWidget(self.keep_center)
+        self.weak_btn = QPushButton("Sinal fraco · DSP")
+        self.weak_btn.setCheckable(True)
+        self.weak_btn.setToolTip("Ativa NR, NB e AGC para melhorar a escuta; utiliza DSP clássico, não IA neural.")
+        self.weak_btn.toggled.connect(self._weak_signal_toggled)
+        row.addWidget(self.weak_btn)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         row.addWidget(spacer)
@@ -1644,6 +1656,31 @@ class MainWindow(QMainWindow):
         self.wf.set_levels(lo, hi)
         self.cfg["wf_min_db"], self.cfg["wf_max_db"] = lo, hi
 
+    def _weak_signal_toggled(self, enabled):
+        """Perfil reversível para redução de interferências, sem chamar de rede neural."""
+        ap = self.audio_panel
+        if enabled:
+            self._weak_restore = {
+                "nb": ap.nb.isChecked(), "nr": ap.nr.isChecked(),
+                "nr_str": ap.nr_str.value(), "agc": ap.agc.isChecked(),
+                "agc_speed": ap.agc_speed.currentText(),
+            }
+            ap.nb.setChecked(True)
+            ap.nr.setChecked(True)
+            ap.nr_str.setValue(max(ap.nr_str.value(), 24))
+            ap.agc.setChecked(True)
+            ap.agc_speed.setCurrentText("Lento")
+            self.statusBar().showMessage("Sinal fraco: NB/NR/AGC aplicados (DSP, sem IA neural)", 6000)
+        elif self._weak_restore is not None:
+            saved = self._weak_restore
+            self._weak_restore = None
+            ap.nb.setChecked(saved["nb"])
+            ap.nr.setChecked(saved["nr"])
+            ap.nr_str.setValue(saved["nr_str"])
+            ap.agc.setChecked(saved["agc"])
+            ap.agc_speed.setCurrentText(saved["agc_speed"])
+            self.statusBar().showMessage("Perfil de sinal fraco desativado; ajustes anteriores restaurados", 6000)
+
     def _auto_levels(self):
         r = self.wf.auto_levels()
         if r:
@@ -1715,6 +1752,8 @@ class MainWindow(QMainWindow):
             now = time.monotonic()
             for spec, center, fs in lines:
                 for ev in sc.feed(spec, center, fs, now):
+                    if ev[0] == "hit":
+                        self.occupancy.record(ev[1].freq, time.time())
                     if ev[0] == "listen":
                         self.statusBar().showMessage(f"Scanner: sinal em {ev[1] / 1e6:.4f} MHz "
                                                      f"{self._mem_name(ev[1])}", 4000)
@@ -1723,6 +1762,11 @@ class MainWindow(QMainWindow):
                     elif ev[0] == "resume":
                         self._sync_views()
             self._update_hits()
+            if (self.scan_panel.tabs.currentWidget() is self.occupancy_panel
+                    and now - self._last_occupancy_refresh > 4):
+                self.occupancy_panel.refresh()
+                self._last_occupancy_refresh = now
+            self.occupancy.flush()
         for spec, center, fs in lines[-8:]:
             self.wf.add_line(spec, center, fs)
         if lines and abs(getattr(self, "_marker_center", 0) - eng.center_freq) > 1:
@@ -1944,6 +1988,7 @@ class MainWindow(QMainWindow):
         self.cfg["my_locator"] = self.dec_panel.locator.text()
         self.cfg.save()
         self.bank.save()
+        self.occupancy.flush(force=True)
         self.engine.stop()
         self.audio.stop()
         super().closeEvent(ev)
