@@ -14,6 +14,15 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 
 ## Recursos
 
+### v0.12.0 — IA neural e transcrição de voz offline
+- **RNNoise (rede neural real):** redução neural de ruído de voz em NFM/AM/USB/LSB/DSB, com botão no painel de áudio e mistura áudio seco/tratado de 0 a 100%. O modelo RNN vem no backend pyrnnoise (licença Apache-2.0), incluído nos binários.
+- **Recepção sem bloqueios:** inferência em thread separada com fila limitada para manter o SDR responsivo. Sob sobrecarga de CPU, áudio antigo pode ser descartado. IQ, waterfall, S-meter, APRS/DTMF/CTCSS, CW/RAW e gravações IQ não passam pelo denoiser. WFM é preservado para evitar prejudicar música. Áudio tratado alimenta saída, web, gravação contínua e legendas; gravação de atividade permanece original.
+- **Perfil Sinal fraco · IA + DSP:** combina NB/NR/AGC com RNNoise nos modos de voz, caso disponível; restaura as configurações anteriores.
+- **Transcrição local:** faster-whisper/CTranslate2 incluídos no programa, reconhecimento ao vivo em blocos de aproximadamente 4 segundos (não palavra a palavra), com frequência, modo, idioma, indicativos, histórico e CSV; WAV gravado pelo Scanner também pode ser transcrito.
+- **Primeiro uso:** Scanner → Legendas ao vivo → escolha o modelo tiny/base/small → Baixar modelo. Download explícito exige Internet somente uma vez. O modelo fica em AppData/PT2VHF-SDR-Tool/models/whisper-tiny (ou equivalente). Nenhum áudio é transmitido à Internet; depois, o reconhecimento funciona offline.
+- **Limitações:** RNNoise trata fonia, não recupera pacotes ausentes, e pode distorcer SSB extremamente fraco. Whisper pode errar indicativos/números. Os pesos Whisper não são distribuídos no instalador. IA sobre IQ, tradução automática, CW e voz digital permanecem pendentes.
+
+
 ### Novo na v0.11.0 — LCD responsivo, S-meter e RS41
 - **S-meter:** a ausência de amostras IQ recentes agora mostra "S-- / -- dBm" e nenhuma barra acesa; leituras válidas atualizam os segmentos proporcionalmente, com retenção de pico. O tooltip do LCD mostra os valores de entrada em dBFS, dBm aproximado e unidade S. Calibração absoluta em dBm requer comparação com referência.
 - **LCD:** painel de 1.100 × 255 unidades lógicas, renderizado vetorialmente com escala uniforme (letterboxing, sem cortes); ajuste proporcional de frequências, etiquetas, S-meter e teclas. A posição clicada é convertida às coordenadas lógicas, inclusive em janelas estreitas.
@@ -110,7 +119,7 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 - **Instrumentos analógicos**: S-meter de ponteiro e VU de áudio com estilos Valvulado, Militar e Estúdio, selecionáveis na aba Display.
 - **Atividade RF em 24 horas**: nova subaba no Scanner, com mapa de calor das detecções por frequência/hora, persistência e CSV. A amostragem não representa percentual de ocupação do espectro.
 - **Mapa APRS**: botão em Decodificadores para abrir no navegador as estações recebidas e seus rastros, sem transmitir dados ao APRS-IS (tiles OSM exigem Internet).
-- **Sinal fraco · DSP**: botão para combinação reversível de NB, NR e AGC. Não emprega IA neural.
+- **Sinal fraco · IA + DSP**: perfil NB/NR/AGC com RNNoise neural opcional na fonia; controle de mistura no painel de áudio.
 - **Legendas ao vivo**: transcrição local da fonia por blocos, com frequência, modo, idioma e indicativos, histórico e CSV. Requer `faster-whisper` e um modelo disponível; download e empacotamento do modelo ainda são opcionais.
 
 ### Novidades da 0.6

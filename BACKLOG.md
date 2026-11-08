@@ -2,6 +2,13 @@
 
 Itens registrados pelo mantenedor. Não implementar até o pedido de versão nova.
 
+## Revisão v0.12.0 — IA neural e transcrição
+- **IA neural na fonia:** RNNoise (RNN) em worker 48 kHz, ativa em NFM/AM/USB/LSB/DSB, com controle de intensidade e fila limitada. Não interfere nos dados IQ, APRS nem no S-meter.
+- **Transcrição local:** faster-whisper/CTranslate2 no empacotamento e modelos tiny/base/small baixados por solicitação explícita. Recepção ao vivo gera legendas com frequência, horário, idioma e indicativos; WAV do Scanner usa o mesmo modelo.
+- **Testes:** mock RNNoise, buffering, fila sob sobrecarga, bypass digital, modelo local sem rede, transcrição em worker e autoteste de dependências nos executáveis.
+- **Ainda pendente:** homologação SDR/RF real, análise de latência e CPU no Windows, tradução de voz, IA de IQ/filtragem adaptativa, CW neural, métricas SNR comparativas e demais decodificadores RF. Não confundir inclusão da IA de áudio com conclusão total de IA descrita no backlog.
+- **Distribuição:** versão pronta somente após build Windows completo, publicação e SHA-256; site e OTA verificados separadamente.
+
 ## Revisão da v0.11.0 — status por evidência
 - **LCD responsivo e matriz de bandas (implementados em código):** desenho em escala uniforme, botões em 5 colunas na área solicitada, sem banda abaixo dos modos. Faltam screenshots/homologação pelo operador em Windows e monitor pequeno.
 - **S-meter preso em sete barras (correção em código):** o valor inicial de -127 dBm acendia 7 segmentos mesmo antes de amostra válida. Agora o medidor inicia sem barras, exige leitura IQ recente, recalcula segmentos e informa dBFS/dBm no tooltip. Falta validar com antena/receptor físico e calibração.

@@ -2,6 +2,17 @@
 
 Todas as mudanças relevantes do PT2VHF SDR Tool.
 
+## [0.12.0] — 2026-11-08
+### Implementado no código
+- Redução neural RNNoise real para fonia a 48 kHz, mix de intensidade, worker assíncrono com fila limitada e fallback seguro. Dados RF/decoder continuam originais.
+- Perfil Sinal fraco combina NB/NR/AGC com RNNoise quando disponível e em modo voz.
+- Backend faster-whisper/CTranslate2 no empacotamento; download explícito de modelos tiny/base/small, transcrição local ao vivo e de WAV do Scanner, idioma e CSV.
+- Mensagens de dependência/erro e autotestes de runtime dos executáveis.
+### Homologação / limites
+- Qualidade subjetiva, latência, desempenho de CPU e precisão de indicativos requerem teste com SDR real.
+- Pesos Whisper baixados pelo usuário na primeira instalação; não há download automático em segundo plano nem envio de áudio para serviços externos.
+- Tradução automática, IA em IQ, CW, SSTV, voz digital e vários decodificadores continuam no backlog.
+
 ## [0.11.0] — 2026-11-08
 ### Implementado no código
 - LCD vetorial redimensionado proporcionalmente em telas/janelas menores, sem podar a frequência ou as teclas; mapeamento de clique e rolagem convertido de pixels para coordenadas lógicas.
