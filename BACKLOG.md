@@ -4,6 +4,21 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Transcrição de voz em tempo real, em todos os modos (registrado em 08/11/2026)
+- Hoje existe só a transcrição local **opcional e depois da gravação** (coluna do Scanner, gravações por atividade,
+  requer `pip install faster-whisper`).
+- Pedido: transcrever **em tempo real** a fonia da transmissão que está sendo ouvida, em **todos os modos de voz**
+  (NFM, WFM, AM, USB, LSB, DSB e, quando houver, voz digital), para facilitar o entendimento.
+- Mostrar o texto ao vivo numa área legível (legenda sob o display/waterfall e painel com histórico), com horário,
+  frequência e modo de cada trecho; separar por transmissão (squelch/VOX); destacar indicativos reconhecidos.
+- Idioma automático ou escolhido (pt/en/es…); funcionar **localmente, sem internet**, já incluído no instalador
+  (sem exigir pip), com escolha de modelo (rápido × preciso) e uso de GPU quando houver; não pode travar a
+  recepção nem o áudio (processamento em segundo plano, latência de poucos segundos).
+- Também na interface web e no modo apresentação (legenda); salvar/exportar o texto (TXT/CSV) junto com as
+  gravações; ligar/desligar por botão e em Configurações.
+- Avaliar o tamanho do pacote e o desempenho em PCs modestos antes de implementar (ex.: modelo baixado sob
+  demanda pelo www.pt2vhf.com).
+
 ### Decodificadores: ADS-B, AIS, DMR, D-STAR, C4FM e SSTV da ISS (registrado em 08/11/2026)
 - Pedido explícito do mantenedor (reforça e prioriza parte do item "Recursos sugeridos"):
   - **ADS-B** (1090 MHz): aviões no mapa com indicativo, altitude, velocidade, rumo e rastro; tabela de aeronaves.
