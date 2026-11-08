@@ -4,6 +4,15 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Idioma do programa com bandeiras, como nos demais programas PT2VHF (registrado em 08/11/2026)
+- Hoje o SDR Tool só existe em português.
+- Escolha do idioma da interface num **menu suspenso (pull-down) com a bandeira de cada país** ao lado do nome
+  nativo do idioma, no mesmo padrão dos demais programas PT2VHF e do site (pt-BR, en, es, fr, de, it, zh);
+  em Configurações e acessível também pelo cabeçalho; aplica na hora (ou após reiniciar, com aviso) e fica salvo.
+- Traduzir toda a interface (abas, menus, painéis, mensagens, dicas, diálogos de atualização e anúncio de abertura).
+- Esse idioma é o **idioma padrão** usado pela transcrição/tradução da fonia.
+- Conferir o seletor e as bandeiras dos outros programas PT2VHF/site antes de implementar, para ficar idêntico.
+
 ### Tratamento com IA para melhorar sinais fracos (débeis) (registrado em 08/11/2026)
 - Objetivo: tornar inteligível a fonia (e melhorar sinais de CW/dados) que chega fraca, perto do ruído.
   Amplia o subitem "Limpeza de ruído com IA no áudio" de "Recursos sugeridos".
@@ -20,6 +29,9 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
   transcrição em tempo real; avaliar CPU/GPU, tamanho do pacote e licenças dos modelos antes de implementar.
 
 ### Transcrição de voz em tempo real, em todos os modos (registrado em 08/11/2026)
+- **Acréscimo (08/11/2026):** o texto pode sair **no idioma original** da fonia ou **traduzido para o idioma
+  padrão escolhido pelo usuário** (o idioma do programa); opção em Configurações e alternância rápida na legenda
+  (original × traduzido), mantendo o original no histórico/exportação. Tradução local, sem internet.
 - Hoje existe só a transcrição local **opcional e depois da gravação** (coluna do Scanner, gravações por atividade,
   requer `pip install faster-whisper`).
 - Pedido: transcrever **em tempo real** a fonia da transmissão que está sendo ouvida, em **todos os modos de voz**
