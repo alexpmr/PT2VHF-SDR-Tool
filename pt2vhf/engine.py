@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 
 from .audio import ActivityRecorder, AudioOutput, WavRecorder
+from .neural_audio import NeuralAudioWorker
 from .decoders import aprs as aprs_mod
 from .decoders.afsk import AFSKDemodulator
 from .decoders.tones import CTCSSDetector, DTMFDecoder
@@ -54,6 +55,7 @@ class Engine:
         self.activity_rec: ActivityRecorder | None = None   # Scanner: um arquivo por transmissão
         self.vox_rec: ActivityRecorder | None = None        # botão Gravar áudio com VOX
         self.audio_listeners: list = []
+        self.neural_audio: NeuralAudioWorker | None = None
         self.iq_listeners: list = []  # decoders consume original complex IQ via bounded queues
         self.iq_vox = False                                 # IQ só com transmissão
         self._iq_open_until = 0.0
@@ -90,6 +92,32 @@ class Engine:
             log.warning("Falha no parse APRS: %s", e)
             return
         self.events.put(("aprs", pkt, time.time()))
+
+    # ----------------------------------------------------------- áudio neural
+    def set_neural_audio(self, enabled: bool, strength: float = 0.8):
+        """Troca o worker sem bloquear o processamento de RF."""
+        old = self.neural_audio
+        self.neural_audio = None
+        if old is not None:
+            old.stop()
+        if enabled:
+            self.neural_audio = NeuralAudioWorker(
+                self._publish_audio,
+                lambda message: self.events.put(("neural_error", message, time.time())),
+                strength=strength)
+
+    def _publish_audio(self, audio):
+        """Entrega áudio tratado à saída, ao stream LAN, às legendas e à gravação."""
+        if self.audio is not None:
+            self.audio.write(audio)
+        for listener in tuple(self.audio_listeners):
+            try:
+                listener(audio)
+            except Exception:  # noqa: BLE001
+                log.exception("Audio listener falhou")
+        with self._lock:
+            if self._audio_rec is not None and len(audio):
+                self._audio_rec.write(audio)
 
     # ----------------------------------------------------------- ciclo de vida
     def start(self, source: IQSource):
@@ -391,13 +419,9 @@ class Engine:
         self.status["signal_sample_time"] = time.monotonic()
         self.status["sq_open"] = rx.squelch.is_open
         self.status["audio_level"] = float(np.max(np.abs(audio))) if len(audio) else 0.0
-        if self.audio is not None:
-            self.audio.write(audio)
-        for listener in self.audio_listeners:  # ex.: servidor web (áudio no navegador)
-            listener(audio)
-        with self._lock:
-            if self._audio_rec and len(audio):
-                self._audio_rec.write(audio)
+        processor = self.neural_audio
+        if processor is None or not processor.feed(audio, rx.mode):
+            self._publish_audio(audio)
         sq_active = rx.squelch.threshold_db > -149 or self.tone_squelch is not None
         opened = sq_active and rx.squelch.is_open and tone_ok
         if opened:
