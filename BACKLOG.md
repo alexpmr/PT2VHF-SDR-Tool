@@ -4,6 +4,21 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Tratamento com IA para melhorar sinais fracos (débeis) (registrado em 08/11/2026)
+- Objetivo: tornar inteligível a fonia (e melhorar sinais de CW/dados) que chega fraca, perto do ruído.
+  Amplia o subitem "Limpeza de ruído com IA no áudio" de "Recursos sugeridos".
+- **Áudio (voz):** redução de ruído por rede neural treinada para voz (ex.: RNNoise, DeepFilterNet ou similar),
+  removendo chiado, estática e QRM sem o som "metálico" da subtração espectral atual; intensidade ajustável e
+  comparação liga/desliga em tempo real.
+- **Antes da demodulação (IQ):** filtro adaptativo que segue o sinal (largura e centro do passband automáticos),
+  supressão de interferências estreitas (portadoras/batimentos) e de ruído impulsivo por IA, e AGC que não
+  "bombeia" com o ruído.
+- **CW:** realce do tom e filtro estreito automático; opção de decodificar CW fraco para texto.
+- **Indicador** de melhoria (SNR estimado antes/depois) e um botão único "Sinal fraco" que liga o conjunto
+  adequado ao modo atual.
+- Funcionar **localmente, sem internet**, sem travar a recepção (segundo plano, baixa latência) e combinável com a
+  transcrição em tempo real; avaliar CPU/GPU, tamanho do pacote e licenças dos modelos antes de implementar.
+
 ### Transcrição de voz em tempo real, em todos os modos (registrado em 08/11/2026)
 - Hoje existe só a transcrição local **opcional e depois da gravação** (coluna do Scanner, gravações por atividade,
   requer `pip install faster-whisper`).
