@@ -385,9 +385,11 @@ class MainWindow(QMainWindow):
         self.keep_center.setChecked(bool(self.cfg.get("wf_keep_vfo_centered", False)))
         self.keep_center.toggled.connect(self._toggle_keep_center)
         row.addWidget(self.keep_center)
-        self.weak_btn = QPushButton("Sinal fraco · DSP")
+        self.weak_btn = QPushButton("Sinal fraco · IA + DSP")
         self.weak_btn.setCheckable(True)
-        self.weak_btn.setToolTip("Ativa NR, NB e AGC para melhorar a escuta; utiliza DSP clássico, não IA neural.")
+        self.weak_btn.setToolTip(
+            "Combina NB, NR, AGC e RNNoise neural quando instalado. "
+            "IA apenas na fonia; caso contrário utiliza DSP convencional.")
         self.weak_btn.toggled.connect(self._weak_signal_toggled)
         row.addWidget(self.weak_btn)
         self.live_btn = QPushButton("Legendas")
@@ -1884,13 +1886,19 @@ class MainWindow(QMainWindow):
                 "nb": ap.nb.isChecked(), "nr": ap.nr.isChecked(),
                 "nr_str": ap.nr_str.value(), "agc": ap.agc.isChecked(),
                 "agc_speed": ap.agc_speed.currentText(),
+                "neural": ap.neural.isChecked(),
+                "neural_strength": ap.neural_strength.value(),
             }
             ap.nb.setChecked(True)
             ap.nr.setChecked(True)
             ap.nr_str.setValue(max(ap.nr_str.value(), 24))
             ap.agc.setChecked(True)
             ap.agc_speed.setCurrentText("Lento")
-            self.statusBar().showMessage("Sinal fraco: NB/NR/AGC aplicados (DSP, sem IA neural)", 6000)
+            from ..neural_audio import backend_available
+            if backend_available() and self.mode in ("NFM", "AM", "USB", "LSB", "DSB"):
+                ap.neural.setChecked(True)
+            self.statusBar().showMessage(
+                "Sinal fraco: NB/NR/AGC e RNNoise (se instalado e em modo de fonia)", 6000)
         elif self._weak_restore is not None:
             saved = self._weak_restore
             self._weak_restore = None
@@ -1899,6 +1907,8 @@ class MainWindow(QMainWindow):
             ap.nr_str.setValue(saved["nr_str"])
             ap.agc.setChecked(saved["agc"])
             ap.agc_speed.setCurrentText(saved["agc_speed"])
+            ap.neural_strength.setValue(saved["neural_strength"])
+            ap.neural.setChecked(saved["neural"])
             self.statusBar().showMessage("Perfil de sinal fraco desativado; ajustes anteriores restaurados", 6000)
 
     def _auto_levels(self):

@@ -7,7 +7,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, co
 binaries, datas = [], []
 hiddenimports = collect_submodules("pyqtgraph") + ["rtlsdr", "sounddevice"]
 for pkg in ("pyrtlsdrlib", "_sounddevice_data", "pyrnnoise", "faster_whisper",
-            "ctranslate2", "tokenizers"):
+            "ctranslate2", "tokenizers", "onnxruntime", "huggingface_hub", "av"):
     try:
         binaries += collect_dynamic_libs(pkg)
         datas += collect_data_files(pkg)

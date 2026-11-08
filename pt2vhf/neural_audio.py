@@ -134,7 +134,7 @@ class NeuralAudioWorker:
                     if self.on_error:
                         self.on_error(f"Falha na redução neural: {ex}")
                     # Fallback: nunca silenciar áudio após erro no plugin.
-                    result = np.concatenate((self._tail, audio))
+                    result = audio.copy()
                     self._tail = np.empty(0, np.float32)
                     backend = None
             if result.size and not self._stop.is_set():
