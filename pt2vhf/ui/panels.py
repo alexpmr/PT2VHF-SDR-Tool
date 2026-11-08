@@ -4,7 +4,8 @@ from __future__ import annotations
 import csv
 import time
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox,
                                QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
@@ -13,6 +14,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from ..audio import list_output_devices
+from ..aprs_map import APRSMapHistory
+from ..config import config_dir
 from ..decoders.aprs import distance_bearing, locator_to_latlon
 from ..decoders.tones import CTCSS_TONES
 from ..dsp.audiofx import EQ_BANDS_HZ, EQ_PRESETS
@@ -854,6 +857,7 @@ class DecoderPanel(QWidget):
         self.stations.verticalHeader().setVisible(False)
         self.tabs.addTab(self.stations, "Estações")
         self._stations: dict[str, dict] = {}
+        self._aprs_map = APRSMapHistory()
 
         self.tlm = QTableWidget(0, 9)
         self.tlm.setHorizontalHeaderLabels(["Hora", "Estação", "Seq", "A1", "A2", "A3", "A4", "A5", "Bits"])
@@ -883,8 +887,11 @@ class DecoderPanel(QWidget):
         clear.clicked.connect(self.clear)
         save = QPushButton("Salvar log APRS…")
         save.clicked.connect(self._save)
+        show_map = QPushButton("Mapa APRS · estações e rastros")
+        show_map.clicked.connect(self._open_aprs_map)
         br.addStretch(1)
         br.addWidget(save)
+        br.addWidget(show_map)
         br.addWidget(clear)
         lay.addLayout(br)
         self._dtmf_last = 0.0
@@ -897,6 +904,7 @@ class DecoderPanel(QWidget):
         for t in (self.aprs, self.tlm, self.stations):
             t.setRowCount(0)
         self._stations.clear()
+        self._aprs_map = APRSMapHistory()
         self.raw.clear()
         self.dtmf_line.clear()
         self.dtmf_log.clear()
@@ -911,6 +919,13 @@ class DecoderPanel(QWidget):
             for r in range(self.aprs.rowCount()):
                 w.writerow([self.aprs.item(r, c).text() if self.aprs.item(r, c) else ""
                             for c in range(self.aprs.columnCount())])
+
+    def _open_aprs_map(self):
+        if not self._aprs_map.stations:
+            QMessageBox.information(self, "Mapa APRS", "Ainda não há estações APRS com posição recebida.")
+            return
+        file = self._aprs_map.export_html(config_dir() / "mapa_aprs_recebido.html")
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(file)))
 
     def _my_pos(self):
         return locator_to_latlon(self.locator.text())
@@ -927,6 +942,8 @@ class DecoderPanel(QWidget):
     def add_aprs(self, pkt, ts: float):
         self.counts["aprs"] += 1
         hora = time.strftime("%H:%M:%S", time.localtime(ts))
+        if pkt.lat is not None and pkt.lon is not None:
+            self._aprs_map.add(pkt.source, pkt.lat, pkt.lon, ts, pkt.comment)
         dist = az = ""
         me = self._my_pos()
         if me and pkt.lat is not None:
