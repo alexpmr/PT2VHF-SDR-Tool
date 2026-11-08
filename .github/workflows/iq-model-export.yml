@@ -1,39 +1,45 @@
-name: Experimental IQ model ONNX export
+name: Experimental IQ model training and ONNX export
 on:
   workflow_dispatch:
   pull_request:
     paths:
+      - 'scripts/train_iq_synthetic_ci.py'
       - 'scripts/export_iq_synthetic_v2.py'
       - 'pt2vhf/dsp/iq_classifier.py'
       - '.github/workflows/iq-model-export.yml'
 jobs:
-  export-and-validate:
+  train-export-validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install dependencies
-        run: python -m pip install --upgrade pip && python -m pip install torch numpy onnx onnxruntime
-      - name: Check checkpoint availability
-        id: checkpoint
-        shell: bash
+      - name: Install CPU inference and export dependencies
+        run: python -m pip install torch numpy onnx onnxruntime
+      - name: Train reproducible synthetic baseline
+        run: python scripts/train_iq_synthetic_ci.py
+      - name: Export and verify ONNX numerical parity
+        run: python scripts/export_iq_synthetic_v2.py --checkpoint models/iq/synthetic_v2.pt --output models/iq/synthetic_v2.onnx
+      - name: Smoke-test application ONNX classifier
         run: |
-          if [ -f models/iq/synthetic_v2.pt ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::Checkpoint not committed. Upload validated weights to models/iq/synthetic_v2.pt before export."
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Export and compare inference
-        if: steps.checkpoint.outputs.present == 'true'
-        run: python scripts/export_iq_synthetic_v2.py --checkpoint models/iq/synthetic_v2.pt --output synthetic_v2.onnx
-      - name: Upload ONNX artifact
-        if: steps.checkpoint.outputs.present == 'true'
+          python - <<'PY'
+          import numpy as np
+          from pt2vhf.dsp.iq_classifier import IQClassifier
+          model = IQClassifier("models/iq/synthetic_v2.onnx")
+          iq = np.exp(2j * np.pi * np.arange(4096) / 40).astype(np.complex64)
+          result = model.predict(iq)
+          assert result.mode in ("CW", "AM", "NFM", "WFM", "USB", "LSB", "UNKNOWN")
+          assert abs(sum(result.probabilities.values()) - 1.0) < 1e-5
+          print(result)
+          PY
+      - name: Upload experimental model and metrics
         uses: actions/upload-artifact@v4
         with:
-          name: pt2vhf-iq-synthetic-v2-onnx
-          path: synthetic_v2.onnx
+          name: pt2vhf-iq-synthetic-onnx-experimental
+          path: |
+            models/iq/synthetic_v2.onnx
+            models/iq/synthetic_v2.pt
+            models/iq/synthetic_v2_metrics.json
           if-no-files-found: error
