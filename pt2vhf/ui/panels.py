@@ -70,11 +70,12 @@ class ReceiverPanel(QWidget):
         self.device.setSizeAdjustPolicy(QComboBox.AdjustToContents)
         self.device.setMaximumWidth(340)
         dev_row = QHBoxLayout()
-        dev_row.addWidget(self.device, 1)
+        dev_row.addWidget(self.device)
         self.refresh = QPushButton("↻")
         self.refresh.setFixedWidth(30)
         self.refresh.setToolTip("Procurar dispositivos")
         dev_row.addWidget(self.refresh)
+        dev_row.addStretch(1)
         form.addRow("Dispositivo:", dev_row)
 
         self.host = QLineEdit(cfg["rtl_tcp_host"])

@@ -2,6 +2,17 @@
 
 Todas as mudanças relevantes do PT2VHF SDR Tool.
 
+## [0.8.0] — 2026-11-08
+### Implementado no código
+- Integração ADS-B com arquivos aircraft.json de readsb/dump1090: posições, ICAO, callsign, altitude, velocidade e rumo. Requer demodulador externo.
+- Decodificação local de mensagens NMEA AIS (tipos 1/2/3/18/19 de posição e tipo 5 para nome) produzidas por AIS-catcher/rtl_ais. Requer captura externa de RF.
+- Importação de telemetria de radiossondas em JSON local, com dados meteorológicos e fase de subida/descida; sem decodificação RS41 nativa ou previsão de queda.
+- Abas de tráfego com fontes configuráveis, atualização periódica, tabelas, CSV e mapa unificado OSM.
+- CAT Hamlib rigctld: ler frequência/modo e acompanhar o rádio, e enviar a sintonia do SDR manualmente, sem PTT.
+- Formulários de configurações mais compactos; testes determinísticos de ingestão AIS/ADS-B/sondas e CAT.
+### Não implementado
+- IA neural offline, tradução/localização integral, SSTV, DMR/D-STAR/C4FM com áudio, ADS-B ou AIS por DSP nativo, decodificação RS41 IQ, Doppler/órbitas, WFM RDS, ACARS e demais itens de pesquisa.
+
 ## [0.7.0] — 2026-11-08
 ### Implementado
 - Dois medidores analógicos vetoriais com ponteiros suavizados: S-meter calibrado em dBm / S-units e VU do áudio em dBFS.

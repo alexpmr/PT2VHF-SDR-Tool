@@ -31,6 +31,8 @@ from .settings_panel import SettingsPanel
 from .bandkeys import BandKeys
 from .display_settings import DisplaySettings
 from .occupancy_panel import OccupancyPanel
+from .traffic_panel import TrafficFeedsPanel
+from .rigctl_panel import RigCtlPanel
 from .live_captions_panel import LiveCaptionsPanel
 from .analog import AnalogPanel
 from .panels import AudioPanel, DecoderPanel, MemoryPanel, ModePanel, ReceiverPanel
@@ -146,6 +148,8 @@ class MainWindow(QMainWindow):
         self.audio_panel = AudioPanel(self.cfg)
         self.mem_panel = MemoryPanel(self.bank)
         self.dec_panel = DecoderPanel(self.cfg)
+        self.traffic_panel = TrafficFeedsPanel(self.cfg)
+        self.dec_panel.tabs.addTab(self.traffic_panel, "ADS-B / AIS / Sondas")
         self.scan_panel = ScannerPanel(self.cfg, self.bank.categories + ["Descobertas"])
         self.occupancy_panel = OccupancyPanel(self.occupancy)
         self.scan_panel.tabs.addTab(self.occupancy_panel, "Ocupação 24 h")
@@ -231,6 +235,8 @@ class MainWindow(QMainWindow):
         self.display_panel = DisplaySettings(self.cfg, self.lcd_theme)
         self.settings_tabs.addTab(_scroll(self.display_panel), "Display")
         self.settings_tabs.addTab(_scroll(self.settings_panel), "Geral · Web · Atualizações")
+        self.rigctl_panel = RigCtlPanel(self.cfg, lambda: (self.engine.vfo, self.mode))
+        self.settings_tabs.addTab(_scroll(self.rigctl_panel), "CAT · Hamlib")
         self.pages = {}
         for key, title, w in (("rx", "Receptor", self.main_split),
                               ("mem", "Memórias / Varredura", _scroll(self.mem_panel)),
@@ -523,6 +529,7 @@ class MainWindow(QMainWindow):
 
         dp.enabledChanged.connect(self._set_decoders)
         dp.toneSquelchChanged.connect(self._set_tone_squelch)
+        self.rigctl_panel.readReceived.connect(self._cat_received)
 
         self.fft.currentIndexChanged.connect(lambda _: self._set_engine("fft_size", self.fft.currentData()))
         self.cmap.currentTextChanged.connect(lambda n: (self.wf.set_colormap(n), self.cfg.__setitem__("wf_colormap", n)))
@@ -1332,6 +1339,19 @@ class MainWindow(QMainWindow):
         QApplication.quit()
         QTimer.singleShot(8000, lambda: os._exit(0))
 
+    # ================================================================== CAT · Hamlib
+    def _cat_received(self, freq: float, mode: str):
+        """Sincronização de recepção somente, sem PTT nem transmissão."""
+        if not 24_000 <= freq <= 1_766_000_000:
+            self.rigctl_panel.status.setText("CAT: frequência fora da faixa do SDR Tool")
+            return
+        if not self._freq_supported(freq):
+            self.rigctl_panel.status.setText("CAT: o receptor SDR não suporta esta frequência")
+            return
+        if mode and mode in MODES:
+            self.set_mode(mode)
+        self.tune(freq)
+
     # ================================================================== configurações / web
     def _setting_changed(self, key, value):
         self.cfg[key] = value
@@ -2030,6 +2050,7 @@ class MainWindow(QMainWindow):
             " Ctrl+1…6 abas; F11 modo apresentação; Esc sai da apresentação ou para a varredura."))
 
     def closeEvent(self, ev):
+        self.rigctl_panel.stop()
         if self.web is not None:
             self.web.stop()
         if self.transcriber is not None:

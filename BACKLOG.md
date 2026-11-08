@@ -4,6 +4,12 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+> Revisão do backlog em 0.8.0 (08/11/2026): foram adicionadas interfaces para
+> feeds **externos** ADS-B, AIS e radiossondas, CAT Hamlib e mapas de posição;
+> os demoduladores RF internos, o Doppler, RS41 IQ, tradução, IA neural e fonia
+> digital continuam pendentes. O fato de existir integração de arquivo **não**
+> conclui o pedido de decodificação direto no SDR. A v0.7.0 já foi aprovada.
+>
 > Revisão da versão 0.7.0 (08/11/2026): a 0.6.0 já incorporou teclas de banda,
 > memória por banda, centralização, padrões do receptor, prévias LCD e seleção das bandas exibidas.
 > A 0.7.0 adicionou instrumentos S/VU analógicos, mapa de detecções RF 24 h,
@@ -176,6 +182,9 @@ deveria ter" e roteiro do README). Implementar conforme viabilidade; a ordem pod
   com o painel estreito (sem cortar texto nem criar rolagem horizontal).
 
 ## Concluídos
+- 0.8.0 (código) — leituras de tráfego ADS-B via JSON readsb/dump1090, AIS NMEA com MMSI,
+  radiossondas por JSON, tabela e mapa unificados, CSV e CAT Hamlib rigctld sem PTT.
+  **Dependem de decodificadores externos** e não substituem as implementações de RF nativas.
 - 0.5.0 — itens registrados em 07/11/2026: RTL-SDR voltou a abrir (dithering -1 + LIBUSB_ERROR_ACCESS da 0.4.1);
   abas superiores (Receptor, Memórias/Varredura, Scanner, Decodificadores, Receptores extras, Configurações com
   sub-abas Receptor e Modo/Filtro) sem botões de modo duplicados; indicador de versão/atualização no topo;

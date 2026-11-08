@@ -14,6 +14,16 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 
 ## Recursos
 
+### Novo na v0.8.0 — tráfego externo, mapas e CAT
+- **ADS-B (1090 MHz):** importa o arquivo `aircraft.json` de `readsb` ou `dump1090`, com indicativo, posição, altitude, velocidade e rumo. **Exige decodificador externo**; não demodula ADS-B em IQ dentro do SDR Tool.
+- **AIS (161,975/162,025 MHz):** lê arquivos NMEA `!AIVDM` de `AIS-catcher`/`rtl_ais` e decodifica mensagens de posição classe A/B (1, 2, 3, 18, 19) e identificação tipo 5, incluindo MMSI, posição, velocidade e rumo.
+- **Radiossondas:** acompanha JSON local produzido por `radiosonde_auto_rx` ou conversor, mostrando ID, posição, altura, velocidade vertical e dados meteorológicos quando presentes. Não decodifica RS41 diretamente no SDR Tool nem prevê automaticamente a queda.
+- **Mapa conjunto:** posições em mapa OSM/Leaflet gerado localmente, com exportação CSV por fonte. Os tiles exigem Internet; nenhum envio automático para servidores externos.
+- **CAT via Hamlib:** `rigctld` TCP, consulta frequência e modo por demanda ou sincronização de leitura; envio manual de sintonia/modo para o rádio. **Sem PTT**. Requer Hamlib externo configurado.
+- **Ajustes compactos** em Configurações e no painel Receptor.
+- A v0.8.0 **não inclui ainda** IA neural, tradução integral, decodificação DMR/D-STAR/C4FM, SSTV, RS41 em IQ, previsão de satélites ou modelos de fala embarcados.
+
+
 ### Display de rádio (LCD)
 - Frequência em dígitos de 7 segmentos com "segmentos fantasma", temas **Âmbar, Verde, Azul (negativo), Noturno, Branco**.
 - **Roda do mouse sobre um dígito** altera aquele dígito; clique na metade de cima/baixo = +1/−1.

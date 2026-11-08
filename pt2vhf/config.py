@@ -17,6 +17,15 @@ def config_dir() -> Path:
 
 DEFAULTS = {
     "source": "RTL-SDR",
+    "cat_host": "127.0.0.1",
+    "cat_port": 4532,
+    "cat_auto_sync": False,
+    "traffic_ads-b_path": "",
+    "traffic_ads-b_auto": False,
+    "traffic_ais_path": "",
+    "traffic_ais_auto": False,
+    "traffic_sonda_path": "",
+    "traffic_sonda_auto": False,
     "device_index": 0,
     "rtl_tcp_host": "127.0.0.1",
     "rtl_tcp_port": 1234,

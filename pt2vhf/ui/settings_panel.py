@@ -23,15 +23,22 @@ class SettingsPanel(QWidget):
 
         g = QGroupBox("Geral")
         f = QFormLayout(g)
+        f.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
         self.call = QLineEdit(cfg.get("my_callsign", ""))
         self.locator = QLineEdit(cfg.get("my_locator", ""))
         self.rec_dir = QLineEdit(cfg.get("recordings_dir", ""))
+        self.call.setMaximumWidth(200)
+        self.locator.setMaximumWidth(130)
+        self.rec_dir.setMaximumWidth(430)
         browse = QPushButton("…")
         browse.setFixedWidth(30)
         rr = QHBoxLayout()
-        rr.addWidget(self.rec_dir, 1)
+        rr.addWidget(self.rec_dir)
+        rr.addStretch(1)
         rr.addWidget(browse)
         self.level = QComboBox()
+        self.level.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.level.setMaximumWidth(240)
         self.level.addItems(levels)
         self.level.setCurrentText(cfg.get("ui_level", "Avançado"))
         f.addRow("Indicativo:", self.call)
@@ -64,6 +71,8 @@ class SettingsPanel(QWidget):
         self.smeter.setValue(float(cfg.get("s_meter_cal", 0.0)))
         self.smeter.setToolTip("Somado à leitura do S-meter para calibrar com um gerador ou rádio de referência")
         self.rtl_lib = QComboBox()
+        self.rtl_lib.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.rtl_lib.setMaximumWidth(410)
         for label, val in (("Automático (RTL-SDR Blog; se não abrir, a padrão)", "auto"),
                            ("Driver RTL-SDR Blog (V4, HF pelo conversor)", "blog"),
                            ("Padrão (como na 0.3.0)", "standard")):
