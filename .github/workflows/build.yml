@@ -20,11 +20,12 @@ jobs:
         with:
           python-version: "3.12"
       - name: Bibliotecas de sistema (Qt offscreen)
-        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 xvfb xauth libxcb-cursor0 libxkbcommon-x11-0
       - run: pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest
-      - run: python -X faulthandler -m pytest -q
+      - name: Testes com servidor gráfico virtual (Qt xcb)
+        run: xvfb-run -a python -X faulthandler -m pytest -q
         env:
-          QT_QPA_PLATFORM: offscreen
+          QT_QPA_PLATFORM: xcb
 
   windows-exe:
     # Manual ou commit explícito [build-windows] (não compilar em cada push).
