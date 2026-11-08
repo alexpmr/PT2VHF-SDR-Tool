@@ -27,8 +27,10 @@ jobs:
           QT_QPA_PLATFORM: offscreen
 
   windows-exe:
-    # Desativado por padrão: só roda manualmente (Actions → Run workflow → marcar "Gerar executável")
-    if: github.event_name == 'workflow_dispatch' && inputs.build_windows
+    # Manual ou commit explícito [build-windows] (não compilar em cada push).
+    if: (github.event_name == 'workflow_dispatch' && inputs.build_windows) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build-windows]'))
+    permissions:
+      contents: write
     runs-on: windows-2022  # mesmo runner do Sat Tool (Visual Studio 2022 para a libwdi)
     needs: tests
     timeout-minutes: 90
@@ -132,3 +134,14 @@ jobs:
         with:
           name: PT2VHF-SDR-Tool-${{ steps.ver.outputs.version }}-windows
           path: release/
+      - name: Publicar Release GitHub (origem para o site)
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[build-windows]')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          $assets = @(Get-ChildItem release -File | ForEach-Object { $_.FullName })
+          & gh release create "v$v" $assets --repo "${{ github.repository }}" --target "${{ github.sha }}" `
+            --title "PT2VHF SDR Tool $v" `
+            --notes "Origem de pacotes para https://www.pt2vhf.com/sdr. Distribuição oficial somente pelo site."
+          if ($LASTEXITCODE -ne 0) { throw "Falha ao publicar a Release GitHub" }
