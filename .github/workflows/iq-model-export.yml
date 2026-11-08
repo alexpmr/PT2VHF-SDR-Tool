@@ -1,0 +1,39 @@
+name: Experimental IQ model ONNX export
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/export_iq_synthetic_v2.py'
+      - 'pt2vhf/dsp/iq_classifier.py'
+      - '.github/workflows/iq-model-export.yml'
+jobs:
+  export-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && python -m pip install torch numpy onnx onnxruntime
+      - name: Check checkpoint availability
+        id: checkpoint
+        shell: bash
+        run: |
+          if [ -f models/iq/synthetic_v2.pt ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Checkpoint not committed. Upload validated weights to models/iq/synthetic_v2.pt before export."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Export and compare inference
+        if: steps.checkpoint.outputs.present == 'true'
+        run: python scripts/export_iq_synthetic_v2.py --checkpoint models/iq/synthetic_v2.pt --output synthetic_v2.onnx
+      - name: Upload ONNX artifact
+        if: steps.checkpoint.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pt2vhf-iq-synthetic-v2-onnx
+          path: synthetic_v2.onnx
+          if-no-files-found: error
