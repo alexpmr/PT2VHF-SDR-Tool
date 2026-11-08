@@ -4,6 +4,24 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Botão "Centralizar" no waterfall (registrado em 08/11/2026)
+- Botão na barra do waterfall (e atalho de teclado) que **centraliza a visão no cursor/VFO**: traz a frequência
+  sintonizada para o meio do espectro/waterfall, mantendo o zoom atual (útil depois de arrastar ou dar zoom).
+- Se o VFO estiver fora da faixa recebida, recentralizar também o receptor nele.
+- Opção "manter centralizado" (acompanhar o VFO ao sintonizar), desligada por padrão.
+
+### Padrões da primeira execução: SDR físico, configuração do SDR e interface Avançada (registrado em 08/11/2026)
+- **Fonte padrão = SDR físico (RTL-SDR)**, não o Simulador. O Simulador continua disponível na lista, só deixa de
+  ser o padrão.
+- **Ao abrir sem o SDR configurado** (primeira execução ou nenhuma fonte física configurada/salva), levar o
+  usuário direto para **Configurações → Receptor**, com uma mensagem curta explicando o que escolher (fonte,
+  dispositivo, taxa) e o botão Ligar; procurar dispositivos automaticamente e, se não houver nenhum, oferecer
+  Preparar RTL-SDR (driver WinUSB) e Diagnóstico. Considerar configurado depois do primeiro Ligar com sucesso.
+- **Nível de interface padrão = Avançado** (hoje é Intermediário) para novas instalações; quem já escolheu um
+  nível mantém o seu.
+- Combinar com o item já entregue "reconectar ao abrir" (0.5.0): uma vez configurado, as aberturas seguintes
+  reconectam o SDR físico normalmente.
+
 ### Novos painéis analógicos com VU meter / S-meter de ponteiro (registrado em 08/11/2026)
 - Além do display LCD atual, oferecer **painéis no estilo analógico**, simulando rádios clássicos: instrumentos com
   **ponteiro** (agulha) e escala iluminada.
