@@ -370,6 +370,7 @@ class AudioPanel(QWidget):
     manualGainChanged = Signal(float)
     nbChanged = Signal(bool, float)
     nrChanged = Signal(bool, float)
+    neuralChanged = Signal(bool, float)
     notchChanged = Signal(bool, float)
     ctcssFilterChanged = Signal(bool)
     lowpassChanged = Signal(float)
@@ -429,6 +430,19 @@ class AudioPanel(QWidget):
         nrr.addWidget(self.nr)
         nrr.addWidget(self.nr_str, 1)
         f.addRow("Redução ruído:", nrr)
+        self.neural = QCheckBox("IA neural · RNNoise (fonia)")
+        self.neural.setChecked(bool(cfg.get("neural_audio", False)))
+        self.neural.setToolTip(
+            "Rede neural local para NFM/AM/SSB/DSB. Não altera IQ, S-meter ou decodificação APRS. "
+            "A inferência roda em thread de áudio separada.")
+        self.neural_strength = hslider(0, 100, int(100 * cfg.get("neural_strength", 0.8)))
+        ai_row = QHBoxLayout()
+        ai_row.addWidget(self.neural)
+        ai_row.addWidget(self.neural_strength, 1)
+        f.addRow("Redução neural:", ai_row)
+        self.neural_status = QLabel("Desligada")
+        self.neural_status.setWordWrap(True)
+        f.addRow(self.neural_status)
         self.notch = QCheckBox("Notch")
         self.notch_f = QSpinBox()
         self.notch_f.setRange(50, 5000)
@@ -513,6 +527,10 @@ class AudioPanel(QWidget):
         self.nb_thr.valueChanged.connect(lambda _: self.nbChanged.emit(self.nb.isChecked(), self.nb_thr.value()))
         self.nr.toggled.connect(lambda _: self.nrChanged.emit(self.nr.isChecked(), self.nr_str.value() / 10))
         self.nr_str.valueChanged.connect(lambda _: self.nrChanged.emit(self.nr.isChecked(), self.nr_str.value() / 10))
+        self.neural.toggled.connect(lambda _: self.neuralChanged.emit(
+            self.neural.isChecked(), self.neural_strength.value() / 100))
+        self.neural_strength.valueChanged.connect(lambda _: self.neuralChanged.emit(
+            self.neural.isChecked(), self.neural_strength.value() / 100))
         self.notch.toggled.connect(lambda _: self.notchChanged.emit(self.notch.isChecked(), float(self.notch_f.value())))
         self.notch_f.valueChanged.connect(lambda _: self.notchChanged.emit(self.notch.isChecked(), float(self.notch_f.value())))
         self.ctcss_hp.toggled.connect(self.ctcssFilterChanged)
