@@ -153,6 +153,24 @@ def selftest() -> int:
     except Exception as ex:  # noqa: BLE001
         check(f"Interface web ({ex})", False)
     try:
+        from pyrnnoise import RNNoise
+        import numpy as np
+        den = RNNoise(sample_rate=48000)
+        result = list(den.denoise_chunk(np.zeros((1, 960), dtype=np.int16)))
+        check("IA neural RNNoise local empacotada (48k / 480)", (
+            len(result) == 2 and
+            all(np.asarray(item[1]).size == 480 for item in result)))
+    except Exception as ex:  # noqa: BLE001
+        check(f"RNNoise empacotado ({ex})", False)
+    try:
+        import ctranslate2
+        import faster_whisper
+        from faster_whisper.utils import download_model
+        check("Transcrição faster-whisper e CTranslate2 incluídos", bool(download_model))
+        say("[INFO] Modelos Whisper são baixados exclusivamente por solicitação do usuário.")
+    except Exception as ex:  # noqa: BLE001
+        check(f"Whisper/CTranslate2 empacotados ({ex})", False)
+    try:
         import sounddevice
         check(f"Áudio (PortAudio {sounddevice.get_portaudio_version()[1]})", True)
     except Exception as ex:  # noqa: BLE001
