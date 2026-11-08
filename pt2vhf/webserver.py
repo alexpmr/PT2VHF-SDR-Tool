@@ -107,6 +107,7 @@ class WebServer:
         self.key = secrets.token_urlsafe(24)
         self.audio = AudioHub()
         self._httpd: ThreadingHTTPServer | None = None
+        self._thread: threading.Thread | None = None
         self.error = ""
 
     @property
@@ -214,12 +215,27 @@ class WebServer:
         host = "0.0.0.0" if self.lan else "127.0.0.1"
         self._httpd = ThreadingHTTPServer((host, self.port), Handler)
         self._httpd.daemon_threads = True
-        threading.Thread(target=self._httpd.serve_forever, daemon=True, name="web").start()
+        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True, name="pt2vhf-web")
+        self._thread.start()
 
     def stop(self):
+        """Para e fecha a escuta antes de retornar, evitando threads zumbis no shutdown.
+
+        `shutdown()` deve ser chamado de outra thread que não a do `serve_forever()`.
+        A GUI e os testes chamam este método da thread principal.
+        """
         httpd, self._httpd = self._httpd, None
-        if httpd is not None:
-            threading.Thread(target=lambda: (httpd.shutdown(), httpd.server_close()), daemon=True).start()
+        thread, self._thread = self._thread, None
+        if httpd is None:
+            return
+        if thread is threading.current_thread():
+            raise RuntimeError("WebServer.stop() não pode rodar na thread HTTP")
+        try:
+            httpd.shutdown()
+        finally:
+            httpd.server_close()
+        if thread is not None:
+            thread.join(timeout=2.0)
 
 
 PAGE = r"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
@@ -251,14 +267,15 @@ th{color:#f0b44a}.tbl{overflow-x:auto}footer{color:#8a96a3;font-size:12px;text-a
 <footer>Somente leitura: frequência e modo são controlados no PT2VHF SDR Tool. HTTP na rede local não é criptografado — nunca exponha esta porta à Internet. www.PT2VHF.com</footer>
 <script>
 const $=id=>document.getElementById(id);
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function fmt(f){const s=Math.round(f).toString().padStart(10,' ');return (s.slice(0,4)+'.'+s.slice(4,7)+'.'+s.slice(7)).trim()}
 async function state(){try{const r=await fetch('/state',{cache:'no-store'});const s=await r.json();
 $('ver').textContent='v'+s.version;$('freq').textContent=fmt(s.freq);
-$('tags').innerHTML=['<span class="on">'+s.mode+'</span>','<span>BW '+(s.bw/1000).toFixed(1)+'k</span>',
+$('tags').innerHTML=['<span class="on">'+esc(s.mode)+'</span>','<span>BW '+(s.bw/1000).toFixed(1)+'k</span>',
 s.sq_open?'<span class="on">BUSY</span>':'',s.scan?'<span class="on">SCAN</span>':'',s.replay?'<span class="on">REPLAY</span>':''].join('');
 $('mem').textContent=s.mem||'';$('sig').textContent=s.s_text+'  '+s.dbm.toFixed(1)+' dBm';$('ctcss').textContent=s.ctcss?('CTCSS '+s.ctcss):'';
 $('bar').style.width=Math.max(0,Math.min(100,(s.dbm+147)/114*100))+'%';
-$('aprs').innerHTML=(s.aprs||[]).map(a=>'<tr><td>'+a.t+'</td><td>'+a.src+'</td><td>'+a.type+'</td><td>'+a.pos+'</td><td>'+a.text+'</td></tr>').join('');
+$('aprs').innerHTML=(s.aprs||[]).map(a=>'<tr><td>'+esc(a.t)+'</td><td>'+esc(a.src)+'</td><td>'+esc(a.type)+'</td><td>'+esc(a.pos)+'</td><td>'+esc(a.text)+'</td></tr>').join('');
 }catch(e){}}
 setInterval(state,400);state();
 const sc=$('spec'),wc=$('wf'),sx=sc.getContext('2d'),wx=wc.getContext('2d');
