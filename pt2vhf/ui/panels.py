@@ -22,7 +22,7 @@ from ..sources.network_sources import soapy_devices
 from ..sources.rtlsdr_source import list_devices
 
 STEPS = [10, 50, 100, 500, 1000, 2500, 5000, 6250, 8330, 9000, 10000, 12500, 25000, 50000, 100000]
-SOURCES = ["Simulador", "RTL-SDR", "rtl_tcp", "SoapySDR", "Arquivo IQ"]
+SOURCES = ["RTL-SDR", "Simulador", "rtl_tcp", "SoapySDR", "Arquivo IQ"]
 
 
 def fmt_freq(hz: float) -> str:
@@ -54,12 +54,18 @@ class ReceiverPanel(QWidget):
         self.cfg = cfg
         lay = QVBoxLayout(self)
         form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
         self.source = QComboBox()
+        self.source.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.source.setMaximumWidth(280)
         self.source.addItems(SOURCES)
         self.source.setCurrentText(cfg["source"])
         form.addRow("Fonte:", self.source)
 
         self.device = QComboBox()
+        self.device.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.device.setMaximumWidth(340)
         dev_row = QHBoxLayout()
         dev_row.addWidget(self.device, 1)
         self.refresh = QPushButton("↻")
@@ -69,6 +75,7 @@ class ReceiverPanel(QWidget):
         form.addRow("Dispositivo:", dev_row)
 
         self.host = QLineEdit(cfg["rtl_tcp_host"])
+        self.host.setMaximumWidth(240)
         self.port = QSpinBox()
         self.port.setRange(1, 65535)
         self.port.setValue(cfg["rtl_tcp_port"])
@@ -88,6 +95,8 @@ class ReceiverPanel(QWidget):
         form.addRow(self.file_label, fr)
 
         self.rate = QComboBox()
+        self.rate.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.rate.setMaximumWidth(160)
         for r in SAMPLE_RATES:
             self.rate.addItem(f"{r / 1e6:g} MS/s", r)
         idx = self.rate.findData(cfg["sample_rate"])
@@ -259,6 +268,8 @@ class ModePanel(QWidget):
         self.bw.setKeyboardTracking(False)
         fl.addRow("Largura:", self.bw)
         self.step = QComboBox()
+        self.step.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+        self.step.setMaximumWidth(160)
         for s in STEPS:
             self.step.addItem(fmt_step(s), s)
         fl.addRow("Passo:", self.step)
@@ -279,6 +290,7 @@ class ModePanel(QWidget):
         bg = QGroupBox("Bandas")
         bl = QVBoxLayout(bg)
         self.band = QComboBox()
+        self.band.setMaximumWidth(340)
         self.band.addItem("— escolher banda —", None)
         for b in BAND_PLAN:
             self.band.addItem(f"{b.name}  ({b.start / 1e6:g}–{b.end / 1e6:g} MHz)", b)
@@ -340,7 +352,7 @@ def _compact(widget):
         w.setMinimumWidth(40)
         if w.sizePolicy().horizontalPolicy() == QSizePolicy.Fixed:
             continue
-        w.setSizePolicy(QSizePolicy.Ignored if isinstance(w, QComboBox) else QSizePolicy.Expanding,
+        w.setSizePolicy(QSizePolicy.Preferred if isinstance(w, QComboBox) else QSizePolicy.Expanding,
                         w.sizePolicy().verticalPolicy())
 
 

@@ -162,6 +162,13 @@ class SpectrumWaterfall(QWidget):
     def zoom_to_vfo(self, span_hz: float):
         self.spec.setXRange((self.vfo - span_hz / 2) / 1e6, (self.vfo + span_hz / 2) / 1e6, padding=0)
 
+    def center_on_vfo(self):
+        """Centraliza o waterfall no VFO sem modificar a escala de zoom."""
+        view = self.spec.getViewBox().viewRange()[0]
+        span = max(float(view[1] - view[0]), 0.00001)
+        center_mhz = self.vfo / 1e6
+        self.spec.setXRange(center_mhz - span / 2, center_mhz + span / 2, padding=0)
+
     def clear_peak(self):
         self._peak = None
 

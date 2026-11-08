@@ -16,7 +16,7 @@ def config_dir() -> Path:
 
 
 DEFAULTS = {
-    "source": "Simulador",
+    "source": "RTL-SDR",
     "device_index": 0,
     "rtl_tcp_host": "127.0.0.1",
     "rtl_tcp_port": 1234,
@@ -48,6 +48,13 @@ DEFAULTS = {
     "wf_speed": 20,
     "spectrum_avg": 0.5,
     "lcd_theme": "Âmbar",
+    "ui_level": "Avançado",
+    "band_stacks": {},
+    "bands_visible": ["160 m", "80 m", "60 m", "40 m", "30 m", "20 m", "17 m",
+                      "15 m", "12 m", "10 m", "6 m", "2 m", "70 cm", "11 m (PX)",
+                      "FM Broadcast", "Aviação (VHF)", "Marítimo VHF"],
+    "wf_keep_vfo_centered": False,
+    "rx_ever_connected": False,
     "audio_device": None,
     "s_meter_cal": 0.0,
     "my_locator": "GG66qk",
@@ -71,6 +78,7 @@ class Config(dict):
     def __init__(self, path: Path | None = None):
         super().__init__(json.loads(json.dumps(DEFAULTS)))
         self.path = path or (config_dir() / "config.json")
+        self.first_run = not self.path.exists()
         if self.path.exists():
             try:
                 self.update(json.loads(self.path.read_text(encoding="utf-8")))

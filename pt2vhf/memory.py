@@ -22,6 +22,7 @@ class Band:
 BAND_PLAN = [
     Band("160 m", 1.8e6, 2.0e6, "LSB", 100),
     Band("80 m", 3.5e6, 4.0e6, "LSB", 100),
+    Band("60 m", 5.3515e6, 5.3665e6, "USB", 100),
     Band("40 m", 7.0e6, 7.3e6, "LSB", 100),
     Band("30 m", 10.1e6, 10.15e6, "USB", 100),
     Band("20 m", 14.0e6, 14.35e6, "USB", 100),
