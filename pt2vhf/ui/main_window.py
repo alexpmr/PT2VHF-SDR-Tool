@@ -32,6 +32,9 @@ from .bandkeys import BandKeys
 from .display_settings import DisplaySettings
 from .occupancy_panel import OccupancyPanel
 from .traffic_panel import TrafficFeedsPanel
+from .satellite_panel import SatellitePanel
+from .igate_panel import IGatePanel
+from .sonde_decoder_panel import SondeDecoderPanel
 from .rigctl_panel import RigCtlPanel
 from .live_captions_panel import LiveCaptionsPanel
 from .analog import AnalogPanel
@@ -150,6 +153,11 @@ class MainWindow(QMainWindow):
         self.dec_panel = DecoderPanel(self.cfg)
         self.traffic_panel = TrafficFeedsPanel(self.cfg)
         self.dec_panel.tabs.addTab(self.traffic_panel, "ADS-B / AIS / Sondas")
+        self.sonde_panel = SondeDecoderPanel(self.cfg)
+        self.dec_panel.tabs.addTab(self.sonde_panel, "RS41 · IQ ao vivo")
+        self.igate_panel = IGatePanel(self.cfg)
+        self.dec_panel.tabs.addTab(self.igate_panel, "APRS iGate RX")
+        self.sonde_worker = None
         self.scan_panel = ScannerPanel(self.cfg, self.bank.categories + ["Descobertas"])
         self.occupancy_panel = OccupancyPanel(self.occupancy)
         self.scan_panel.tabs.addTab(self.occupancy_panel, "Ocupação 24 h")
@@ -235,6 +243,7 @@ class MainWindow(QMainWindow):
         self.display_panel = DisplaySettings(self.cfg, self.lcd_theme)
         self.settings_tabs.addTab(_scroll(self.display_panel), "Display")
         self.settings_tabs.addTab(_scroll(self.settings_panel), "Geral · Web · Atualizações")
+        self.sat_panel = SatellitePanel(self.cfg)
         self.rigctl_panel = RigCtlPanel(self.cfg, lambda: (self.engine.vfo, self.mode))
         self.settings_tabs.addTab(_scroll(self.rigctl_panel), "CAT · Hamlib")
         self.pages = {}
@@ -243,6 +252,7 @@ class MainWindow(QMainWindow):
                               ("scan", "Scanner", _scroll(self.scan_panel)),
                               ("dec", "Decodificadores", _scroll(self.dec_panel)),
                               ("extras", "Receptores extras", _scroll(self.extras_panel)),
+                              ("sat", "Satélites", _scroll(self.sat_panel)),
                               ("settings", "Configurações", self.settings_tabs)):
             self.tabs.addTab(w, title)
             self.pages[key] = w
@@ -530,6 +540,9 @@ class MainWindow(QMainWindow):
         dp.enabledChanged.connect(self._set_decoders)
         dp.toneSquelchChanged.connect(self._set_tone_squelch)
         self.rigctl_panel.readReceived.connect(self._cat_received)
+        self.sat_panel.tuneReceiveRequested.connect(self.tune)
+        self.sonde_panel.startRequested.connect(self._start_sonde)
+        self.sonde_panel.stopRequested.connect(self._stop_sonde)
 
         self.fft.currentIndexChanged.connect(lambda _: self._set_engine("fft_size", self.fft.currentData()))
         self.cmap.currentTextChanged.connect(lambda n: (self.wf.set_colormap(n), self.cfg.__setitem__("wf_colormap", n)))
@@ -600,6 +613,7 @@ class MainWindow(QMainWindow):
 
     # ================================================================== fonte
     def start_source(self, opts: dict):
+        self._stop_sonde()
         from ..sources.network_sources import RtlTcpSource, SoapySource
         from ..sources.rtlsdr_source import RtlSdrSource
         from ..sources.sim_sources import SimulatorSource, WavIQSource
@@ -671,6 +685,7 @@ class MainWindow(QMainWindow):
         self._update_lcd()
 
     def stop_source(self):
+        self._stop_sonde()
         self._stop_scan()
         self._sscan_stop()
         self.engine.stop()
@@ -1339,6 +1354,49 @@ class MainWindow(QMainWindow):
         QApplication.quit()
         QTimer.singleShot(8000, lambda: os._exit(0))
 
+    # ================================================================== Sondas RS41 / IQ original
+    def _start_sonde(self, freq, fsk_path, rs41_path):
+        """Usa o mesmo fluxo IQ que alimenta o waterfall, sem reabrir o SDR."""
+        from ..sonde_rx import RS41Receiver
+        self._stop_sonde()
+        if not self.engine.running or self.engine.source is None:
+            self.sonde_panel.status.setText("Ligue primeiro o receptor SDR. O waterfall isolado não decodifica.")
+            return
+        if not self._freq_supported(freq):
+            self.sonde_panel.status.setText("A frequência está fora do alcance do dispositivo.")
+            return
+        if self.cfg.get("source") == "Simulador":
+            self.sonde_panel.status.setText("Selecione um receptor físico ou um arquivo IQ gravado.")
+            return
+        self.tune(freq)
+        worker = RS41Receiver(
+            int(self.engine.sample_rate), freq,
+            on_decoded=lambda track, raw: self.engine.events.put(("sonde_rx", (track, raw), time.time())),
+            on_status=lambda msg: self.engine.events.put(("sonde_status", msg, time.time())),
+            fsk_path=fsk_path, decoder_path=rs41_path,
+        )
+        try:
+            worker.start()
+        except (OSError, ValueError, RuntimeError) as exc:
+            self.sonde_panel.status.setText(f"Não foi possível iniciar RS41: {exc}")
+            worker.stop()
+            return
+        self.sonde_worker = worker
+        self.engine.iq_listeners.append(worker.feed)
+        self.sonde_panel.running(True)
+
+    def _stop_sonde(self):
+        worker = getattr(self, "sonde_worker", None)
+        if worker is not None:
+            try:
+                self.engine.iq_listeners.remove(worker.feed)
+            except ValueError:
+                pass
+            worker.stop()
+            self.sonde_worker = None
+        if hasattr(self, "sonde_panel"):
+            self.sonde_panel.running(False)
+
     # ================================================================== CAT · Hamlib
     def _cat_received(self, freq: float, mode: str):
         """Sincronização de recepção somente, sem PTT nem transmissão."""
@@ -1867,10 +1925,22 @@ class MainWindow(QMainWindow):
             n += 1
             if kind == "aprs":
                 self.dec_panel.add_aprs(data, ts)
+                if self.cfg.get("source") in ("RTL-SDR", "rtl_tcp", "SoapySDR"):
+                    self.igate_panel.submit_rf(data)
                 self._web_aprs.appendleft({"t": time.strftime("%H:%M:%S", time.localtime(ts)), "src": data.source,
                                            "type": data.type, "pos": data.position_str(),
                                            "text": (data.comment or data.message or "")[:80]})
                 self.statusBar().showMessage(f"APRS: {data.raw}", 4000)
+            elif kind == "sonde_rx":
+                track, _raw = data
+                self.sonde_panel.add_record(track)
+                sonde_tab = self.traffic_panel.sources["Sonda"]
+                sonde_tab.records = [track] + [x for x in sonde_tab.records if x.ident != track.ident][:499]
+                self.sonde_panel.status.setText(
+                    f"RS41: {track.ident} · altitude {track.altitude_m} m · "
+                    f"{self.sonde_worker.received if self.sonde_worker else 0} quadros")
+            elif kind == "sonde_status":
+                self.sonde_panel.status.setText(str(data))
             elif kind == "dtmf":
                 self.dec_panel.add_dtmf(data, ts)
             elif kind == "vox":
@@ -2015,7 +2085,7 @@ class MainWindow(QMainWindow):
             combo.blockSignals(False)
         for act in getattr(self, "_level_actions", []):
             act.setChecked(act.text() == name)
-        page_lvl = {"scan": 1, "dec": 1, "extras": 2}
+        page_lvl = {"scan": 1, "dec": 1, "extras": 2, "sat": 1}
         for key, page in self.pages.items():
             vis = lvl >= page_lvl.get(key, 0)
             i = self.tabs.indexOf(page)
@@ -2050,6 +2120,8 @@ class MainWindow(QMainWindow):
             " Ctrl+1…6 abas; F11 modo apresentação; Esc sai da apresentação ou para a varredura."))
 
     def closeEvent(self, ev):
+        self._stop_sonde()
+        self.igate_panel.stop()
         self.rigctl_panel.stop()
         if self.web is not None:
             self.web.stop()

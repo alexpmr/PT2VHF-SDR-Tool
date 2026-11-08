@@ -54,6 +54,7 @@ class Engine:
         self.activity_rec: ActivityRecorder | None = None   # Scanner: um arquivo por transmissão
         self.vox_rec: ActivityRecorder | None = None        # botão Gravar áudio com VOX
         self.audio_listeners: list = []
+        self.iq_listeners: list = []  # decoders consume original complex IQ via bounded queues
         self.iq_vox = False                                 # IQ só com transmissão
         self._iq_open_until = 0.0
         self.timeshift_seconds = 20.0
@@ -313,6 +314,11 @@ class Engine:
                 self._iq_rec.write(blk)
 
         fs = src.sample_rate
+        for listener in tuple(self.iq_listeners):
+            try:
+                listener(blk, src.center_freq, fs)
+            except Exception as exc:
+                log.warning("IQ listener: %s", exc)
         self._wf_acc += len(blk) / fs
         if self._wf_acc >= 1.0 / self.wf_speed:
             self._wf_acc = min(self._wf_acc - 1.0 / self.wf_speed, 1.0)
