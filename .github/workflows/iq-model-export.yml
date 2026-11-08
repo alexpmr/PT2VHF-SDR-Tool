@@ -46,6 +46,19 @@ jobs:
         run: |
           python -m pip install scipy pytest PySide6==6.11.3
           python -m pytest -q tests/test_iq_classifier.py tests/test_iq_classifier_worker.py tests/test_iq_classifier_resampling.py
+      - name: Verify synthetic validation metrics and record checksums
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("models/iq/synthetic_v2_metrics.json")
+          data = json.loads(p.read_text(encoding="utf-8"))
+          print("Synthetic validation metrics:", data)
+          assert p.is_file() and Path("models/iq/synthetic_v2.onnx").stat().st_size > 0
+          PY
+          cd models/iq
+          sha256sum synthetic_v2.onnx synthetic_v2.pt synthetic_v2_metrics.json > SHA256SUMS
+          sha256sum -c SHA256SUMS
       - name: Upload experimental model and metrics
         uses: actions/upload-artifact@v4
         with:
@@ -54,4 +67,5 @@ jobs:
             models/iq/synthetic_v2.onnx
             models/iq/synthetic_v2.pt
             models/iq/synthetic_v2_metrics.json
+            models/iq/SHA256SUMS
           if-no-files-found: error
