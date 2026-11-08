@@ -27,6 +27,7 @@ from .lcd import THEMES, LCDDisplay
 from .assist_panels import AssistBox, ExtrasPanel, TimeShiftBox, UpdateController
 from .listening import FavoritesBar, PresetDialog, ScannerPanel
 from .settings_panel import SettingsPanel
+from .bandkeys import BandKeys
 from .panels import AudioPanel, DecoderPanel, MemoryPanel, ModePanel, ReceiverPanel
 from .waterfall import COLORMAPS, SpectrumWaterfall
 
@@ -111,9 +112,11 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._wire()
         self._restore_layout()
-        self.apply_level(self.cfg.get("ui_level", "Intermediário"))
+        self.apply_level(self.cfg.get("ui_level", "Avançado"))
         self._apply_receiver_settings()
         self._refresh_markers()
+        if self.cfg.get("source") == "RTL-SDR" and not self.cfg.get("rx_ever_connected") and not self.cfg.get("device_name"):
+            QTimer.singleShot(350, self._show_initial_receiver_setup)
         self.settings_panel.pres_btn.clicked.connect(lambda: self.set_presentation(not self._presenting))
         if not os.environ.get("PT2VHF_NO_AUTOCONNECT"):
             QTimer.singleShot(900, self._auto_reconnect)
@@ -175,6 +178,8 @@ class MainWindow(QMainWindow):
         self.lcd = LCDDisplay()
         self.lcd.set_theme(self.cfg["lcd_theme"])
         cl.addWidget(self.lcd)
+        self.band_bar = BandKeys(self.cfg.get("bands_visible"))
+        cl.addWidget(self.band_bar)
         self.fav_bar = FavoritesBar()
         self.fav_bar.refresh(self.bank.channels, self.engine.vfo)
         cl.addWidget(self.fav_bar)
@@ -315,6 +320,14 @@ class MainWindow(QMainWindow):
             b.setFixedHeight(24)
             b.clicked.connect(lambda _=False, s=span: self.wf.reset_zoom() if s is None else self.wf.zoom_to_vfo(s))
             row.addWidget(b)
+        self.center_btn = QPushButton("Centralizar")
+        self.center_btn.setToolTip("Centraliza o waterfall no VFO sem alterar o zoom (Ctrl+E)")
+        self.center_btn.clicked.connect(self._center_waterfall)
+        row.addWidget(self.center_btn)
+        self.keep_center = QCheckBox("Seguir VFO")
+        self.keep_center.setChecked(bool(self.cfg.get("wf_keep_vfo_centered", False)))
+        self.keep_center.toggled.connect(self._toggle_keep_center)
+        row.addWidget(self.keep_center)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         row.addWidget(spacer)
@@ -406,6 +419,7 @@ class MainWindow(QMainWindow):
     def _wire(self):
         lcd, wf, rp, mp, ap, mem, dp = (self.lcd, self.wf, self.rx_panel, self.mode_panel,
                                         self.audio_panel, self.mem_panel, self.dec_panel)
+        self.band_bar.selected.connect(self._band_button)
         lcd.freqChanged.connect(self.tune)
         lcd.stepRequested.connect(lambda n: self.tune(self.engine.vfo + n * self.step, snap=True))
         wf.tuneRequested.connect(self.select_transmission)
@@ -420,7 +434,8 @@ class MainWindow(QMainWindow):
         rp.gainChanged.connect(lambda g: self._src_call("set_gain", g, cfg="gain"))
         rp.ppmChanged.connect(lambda v: self._src_call("set_ppm", v, cfg="ppm"))
         rp.biasTeeChanged.connect(lambda v: self._src_call("set_bias_tee", v, cfg="bias_tee"))
-        rp.directSamplingChanged.connect(lambda v: self._src_call("set_direct_sampling", v, cfg="direct_sampling"))
+        rp.directSamplingChanged.connect(lambda v: (self._src_call("set_direct_sampling", v, cfg="direct_sampling"),
+                                                    self._refresh_band_keys()))
 
         mp.modeChanged.connect(self.choose_mode)
         mp.bandwidthChanged.connect(self.set_bandwidth)
@@ -537,6 +552,7 @@ class MainWindow(QMainWindow):
             ("Ctrl+B", lambda: self._vfo_action("swap")),
             ("Ctrl+S", self._auto_squelch),
             ("Ctrl+L", self._auto_levels),
+            ("Ctrl+E", self._center_waterfall),
             ("Escape", self._escape),
         ):
             QShortcut(QKeySequence(keys), self, activated=fn)
@@ -609,6 +625,8 @@ class MainWindow(QMainWindow):
         self.status_src.setText(f"● {src.name} {src.sample_rate / 1e6:g} MS/s")
         self.hdr_summary.setText(f"● {src.name} {tuner} — {src.sample_rate / 1e6:g} MS/s")
         self.cfg.update(device_index=opts.get("device_index", 0), device_name=self.rx_panel.device.currentText())
+        if name in ("RTL-SDR", "rtl_tcp", "SoapySDR"):
+            self.cfg["rx_ever_connected"] = True
         self._update_lcd()
 
     def stop_source(self):
@@ -620,6 +638,7 @@ class MainWindow(QMainWindow):
         self.status_src.setText("Parado")
         self.audio_panel.rec_audio.setChecked(False)
         self.audio_panel.rec_iq.setChecked(False)
+        self._refresh_band_keys()
 
     def _prepare_rtlsdr(self):
         from ..sources import rtl_driver
@@ -756,12 +775,83 @@ class MainWindow(QMainWindow):
         self.cfg["step"] = self.step
         self._sync_views()
 
+    def _show_initial_receiver_setup(self):
+        """Leva o usuário às configurações na primeira utilização sem receptor configurado."""
+        if self.engine.running or self._presenting:
+            return
+        self.tabs.setCurrentWidget(self.pages["settings"])
+        self.settings_tabs.setCurrentIndex(0)
+        self.rx_panel.refresh_devices()
+        available = any(self.rx_panel.device.itemText(i)[:1].isdigit()
+                        for i in range(self.rx_panel.device.count()))
+        msg = ("Selecione o SDR, configure a taxa e clique em Ligar." if available else
+               "Nenhum RTL-SDR detectado: conecte-o e use Ajuda → Preparar RTL-SDR / Diagnóstico.")
+        self.rx_panel.info.setText(msg)
+        self.statusBar().showMessage(msg, 18000)
+
+    def _band_unsupported(self, band):
+        mid = (band.start + band.end) / 2
+        src = self.engine.source
+        if src is not None:
+            return src.check_freq(mid) or ""
+        if self.cfg.get("source") == "RTL-SDR" and self.cfg.get("device_name"):
+            from ..sources.rtlsdr_source import tuning_range
+            device = self.cfg.get("device_name", "")
+            v4 = "V4" in device.upper()
+            low, high = tuning_range("R828D" if v4 else "R820T", v4,
+                                     int(self.cfg.get("direct_sampling", 0)), device)
+            if not low <= mid <= high:
+                return (f"{band.name}: fora da faixa do último SDR ({low / 1e6:g}–"
+                        f"{high / 1e6:g} MHz). Verifique a amostragem direta ou o dispositivo.")
+        return ""
+
+    def _refresh_band_keys(self):
+        if not hasattr(self, "band_bar"):
+            return
+        reasons = {b.name: self._band_unsupported(b) for b in self.band_bar.bands}
+        self.band_bar.refresh(self.engine.vfo, reasons)
+
+    def _band_button(self, band):
+        reason = self._band_unsupported(band)
+        if reason:
+            self.statusBar().showMessage(reason, 12000)
+            return
+        self._goto_band(band)
+
+    def _remember_current_band(self):
+        band = band_for(self.engine.vfo)
+        if band is None:
+            return
+        stacks = self.cfg.setdefault("band_stacks", {})
+        history = stacks.setdefault(band.name, [])
+        entry = {"freq": float(self.engine.vfo), "mode": self.mode}
+        history[:] = [entry] + [x for x in history
+                                if abs(x.get("freq", 0) - entry["freq"]) >= max(1000, band.step * 2)
+                                or x.get("mode") != entry["mode"]][:2]
+
     def _goto_band(self, band):
-        if not self._freq_supported((band.start + band.end) / 2):
+        reason = self._band_unsupported(band)
+        if reason:
+            self.statusBar().showMessage(reason, 12000)
+            return
+        current = band_for(self.engine.vfo)
+        same_band = current is not None and current.name == band.name
+        self._remember_current_band()
+        history = self.cfg.get("band_stacks", {}).get(band.name, [])
+        if same_band and len(history) > 1:
+            next_entry = history.pop(1)
+            history.insert(0, next_entry)
+        elif history:
+            next_entry = history[0]
+        else:
+            next_entry = {"freq": (band.start + band.end) / 2, "mode": band.mode}
+        freq = float(next_entry["freq"])
+        if not band.start <= freq <= band.end or not self._freq_supported(freq):
             return
         self.set_step(band.step)
-        self.set_mode(band.mode)
-        self.tune((band.start + band.end) / 2, snap=True)
+        self.set_mode(next_entry["mode"])
+        self.tune(freq, snap=True)
+
 
     def _set_deemph(self, us):
         self.cfg["wfm_deemph_us"] = us
@@ -1538,10 +1628,30 @@ class MainWindow(QMainWindow):
             self.cfg["wf_min_db"], self.cfg["wf_max_db"] = r
 
     # ================================================================== atualização
+    def _toggle_keep_center(self, checked):
+        self.cfg["wf_keep_vfo_centered"] = bool(checked)
+        if checked:
+            self._center_waterfall()
+
+    def _center_waterfall(self):
+        """Recentraliza no VFO preservando a escala horizontal do espectro."""
+        eng = self.engine
+        src = eng.source
+        if src is not None and getattr(src, "tunable", False) and not eng.hold_center:
+            if abs(eng.vfo - src.center_freq) > eng.sample_rate * 0.4:
+                error = src.check_freq(eng.vfo)
+                if error:
+                    self.statusBar().showMessage(error, 10000)
+                    return
+                eng.set_center(eng.vfo)
+        self.wf.center_on_vfo()
+
     def _sync_views(self):
         vfo = self.engine.vfo
         self.wf.step = self.step
         self.wf.set_vfo(vfo, self.low, self.high)
+        if self.cfg.get("wf_keep_vfo_centered", False):
+            self.wf.center_on_vfo()
         self.mode_panel.show_mode(self.mode, self.high - self.low, self.step)
         self._update_lcd()
 
@@ -1562,6 +1672,7 @@ class MainWindow(QMainWindow):
             lcd.mem_label = ""
         b = band_for(self.engine.vfo)
         lcd.band_label = b.name if b else ""
+        self._refresh_band_keys()
         lcd.flags["AGC"] = self.audio_panel.agc.isChecked() and self.mode not in ("NFM", "WFM")
         lcd.update()
 
@@ -1666,7 +1777,7 @@ class MainWindow(QMainWindow):
         self.audio_action.setChecked(True)
         self.tabs.setCurrentIndex(0)
         self.settings_tabs.setCurrentIndex(0)
-        self.apply_level(self.cfg.get("ui_level", "Intermediário"))
+        self.apply_level(self.cfg.get("ui_level", "Avançado"))
 
     # ================================================================== modo apresentação
     def set_presentation(self, on: bool):
@@ -1742,7 +1853,7 @@ class MainWindow(QMainWindow):
     def apply_level(self, name: str):
         """Mostra/esconde recursos conforme o nível (as configurações nunca se perdem)."""
         if name not in LEVELS:
-            name = "Intermediário"
+            name = "Avançado"
         lvl = LEVELS.index(name)
         self.cfg["ui_level"] = name
         for combo in (self.level_combo,):
@@ -1794,6 +1905,7 @@ class MainWindow(QMainWindow):
         if presenting:  # a geometria salva é a da janela normal
             self.set_presentation(False)
         self.cfg["presentation"] = presenting
+        self._remember_current_band()
         s = QSettings("PT2VHF", "SDRTool")
         s.setValue("geometry", self.saveGeometry())
         s.setValue("split_v05", self.main_split.saveState())
