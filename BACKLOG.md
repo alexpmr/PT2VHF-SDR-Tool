@@ -4,6 +4,25 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Recursos sugeridos ainda não implementados (registrado em 08/11/2026)
+Registrados "de acordo com as sugestões" dadas ao mantenedor (resposta "O que mais um programa de SDR de 0–2 GHz
+deveria ter" e roteiro do README). Implementar conforme viabilidade; a ordem pode ser decidida no pedido de versão.
+- **Decodificadores para escutas:**
+  - **ADS-B** (aviões no mapa, 1090 MHz) e **AIS** (navios no mapa, 161,975/162,025 MHz);
+  - **ACARS** (mensagens de aeronaves, ~131 MHz);
+  - **POCSAG/FLEX** (pagers);
+  - **imagens de satélites meteorológicos** NOAA APT e Meteor LRPT, com **previsão de passagens**;
+  - voz digital (DMR, D-STAR, YSF): só após avaliar as questões de patente/licença do codec AMBE.
+- **Mapa APRS** (estações recebidas, rastros e objetos) e **iGate somente RX** (envio ao APRS-IS, opcional).
+- **WFM estéreo e RDS** (nome da emissora, texto e música).
+- **Mapa de atividade em 24 h**: em que horários cada frequência/faixa fica ocupada (a partir do scanner).
+- **Banco de memórias por região**: escolher cidade/região e carregar o que se ouve ali (repetidoras, aviação por
+  aeroporto, rádios FM/AM locais), aproveitando bases públicas exportáveis em CSV do CHIRP.
+- **Limpeza de ruído com IA no áudio** (ex.: RNNoise/DeepFilterNet), opcional, além da redução de ruído atual.
+- **Satélites**: previsão de passagens e **correção Doppler** automática na sintonia.
+- **Controle CAT (Hamlib)** para sincronizar frequência/modo com o rádio.
+- **Cliente para receptores KiwiSDR remotos** (usar um KiwiSDR da internet como fonte de sinal).
+
 ### Decodificador de radiossondas meteorológicas (RS41 e outras) com mapa e previsão de trajetória (registrado em 07/11/2026)
 - Decodificar sondas meteorológicas na faixa de 400–406 MHz (e 1680 MHz quando o hardware permitir):
   **Vaisala RS41** (prioridade) e outras comuns, ex.: RS92, Graw DFM-06/09/17, Meteomodem M10/M20,
