@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
-                               QLabel, QRadioButton, QVBoxLayout, QWidget)
+                               QLabel, QRadioButton, QButtonGroup, QVBoxLayout, QWidget)
 
 from .analog import AnalogPanel, STYLES
 
@@ -93,12 +93,15 @@ class DisplaySettings(QWidget):
         analog_layout.addWidget(self.analog_enable)
         previews = QGridLayout()
         self.analog_styles = {}
+        self.analog_group = QButtonGroup(self)
+        self.analog_group.setExclusive(True)
         current_style = cfg.get("analog_style", "Valvulado")
         for i, style in enumerate(STYLES):
             frame = QFrame()
             col = QVBoxLayout(frame)
             col.setContentsMargins(3, 3, 3, 3)
             radio = QRadioButton(style)
+            self.analog_group.addButton(radio)
             radio.setChecked(style == current_style)
             preview = AnalogPanel(style)
             preview.set_readings(-93, 0.3)
