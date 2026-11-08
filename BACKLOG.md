@@ -5,6 +5,12 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 ## Pendentes
 
 ### Teclas de banda no display (um botão por banda) (registrado em 08/11/2026)
+- **Acréscimo (08/11/2026):** as teclas das bandas que o **SDR em uso não suporta** ficam **esmaecidas**
+  (acinzentadas), conforme a faixa real do dispositivo/sintonizador e o modo (ex.: R820T sem amostragem direta não
+  recebe HF; V4 recebe HF pelo conversor; HackRF/Airspy/rtl_tcp/SoapySDR pela faixa informada pelo driver).
+  Atualizar ao trocar de fonte/dispositivo ou ligar/desligar a amostragem direta; dica (tooltip) explicando o motivo
+  e o que fazer; clique em tecla esmaecida só mostra o aviso, sem sintonizar. Sem receptor ligado, usar a faixa do
+  último dispositivo configurado.
 - Hoje a banda só se escolhe na lista "Bandas" em Configurações → Modo / Filtro.
 - Colocar no **display** uma fileira de teclas de banda, como num transceptor: **160, 80, 60, 40, 30, 20, 17, 15,
   12, 10, 6, 2 m, 70 cm** (e outras faixas úteis para escuta, ex.: PX/11 m, FM broadcast, aviação, marítimo),
