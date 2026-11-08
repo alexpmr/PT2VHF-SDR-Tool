@@ -2064,6 +2064,25 @@ class MainWindow(QMainWindow):
             elif kind == "caption_error":
                 self.caption_label.setText(f"Legendas: {data}")
                 self.statusBar().showMessage(f"Transcrição local: {data}", 10000)
+            elif kind == "caption_model_download":
+                size, ok, detail = data
+                self._model_downloading = False
+                self.live_captions_panel.set_downloading(False)
+                self.live_captions_panel.refresh_model_status()
+                if ok:
+                    self.statusBar().showMessage(
+                        f"Whisper {size} instalado. Ative Legendas.", 12000)
+                else:
+                    self.live_captions_panel.model_status.setText(
+                        f"Download não concluído: {detail}")
+                    QMessageBox.warning(self, "Modelo Whisper", detail)
+            elif kind == "neural_error":
+                self.audio_panel.neural.blockSignals(True)
+                self.audio_panel.neural.setChecked(False)
+                self.audio_panel.neural.blockSignals(False)
+                self._set_neural_audio(False, self.cfg.get("neural_strength", 0.8))
+                self.audio_panel.neural_status.setText(str(data))
+                self.statusBar().showMessage(str(data), 10000)
             elif kind in ("auto_mode", "auto_tune"):
                 self._auto_result(kind, data)
             elif kind in ("assist_tune", "assist_mode", "assist_filter"):
@@ -2231,8 +2250,13 @@ class MainWindow(QMainWindow):
         if self.transcriber is not None:
             self.transcriber.stop()
         if self.caption_worker is not None:
+            try:
+                self.engine.audio_listeners.remove(self.caption_worker.feed)
+            except ValueError:
+                pass
             self.caption_worker.stop()
             self.caption_worker = None
+        self.engine.set_neural_audio(False)
         presenting = self._presenting
         if presenting:  # a geometria salva é a da janela normal
             self.set_presentation(False)
