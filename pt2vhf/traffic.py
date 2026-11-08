@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import csv
 import html
+from collections import defaultdict
+from datetime import datetime, timezone
+from xml.sax.saxutils import escape as xml_escape
 import json
 import math
 import time
@@ -291,7 +294,19 @@ def export_map(tracks: list[Track], path: str | Path):
 const map=L.map("map").setView([-15.8,-47.9],5);
 L.tileLayer("https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png",{{attribution:"© OpenStreetMap"}}).addTo(map);
 const group=L.featureGroup().addTo(map);
+const history=new Map();
 for(const p of data){{
+  const key=p.source+"/"+p.ident;
+  if(!history.has(key))history.set(key,[]);
+  history.get(key).push(p);
+}}
+for(const positions of history.values()){{
+  positions.sort((a,b)=>a.timestamp-b.timestamp);
+  const p=positions[positions.length-1];
+  if(positions.length>1){{
+    const segment=positions.map(r=>[r.lat,r.lon]);
+    L.polyline(segment,{{weight:3,opacity:.75}}).addTo(group);
+  }}
   const m=L.marker([p.lat,p.lon]).addTo(group);
   const node=document.createElement("div");
   for(const [k,v] of Object.entries({{Tipo:p.source,ID:p.ident,Nome:p.label,
@@ -305,4 +320,44 @@ if(group.getLayers().length)map.fitBounds(group.getBounds().pad(.2),{{maxZoom:11
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(page, encoding="utf-8")
+    return out
+
+
+def export_gpx(tracks: list[Track], path: str | Path):
+    """Exporta trajetórias para GPX 1.1 por estação; campos escapados para XML."""
+    groups = defaultdict(list)
+    for item in tracks:
+        groups[(item.source, item.ident)].append(item)
+    lines = ['<?xml version="1.0" encoding="utf-8"?>',
+             '<gpx version="1.1" creator="PT2VHF SDR Tool" xmlns="http://www.topografix.com/GPX/1/1">']
+    for (source, ident), positions in sorted(groups.items()):
+        lines.append("<trk><name>" + xml_escape(source + " " + ident) + "</name><trkseg>")
+        for pos in sorted(positions, key=lambda x: x.timestamp):
+            stamp = datetime.fromtimestamp(pos.timestamp, timezone.utc).isoformat().replace("+00:00", "Z")
+            elevation = f"<ele>{pos.altitude_m:.2f}</ele>" if pos.altitude_m is not None else ""
+            lines.append(f'<trkpt lat="{pos.lat:.7f}" lon="{pos.lon:.7f}">{elevation}'
+                         f'<time>{stamp}</time></trkpt>')
+        lines.append("</trkseg></trk>")
+    lines.append("</gpx>")
+    out = Path(path)
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return out
+
+
+def export_kml(tracks: list[Track], path: str | Path):
+    """Exporta rastros em KML com grupos por indicativo/MMSI/número de série."""
+    groups = defaultdict(list)
+    for item in tracks:
+        groups[(item.source, item.ident)].append(item)
+    lines = ['<?xml version="1.0" encoding="UTF-8"?>',
+             '<kml xmlns="http://www.opengis.net/kml/2.2"><Document>']
+    for (source, ident), positions in sorted(groups.items()):
+        coords = " ".join(f"{p.lon:.7f},{p.lat:.7f},{p.altitude_m or 0:.1f}"
+                          for p in sorted(positions, key=lambda x: x.timestamp))
+        lines.extend(["<Placemark><name>" + xml_escape(source + " " + ident) + "</name>",
+                      "<LineString><tessellate>1</tessellate><coordinates>" + coords +
+                      "</coordinates></LineString></Placemark>"])
+    lines.append("</Document></kml>")
+    out = Path(path)
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return out

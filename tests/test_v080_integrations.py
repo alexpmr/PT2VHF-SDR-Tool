@@ -156,3 +156,19 @@ def test_memory_region_profiles_roundtrip_and_chirp(tmp_path):
     assert regions.load_bank("Goiânia", bank) == 1
     assert bank.channels[0].name == "EXEMPLO"
     assert bank.channels[0].freq == 145_510_000
+
+
+def test_gpx_and_kml_export_tracks_are_valid_xml(tmp_path):
+    from xml.etree import ElementTree
+    from pt2vhf.traffic import Track, export_gpx, export_kml
+    tracks = [
+        Track("Sonda", 'RS41&<S>', -15.80, -47.90, altitude_m=1000, timestamp=1731000000),
+        Track("Sonda", 'RS41&<S>', -15.79, -47.89, altitude_m=1200, timestamp=1731000020),
+    ]
+    gpx = export_gpx(tracks, tmp_path / "sonde.gpx")
+    kml = export_kml(tracks, tmp_path / "sonde.kml")
+    root1, root2 = ElementTree.parse(gpx).getroot(), ElementTree.parse(kml).getroot()
+    assert root1.tag.endswith("gpx")
+    assert root2.tag.endswith("kml")
+    assert "RS41&<S>" in gpx.read_text() or "RS41&amp;&lt;S&gt;" in gpx.read_text()
+    assert "-47.9000000,-15.8000000" in kml.read_text()

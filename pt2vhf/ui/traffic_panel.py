@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (QCheckBox, QFileDialog, QHBoxLayout, QLabel,
                                QVBoxLayout, QWidget, QAbstractItemView)
 
 from ..config import config_dir
-from ..traffic import export_csv, export_map, load_traffic
+from ..traffic import export_csv, export_gpx, export_kml, export_map, load_traffic
 
 
 class SourceTab(QWidget):
@@ -28,6 +28,7 @@ class SourceTab(QWidget):
         self.kind = kind
         self.cfg = cfg
         self.records = []
+        self.history = []
         self.last_stamp = None
         main = QVBoxLayout(self)
         explanation = {
@@ -61,9 +62,12 @@ class SourceTab(QWidget):
         bar.addWidget(self.auto)
         bar.addWidget(refresh)
         bar.addWidget(export)
-        map_btn = QPushButton("Mapa OSM")
+        map_btn = QPushButton("Mapa OSM + rastros")
         map_btn.clicked.connect(self.open_map)
         bar.addWidget(map_btn)
+        gpx_btn = QPushButton("GPX / KML")
+        gpx_btn.clicked.connect(self._export_tracks)
+        bar.addWidget(gpx_btn)
         bar.addStretch(1)
         main.addLayout(bar)
         self.status = QLabel("Aguardando arquivo de telemetria local")
@@ -111,11 +115,22 @@ class SourceTab(QWidget):
             self.status.setText(f"Falha na leitura: {exc}")
             return
         self.records = records
+        self._add_history(records)
         self._populate(records)
         self.status.setText(f"{len(records)} posições válidas de {p.name}. "
                             "A atualização depende do decodificador externo.")
 
+    def _add_history(self, positions):
+        for point in positions:
+            last = next((x for x in reversed(self.history)
+                         if x.source == point.source and x.ident == point.ident), None)
+            if last and abs(last.lat - point.lat) < 0.00001 and abs(last.lon - point.lon) < 0.00001:
+                continue
+            self.history.append(point)
+        self.history = self.history[-5000:]
+
     def add_live_record(self, record):
+        self._add_history([record])
         self.records = [record] + [x for x in self.records if x.ident != record.ident][:499]
         self._populate(self.records)
         self.status.setText(f"{len(self.records)} posições de sondas meteorológicas")
@@ -139,10 +154,27 @@ class SourceTab(QWidget):
             QMessageBox.information(self, "Mapa", "Nenhuma posição válida para exibir.")
             return
         try:
-            path = export_map(self.records, config_dir() / ("mapa_" + self.kind.lower().replace("-", "_") + ".html"))
+            path = export_map(self.history or self.records, config_dir() / ("mapa_" + self.kind.lower().replace("-", "_") + ".html"))
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
         except OSError as exc:
             QMessageBox.warning(self, "Mapa", str(exc))
+
+    def _export_tracks(self):
+        if not self.history and not self.records:
+            QMessageBox.information(self, "Exportação", "Sem trajetórias para exportar.")
+            return
+        filename, selected = QFileDialog.getSaveFileName(
+            self, "Exportar trilhas", self.kind.lower() + ".gpx",
+            "GPX (*.gpx);;KML (*.kml)")
+        if not filename:
+            return
+        try:
+            if filename.lower().endswith(".kml") or "KML" in selected:
+                export_kml(self.history or self.records, filename)
+            else:
+                export_gpx(self.history or self.records, filename)
+        except OSError as exc:
+            QMessageBox.warning(self, "Exportação", str(exc))
 
     def _export(self):
         if not self.records:
