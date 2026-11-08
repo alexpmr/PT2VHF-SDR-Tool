@@ -19,3 +19,7 @@
 - A publicação/OTA no site www.pt2vhf.com depende de efetiva implantação na hospedagem, não apenas do commit do repositório.
 
 Referência técnica: https://github.com/projecthorus/radiosonde_auto_rx/blob/master/auto_rx/autorx/decode.py
+
+## Construção Windows
+- Pipeline requerido para distribuir Setup e Portable, com testes locais de executáveis e Inno Setup.
+- Verificar SHA256SUMS e tag v0.11.0 antes de promover ao site.
