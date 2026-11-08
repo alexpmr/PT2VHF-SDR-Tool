@@ -375,6 +375,15 @@ class RtlSdrSource(IQSource):
             reader = self._reader
             if reader is not None:
                 reader.join(timeout=3)
+            # Nenhuma thread de controle deve sobreviver ao encerramento do SDR.
+            # A sentinela já foi enviada em stop(); aguarda em background para não
+            # bloquear a GUI quando a biblioteca USB estiver lenta/travada.
+            ctl = self._ctl_thread
+            if ctl is not None and ctl is not threading.current_thread():
+                ctl.join(timeout=3)
+            watcher = self._watch_thread
+            if watcher is not None and watcher is not threading.current_thread():
+                watcher.join(timeout=1)
             try:
                 sdr.close()
             except Exception:  # noqa: BLE001
@@ -515,8 +524,10 @@ class RtlSdrSource(IQSource):
                 self._ctl.get_nowait()
             except queue.Empty:
                 break
-        self._ctl_thread = threading.Thread(target=self._control_loop, daemon=True, name="rtl-ctl")
-        self._ctl_thread.start()
+        # A thread de controle original permanece ativa e usa self.sdr
+        # dinamicamente. Criar outra aqui deixava uma thread em _ctl.get()
+        # após cada reconexão; stop() enviava apenas uma sentinela e a outra
+        # thread permanecia viva até o shutdown do interpretador.
         self._start_reader()
 
 
