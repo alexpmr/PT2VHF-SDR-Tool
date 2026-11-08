@@ -72,7 +72,9 @@ class LCDDisplay(QWidget):
         # Height-for-width: diminui o painel inteiro, sem barras ou crop.
         self.setMinimumHeight(72)
         self.setMinimumWidth(1)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        policy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
         self.theme = "Âmbar"
@@ -334,13 +336,20 @@ class LCDDisplay(QWidget):
             p.drawPolygon(poly)
         p.restore()
 
+    @staticmethod
+    def meter_segments(dbm: float, valid: bool = True, nseg: int = 40) -> int:
+        """Barras proporcionais à leitura real; zero quando não há amostras."""
+        if not valid or not math.isfinite(float(dbm)):
+            return 0
+        lo, hi = -147.0, -33.0
+        return max(0, min(nseg, int(round((float(dbm) - lo) / (hi - lo) * nseg))))
+
     def _draw_smeter(self, p: QPainter, r: QRectF, on, ghost, sub):
         # escala: -127 dBm (S0) a -33 dBm (S9+60), S9 = -93 dBm (VHF)
         lo, s9, hi = -147.0, -93.0, -33.0
         nseg = 40
         seg_w = r.width() / nseg
-        frac = (min(max(self.signal_dbm, lo), hi) - lo) / (hi - lo)
-        lit = int(round(frac * nseg)) if self.signal_valid else 0
+        lit = self.meter_segments(self.signal_dbm, self.signal_valid, nseg)
         peak = int(round((min(max(self._peak, lo), hi) - lo) / (hi - lo) * nseg)) if self.signal_valid else 0
         bar_h = r.height() * 0.45
         s9_seg = int((s9 - lo) / (hi - lo) * nseg)
