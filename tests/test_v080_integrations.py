@@ -133,3 +133,26 @@ def test_reject_bad_cat_and_unknown_traffic(tmp_path):
         load_traffic(path, "other")
     with pytest.raises(ValueError):
         parse_adsb([])
+
+
+def test_memory_region_profiles_roundtrip_and_chirp(tmp_path):
+    from pt2vhf.memory import MemoryBank, MemoryChannel
+    from pt2vhf.memory_regions import RegionMemoryStore
+
+    bank = MemoryBank(tmp_path / "active.json")
+    bank.channels = [MemoryChannel("Repetidora DF", 145_270_000, "NFM", category="Repetidoras")]
+    regions = RegionMemoryStore(tmp_path / "regioes.json")
+    regions.save_bank("Brasília · DF", bank)
+    bank.channels.clear()
+    assert regions.load_bank("Brasília · DF", bank) == 1
+    assert bank.channels[0].freq == 145_270_000
+    assert bank.path.exists()
+    assert "Brasília · DF" in RegionMemoryStore(tmp_path / "regioes.json").names()
+
+    csv_path = tmp_path / "chirp.csv"
+    csv_path.write_text("Location,Name,Frequency,Mode,Comment\n0,EXEMPLO,145.510000,FM,Simplex local\n",
+                        encoding="utf-8")
+    assert regions.import_chirp("Goiânia", csv_path) == 1
+    assert regions.load_bank("Goiânia", bank) == 1
+    assert bank.channels[0].name == "EXEMPLO"
+    assert bank.channels[0].freq == 145_510_000
