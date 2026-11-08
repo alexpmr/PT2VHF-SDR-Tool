@@ -29,6 +29,7 @@ from .listening import FavoritesBar, PresetDialog, ScannerPanel
 from .settings_panel import SettingsPanel
 from .bandkeys import BandKeys
 from .display_settings import DisplaySettings
+from .analog import AnalogPanel
 from .panels import AudioPanel, DecoderPanel, MemoryPanel, ModePanel, ReceiverPanel
 from .waterfall import COLORMAPS, SpectrumWaterfall
 
@@ -179,6 +180,9 @@ class MainWindow(QMainWindow):
         self.lcd = LCDDisplay()
         self.lcd.set_theme(self.cfg["lcd_theme"])
         cl.addWidget(self.lcd)
+        self.analog_panel = AnalogPanel(self.cfg.get("analog_style", "Valvulado"))
+        self.analog_panel.setVisible(bool(self.cfg.get("analog_enabled", False)))
+        cl.addWidget(self.analog_panel)
         self.band_bar = BandKeys(self.cfg.get("bands_visible"))
         cl.addWidget(self.band_bar)
         self.fav_bar = FavoritesBar()
@@ -422,6 +426,7 @@ class MainWindow(QMainWindow):
                                         self.audio_panel, self.mem_panel, self.dec_panel)
         self.band_bar.selected.connect(self._band_button)
         self.display_panel.bandsChanged.connect(self._set_visible_bands)
+        self.display_panel.analogChanged.connect(self._analog_display_changed)
         lcd.freqChanged.connect(self.tune)
         lcd.stepRequested.connect(lambda n: self.tune(self.engine.vfo + n * self.step, snap=True))
         wf.tuneRequested.connect(self.select_transmission)
@@ -812,6 +817,13 @@ class MainWindow(QMainWindow):
             return
         reasons = {b.name: self._band_unsupported(b) for b in self.band_bar.bands}
         self.band_bar.refresh(self.engine.vfo, reasons)
+
+    def _analog_display_changed(self, on, style):
+        self.cfg["analog_enabled"] = bool(on)
+        self.cfg["analog_style"] = style
+        self.analog_panel.set_style(style)
+        self.analog_panel.setVisible(bool(on))
+        self.cfg.save()
 
     def _set_visible_bands(self, names):
         """Atualiza as teclas sem reiniciar e preserva a seleção do operador."""
@@ -1721,6 +1733,8 @@ class MainWindow(QMainWindow):
         if eng.running:
             dbm, s = dbfs_to_s_units(st["signal_db"], self.cfg["s_meter_cal"])
             self.lcd.set_signal(dbm, s, st["sq_open"] and self.audio_panel.squelch.value() > -150)
+            if self.cfg.get("analog_enabled", False):
+                self.analog_panel.set_readings(dbm, st.get("audio_level", 0.0))
             if getattr(self, "_sq_collect", False):
                 self._sq_samples.append(st["signal_db"])
             tone = st.get("ctcss")

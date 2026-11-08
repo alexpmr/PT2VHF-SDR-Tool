@@ -55,6 +55,8 @@ DEFAULTS = {
                       "FM Broadcast", "Aviação (VHF)", "Marítimo VHF"],
     "wf_keep_vfo_centered": False,
     "rx_ever_connected": False,
+    "analog_enabled": False,
+    "analog_style": "Valvulado",
     "audio_device": None,
     "s_meter_cal": 0.0,
     "my_locator": "GG66qk",
