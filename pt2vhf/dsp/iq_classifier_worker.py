@@ -16,10 +16,15 @@ class IQClassificationWorker:
         self._thread = threading.Thread(target=self._run, name="iq-classifier", daemon=True)
         self._thread.start()
 
-    def feed(self, iq, frequency_hz=None):
+    def feed(self, iq, frequency_hz=None, sample_rate=48000):
         if self._stop.is_set():
             return False
         chunk = np.asarray(iq, np.complex64)
+        if sample_rate != 48000:
+            from fractions import Fraction
+            from scipy.signal import resample_poly
+            ratio = Fraction(48000, int(sample_rate))
+            chunk = resample_poly(chunk, ratio.numerator, ratio.denominator).astype(np.complex64)
         if chunk.size < 2048:
             return False
         item = (chunk.copy(), frequency_hz, time.time())
