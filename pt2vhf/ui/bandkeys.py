@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QGridLayout, QToolButton, QWidget
+from PySide6.QtWidgets import QGridLayout, QToolButton, QWidget, QSizePolicy
 
 from .lcd import THEMES
 from PySide6.QtGui import QColor
@@ -19,23 +19,30 @@ class BandKeys(QWidget):
         self._theme = "Âmbar"
         self._reasons = {}
         self.buttons = {}
+        self._scale = 1.0
+        self.setMinimumSize(0, 0)
         grid = QGridLayout(self)
-        grid.setContentsMargins(2, 1, 2, 1)
+        grid.setContentsMargins(0, 0, 0, 0)
         self.setStyleSheet("background: transparent;")
         grid.setHorizontalSpacing(3)
         grid.setVerticalSpacing(2)
-        cols = min(12, max(1, (len(self.bands) + 1) // 2))
+        cols = 5
         for i, band in enumerate(self.bands):
             btn = QToolButton(self)
             btn.setText(band.name.replace(" (PX)", "").replace(" Broadcast", "").replace(" (VHF)", ""))
             btn.setCheckable(True)
-            btn.setMinimumHeight(22)
-            btn.setMaximumHeight(24)
+            btn.setMinimumSize(0, 0)
+            btn.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
             btn.setToolTip(f"{band.name}: {band.start / 1e6:g} a {band.end / 1e6:g} MHz")
             btn.clicked.connect(lambda _checked=False, b=band: self.selected.emit(b))
             grid.addWidget(btn, i // cols, i % cols)
             self.buttons[band.name] = btn
         self._apply_theme()
+
+    def set_scale(self, scale):
+        if abs(self._scale - scale) > 0.02:
+            self._scale = scale
+            self._apply_theme()
 
     def set_theme(self, name):
         if name in THEMES:
@@ -53,10 +60,12 @@ class BandKeys(QWidget):
             background = "#bcbcbc" if disabled else top
             btn.setStyleSheet(
                 "QToolButton { background: %s; color: %s; border: 1px solid %s; "
-                "border-radius: 3px; font-weight: bold; font-size: 11px; padding: 1px 3px; }"
+                "border-radius: %dpx; font-weight: bold; font-size: %dpx; padding: 0; }"
                 "QToolButton:checked { background: %s; color: %s; }"
                 "QToolButton:hover { border-width: 2px; }" %
-                (background, fg, border, ink if not disabled else "#707070",
+                (background, fg, border, max(1, round(3 * self._scale)),
+                 max(4, round(10 * self._scale)),
+                 ink if not disabled else "#707070",
                  top if not disabled else "#dddddd")
             )
 

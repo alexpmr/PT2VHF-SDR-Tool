@@ -227,7 +227,7 @@ class MainWindow(QMainWindow):
         self.wf.set_colormap(self.cfg["wf_colormap"])
         self.wf.set_levels(self.cfg["wf_min_db"], self.cfg["wf_max_db"])
         self.wf.avg_alpha = self.cfg["spectrum_avg"]
-        self.wf.setMinimumHeight(300)
+        self.wf.setMinimumHeight(175)
         cl.addWidget(self.wf, 1)
         self.audio_scroll = _scroll(self.audio_panel)
         self.audio_scroll.setMinimumWidth(max(330, self.audio_panel.minimumSizeHint().width() + 18))
@@ -1942,8 +1942,16 @@ class MainWindow(QMainWindow):
 
         st = eng.status
         if eng.running:
-            dbm, s = dbfs_to_s_units(st["signal_db"], self.cfg["s_meter_cal"])
-            self.lcd.set_signal(dbm, s, st["sq_open"] and self.audio_panel.squelch.value() > -150)
+            fresh = time.monotonic() - st.get("signal_sample_time", 0) < 2.5
+            raw_db = st.get("signal_db", -150.0)
+            if fresh and math.isfinite(float(raw_db)):
+                dbm, s = dbfs_to_s_units(raw_db, self.cfg["s_meter_cal"])
+                self.lcd.set_signal(dbm, s, st["sq_open"] and self.audio_panel.squelch.value() > -150)
+                self.lcd.setToolTip(f"S-meter: {raw_db:.1f} dBFS · {dbm:.1f} dBm aprox. · {s}")
+            else:
+                dbm = -147.0
+                self.lcd.set_signal(None, "S--", False)
+                self.lcd.setToolTip("S-meter: sem amostras IQ recentes")
             if self.cfg.get("analog_enabled", False):
                 self.analog_panel.set_readings(dbm, st.get("audio_level", 0.0))
             if getattr(self, "_sq_collect", False):
@@ -1955,6 +1963,8 @@ class MainWindow(QMainWindow):
                                     f"centro {eng.center_freq / 1e6:.4f} MHz")
         elif self.rx_panel.start_btn.isChecked():
             self.stop_source()
+        elif not eng.running and self.lcd.signal_valid:
+            self.lcd.set_signal(None, "S--", False)
 
         if self.sonde_worker is not None:
             now = time.monotonic()

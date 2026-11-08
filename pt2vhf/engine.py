@@ -388,6 +388,7 @@ class Engine:
                 self.dtmf.process(raw)
 
         self.status["signal_db"] = rx.signal_db
+        self.status["signal_sample_time"] = time.monotonic()
         self.status["sq_open"] = rx.squelch.is_open
         self.status["audio_level"] = float(np.max(np.abs(audio))) if len(audio) else 0.0
         if self.audio is not None:

@@ -8,9 +8,10 @@ Interação:
 """
 from __future__ import annotations
 
+import math
 import time
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen,
                            QPolygonF, QTransform)
 from PySide6.QtWidgets import QSizePolicy, QWidget
@@ -62,11 +63,16 @@ class LCDDisplay(QWidget):
     KEYS = ["◀", "AUTO", "NFM", "WFM", "AM", "USB", "LSB", "CW", "DSB", "RAW", "A-SINT", "▶"]
 
     N_DIGITS = 10  # 4 MHz . 3 kHz . 3 Hz
+    DESIGN_WIDTH = 1100.0
+    DESIGN_HEIGHT = 255.0
+    BAND_RECT = QRectF(668, 51, 266, 90)  # cinco colunas, área marcada pelo usuário
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(285)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # Height-for-width: diminui o painel inteiro, sem barras ou crop.
+        self.setMinimumHeight(72)
+        self.setMinimumWidth(1)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
         self.theme = "Âmbar"
@@ -77,9 +83,10 @@ class LCDDisplay(QWidget):
         self.vfo_name = "VFO A"
         self.mem_label = ""
         self.band_label = ""
-        self.signal_dbm = -127.0
+        self.signal_dbm = -147.0
+        self.signal_valid = False
         self.s_text = "S0"
-        self._peak = -127.0
+        self._peak = -147.0
         self._peak_t = 0.0
         self.flags: dict[str, bool] = {}
         self.mode_key = "NFM"      # tecla de modo acesa (o modo real ou "AUTO")
@@ -92,7 +99,31 @@ class LCDDisplay(QWidget):
         self._entry = ""
         self.min_freq, self.max_freq = 24_000, 1_766_000_000
         self.band_bar = None
-        self._band_height = 66
+        self._last_scale = 1.0
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return max(72, round(width * self.DESIGN_HEIGHT / self.DESIGN_WIDTH))
+
+    def sizeHint(self):
+        return QSize(1100, 255)
+
+    def minimumSizeHint(self):
+        return QSize(300, 72)
+
+    def _canvas(self):
+        scale = min(self.width() / self.DESIGN_WIDTH,
+                    self.height() / self.DESIGN_HEIGHT)
+        scale = max(0.001, scale)
+        left = (self.width() - self.DESIGN_WIDTH * scale) / 2.0
+        top = (self.height() - self.DESIGN_HEIGHT * scale) / 2.0
+        return scale, left, top
+
+    def _canvas_point(self, pt):
+        scale, left, top = self._canvas()
+        return QPointF((pt.x() - left) / scale, (pt.y() - top) / scale)
 
     def attach_band_keys(self, band_bar):
         """Mantém as teclas como widgets clicáveis dentro do contorno LCD."""
@@ -104,8 +135,12 @@ class LCDDisplay(QWidget):
 
     def _position_band_keys(self):
         if self.band_bar is not None:
-            self.band_bar.setGeometry(16, self.height() - self._band_height + 3,
-                                      max(50, self.width() - 32), self._band_height - 9)
+            scale, left, top = self._canvas()
+            rect = self.BAND_RECT
+            self.band_bar.setGeometry(
+                round(left + rect.x() * scale), round(top + rect.y() * scale),
+                max(1, round(rect.width() * scale)), max(1, round(rect.height() * scale)))
+            self.band_bar.set_scale(scale)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -116,13 +151,19 @@ class LCDDisplay(QWidget):
         self.freq = int(round(f))
         self.update()
 
-    def set_signal(self, dbm: float, s_text: str, sq_open: bool):
-        self.signal_dbm = dbm
-        self.s_text = s_text
-        self.squelch_open = sq_open
+    def set_signal(self, dbm: float | None, s_text: str, sq_open: bool):
+        """None significa ausência de medição, e não uma barra fixa de ruído."""
+        valid = dbm is not None and math.isfinite(float(dbm))
+        self.signal_valid = valid
+        self.signal_dbm = float(dbm) if valid else -147.0
+        self.s_text = s_text if valid else "S--"
+        self.squelch_open = bool(sq_open) if valid else False
         now = time.monotonic()
-        if dbm > self._peak or now - self._peak_t > 1.5:
-            self._peak, self._peak_t = dbm, now
+        if not valid:
+            self._peak = -147.0
+            self._peak_t = now
+        elif self.signal_dbm > self._peak or now - self._peak_t > 1.5:
+            self._peak, self._peak_t = self.signal_dbm, now
         self.update()
 
     def set_theme(self, name: str):
@@ -136,8 +177,12 @@ class LCDDisplay(QWidget):
     def paintEvent(self, _ev):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
+        scale, left, top = self._canvas()
+        p.fillRect(self.rect(), QColor("#1a1d23"))
+        p.translate(left, top)
+        p.scale(scale, scale)
         bg1, bg2, on, ghost, sub = (QColor(c) for c in THEMES[self.theme])
-        r = QRectF(self.rect()).adjusted(2, 2, -2, -2)
+        r = QRectF(2, 2, self.DESIGN_WIDTH - 4, self.DESIGN_HEIGHT - 4)
         grad = QLinearGradient(r.topLeft(), r.bottomLeft())
         grad.setColorAt(0, bg1)
         grad.setColorAt(1, bg2)
@@ -147,7 +192,7 @@ class LCDDisplay(QWidget):
         p.setPen(QPen(QColor(0, 0, 0, 160), 2))
         p.drawPath(path)
 
-        W, H = r.width(), r.height() - self._band_height
+        W, H = r.width(), r.height()
         x0, y0 = r.left() + 14, r.top() + 8
         mono = QFont("Consolas")
         mono.setStyleHint(QFont.Monospace)
@@ -191,7 +236,7 @@ class LCDDisplay(QWidget):
 
         # --- frequência
         fy = y0 + H * 0.17
-        dh = H * 0.40
+        dh = H * 0.34
         dw = dh * 0.52
         small = 0.62
         spacing = dw * 0.28
@@ -220,27 +265,28 @@ class LCDDisplay(QWidget):
                 x += spacing * 1.1
         freq_right = x
         p.setPen(on)
-        mono.setPixelSize(int(H * 0.11))
+        mono.setPixelSize(int(H * 0.095))
         p.setFont(mono)
         p.drawText(QRectF(freq_right + 4, fy + dh - H * 0.13, 60, H * 0.13), Qt.AlignLeft, "MHz")
 
         # --- painel direito: memória / banda / CTCSS / relógio
-        rx = max(freq_right + 70, r.right() - 260)
-        mono.setPixelSize(int(H * 0.075))
+        rx = 945
+        mono.setPixelSize(11)
         p.setFont(mono)
         p.setPen(sub)
         lines = [self.mem_label or "MEM --", self.band_label or "",
-                 self.ctcss_text or "", f"{self.s_text}  {self.signal_dbm:6.1f} dBm",
-                 time.strftime("%H:%M:%S") + "  " + time.strftime("%H:%MZ", time.gmtime())]
-        lh = H * 0.082
+                 self.ctcss_text or "",
+                 f"{self.s_text} {self.signal_dbm:6.1f} dBm" if self.signal_valid else "S--  -- dBm",
+                 time.strftime("%H:%M:%S") + " UTC"]
+        lh = H * 0.078
         for k, line in enumerate(lines):
             p.drawText(QRectF(rx, fy - H * 0.035 + k * lh, r.right() - rx - 10, lh),
                        Qt.AlignRight | Qt.AlignVCenter, line)
 
         # --- S-meter
         self._draw_smeter(p, QRectF(x0, fy + dh + H * 0.05, W - 28, H * 0.19), on, ghost, sub)
-        self._draw_keys(p, QRectF(x0, r.bottom() - self._band_height - H * 0.155,
-                                  W - 28, H * 0.12), on, ghost, bg1)
+        self._draw_keys(p, QRectF(x0, r.bottom() - H * 0.14,
+                                  W - 28, H * 0.105), on, ghost, bg1)
 
         if self.entry_active:
             p.setPen(on)
@@ -294,16 +340,17 @@ class LCDDisplay(QWidget):
         nseg = 40
         seg_w = r.width() / nseg
         frac = (min(max(self.signal_dbm, lo), hi) - lo) / (hi - lo)
-        lit = int(round(frac * nseg))
-        peak = int(round((min(max(self._peak, lo), hi) - lo) / (hi - lo) * nseg))
+        lit = int(round(frac * nseg)) if self.signal_valid else 0
+        peak = int(round((min(max(self._peak, lo), hi) - lo) / (hi - lo) * nseg)) if self.signal_valid else 0
         bar_h = r.height() * 0.45
         s9_seg = int((s9 - lo) / (hi - lo) * nseg)
         for i in range(nseg):
             rr = QRectF(r.left() + i * seg_w + 1, r.top() + r.height() * 0.42, seg_w - 2,
                         bar_h * (0.55 + 0.45 * i / nseg))
             rr.moveBottom(r.top() + r.height() * 0.42 + bar_h)
-            col = on if i < lit or i == peak - 1 else ghost
-            if i >= s9_seg and (i < lit or i == peak - 1):
+            active = i < lit or (peak > 0 and i == peak - 1)
+            col = on if active else ghost
+            if i >= s9_seg and active:
                 col = QColor("#c0161a") if self.theme in ("Âmbar", "Verde", "Branco") else QColor("#ff6060")
             p.fillRect(rr, col)
         f = QFont("Consolas")
@@ -339,17 +386,19 @@ class LCDDisplay(QWidget):
         return self._hover
 
     def _place_at(self, pos) -> int | None:
+        point = self._canvas_point(pos)
         for i, (rect, place) in enumerate(self._digit_rects):
-            if rect.contains(QPointF(pos)):
+            if rect.contains(point):
                 return place
         return None
 
     def mouseMoveEvent(self, ev):
-        over_key = any(rect.contains(ev.position()) for rect, _k in self._key_rects)
+        point = self._canvas_point(ev.position())
+        over_key = any(rect.contains(point) for rect, _k in self._key_rects)
         self.setCursor(Qt.PointingHandCursor if over_key else Qt.ArrowCursor)
         h = -1
         for i, (rect, _place) in enumerate(self._digit_rects):
-            if rect.contains(ev.position()):
+            if rect.contains(point):
                 h = i
         if h != self._hover:
             self._hover = h
@@ -378,8 +427,9 @@ class LCDDisplay(QWidget):
 
     def mousePressEvent(self, ev):
         self.setFocus()
+        point = self._canvas_point(ev.position())
         for rect, k in self._key_rects:
-            if rect.contains(ev.position()):
+            if rect.contains(point):
                 if k == "◀":
                     self.neighborRequested.emit(-1)
                 elif k == "▶":
@@ -390,8 +440,8 @@ class LCDDisplay(QWidget):
                     self.modeClicked.emit(k)
                 return
         for rect, place in self._digit_rects:
-            if rect.contains(ev.position()):
-                up = ev.position().y() < rect.center().y()
+            if rect.contains(point):
+                up = point.y() < rect.center().y()
                 self._bump(place, 1 if up else -1)
                 return
 
