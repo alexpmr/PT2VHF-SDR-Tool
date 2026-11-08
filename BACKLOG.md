@@ -4,6 +4,28 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Decodificadores: ADS-B, AIS, DMR, D-STAR, C4FM e SSTV da ISS (registrado em 08/11/2026)
+- Pedido explícito do mantenedor (reforça e prioriza parte do item "Recursos sugeridos"):
+  - **ADS-B** (1090 MHz): aviões no mapa com indicativo, altitude, velocidade, rumo e rastro; tabela de aeronaves.
+  - **AIS** (161,975 / 162,025 MHz): navios no mapa com nome, MMSI, tipo, rumo e velocidade; tabela de embarcações.
+  - **Voz digital DMR, D-STAR e C4FM (YSF)**: decodificar e mostrar os metadados (ID/indicativo, talkgroup,
+    slot, mensagens, GPS quando houver) e, se possível, o áudio; o codec AMBE/IMBE tem questões de patente —
+    avaliar opções legais (ex.: decodificação de áudio opcional por componente externo instalado pelo usuário)
+    antes de implementar.
+  - **SSTV da ISS** (145,800 MHz, eventos ARISS): receber e montar as imagens automaticamente (modos PD120,
+    PD180, Robot36, Martin, Scottie…), com galeria das imagens recebidas, data/hora e salvamento; aviso de
+    passagem da ISS e correção Doppler quando houver.
+- Mostrar as informações de forma amigável e, quando houver posição, no mapa (o mesmo das radiossondas/APRS).
+
+### Configuração do display na aba Configurações → Display, com exemplos para escolher (registrado em 08/11/2026)
+- Hoje o tema do display aparece em dois lugares: "Display:" na barra do waterfall e "Tema do display" em
+  Configurações → Geral.
+- Mover a configuração do display para uma sub-aba própria **Configurações → Display** (tirar da barra do waterfall).
+- Mostrar **um exemplo de cada tema** (Âmbar, Verde, Azul (negativo), Noturno, Branco e os que vierem) como
+  miniatura do display real (frequência, S-meter, indicadores), para escolher clicando no exemplo; o selecionado
+  fica destacado e aplica na hora.
+- Reunir ali os demais ajustes visuais do display, se houver (ex.: relógio local/UTC, calibração do S-meter).
+
 ### Recursos sugeridos ainda não implementados (registrado em 08/11/2026)
 Registrados "de acordo com as sugestões" dadas ao mantenedor (resposta "O que mais um programa de SDR de 0–2 GHz
 deveria ter" e roteiro do README). Implementar conforme viabilidade; a ordem pode ser decidida no pedido de versão.
