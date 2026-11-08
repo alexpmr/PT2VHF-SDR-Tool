@@ -2,6 +2,15 @@
 
 Itens registrados pelo mantenedor. Não implementar até o pedido de versão nova.
 
+## Ajuste P1 — grade de bandas no espaço direito do LCD e escala responsiva (08/11/2026)
+- **Referência visual:** imagem do mantenedor de 08/11/2026, com área delimitada em azul **à direita dos dígitos da frequência, acima do S-meter**, na porção livre do painel âmbar.
+- **Alteração de posição:** retirar a grade de bandas atualmente desenhada como duas fileiras **abaixo das teclas de modos**. Colocar as teclas diretamente na região marcada, **dentro do mesmo LCD**, sem barra/painel independente e sem esconder as teclas AUTO/NFM/WFM/AM/USB/LSB/CW/DSB/RAW/A-SINT.
+- **Grade fixa de 5 colunas**, com tantas linhas quanto necessárias para as bandas habilitadas nas configurações; ordenar conforme o plano de bandas. Cada tecla deve ter o mesmo estilo visual das **teclas de modo do LCD** (contorno, preenchimento ativo, tipografia, cantos e contraste), sem parecer um widget Qt separado ou uma faixa solta. Preservar estados habilitado, indisponível, ativo e tooltip.
+- **Layout do painel direito:** reorganizar a área do LCD para que a matriz não se sobreponha aos dígitos, unidade MHz, S-meter, indicadores BUSY/MEM/banda/CTCSS, hora ou dBm. Onde necessário, compactar/mover os indicadores secundários sem perder informação.
+- **Responsividade obrigatória:** quando a janela, o monitor, uma tela remota ou o modo apresentação dispuser de menos largura/altura, **reduzir o LCD inteiro proporcionalmente** (frequência, segmentos, S-meter, indicadores, fontes, teclas de modo, matriz de bandas, hitboxes), mantendo a proporção original e **sem cortar/podar** elementos, números ou controles. Ajustar o widget em resizeEvent/sizeHint/heightForWidth e usar escala única de desenho/layout; preservar o mapeamento correto de cliques/roda do mouse às coordenadas escaladas. Se necessário, usar margens internas/letterboxing em vez de crop/overflow.
+- **Aceite:** em janela larga, janela estreita e modo apresentação, todos os itens do LCD continuam visíveis; matriz completa com 5 colunas na região marcada; botões clicáveis e feedback de seleção; nenhum botão de banda abaixo da fileira de modos; evidências visuais/screenshot nos 5 temas; regressões automatizadas Qt para resize e clique em coordenadas escaladas.
+- **Status:** **pendente de implementação**; substitui a solução anterior da v0.10.0, que colocou bandas dentro do LCD porém no **local errado** e sem redução proporcional suficiente.
+
 ## Revisão da v0.10.0 — implementação e critérios de aceite
 - **Interface (implementado em código):** abas principais ADS-B, AIS e Sondas Meteorológicas separadas; APRS/DTMF/CTCSS preservados dentro do Scanner; retirada a aba iGate RX. Confirmar em Windows Setup/Portable e resolução estreita.
 - **LCD (implementado em código):** teclas de bandas estão no contorno do LCD, com layout e cores dependentes do tema, mantendo teclas de modo e estados. Confirmar redimensionamento, modo apresentação e visualização em monitor estreito.
