@@ -11,13 +11,40 @@ import math
 import queue
 import threading
 import time
+from pathlib import Path
 
 import numpy as np
 from scipy.signal import resample_poly
 
 from .transcribe import find_callsigns
+from .config import config_dir
 
 log = logging.getLogger(__name__)
+
+ALLOWED_MODELS = frozenset(("tiny", "base", "small"))
+
+
+def local_model_path(size: str) -> Path:
+    if size not in ALLOWED_MODELS:
+        raise ValueError("Modelo Whisper desconhecido")
+    return config_dir() / "models" / ("whisper-" + size)
+
+
+def model_installed(size: str) -> bool:
+    path = local_model_path(size)
+    return (path / "model.bin").is_file() and (path / "config.json").is_file()
+
+
+def install_local_model(size: str) -> Path:
+    """Baixa SOMENTE por ação explícita; a inferência posterior não usa a Internet."""
+    from faster_whisper.utils import download_model
+    path = local_model_path(size)
+    path.mkdir(parents=True, exist_ok=True)
+    download_model(size, output_dir=str(path))
+    if not model_installed(size):
+        raise RuntimeError("O download não produziu um modelo completo.")
+    return path
+
 
 
 class LiveCaptionWorker:
@@ -69,8 +96,13 @@ class LiveCaptionWorker:
     def _get_model(self):
         if self._model is not None:
             return self._model
+        if not model_installed(self.model_size):
+            raise FileNotFoundError(
+                f"Modelo {self.model_size} não instalado. Use 'Baixar modelo' na aba Legendas.")
         from faster_whisper import WhisperModel
-        self._model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
+        self._model = WhisperModel(str(local_model_path(self.model_size)),
+                                   device="cpu", compute_type="int8",
+                                   cpu_threads=4, local_files_only=True)
         return self._model
 
     def _run(self):
@@ -96,6 +128,8 @@ class LiveCaptionWorker:
                 log.warning("Legendas ao vivo: %s", exc)
                 if self.on_error is not None and not self._stop.is_set():
                     self.on_error(str(exc))
+                if isinstance(exc, (FileNotFoundError, ImportError)):
+                    return
 
     def stop(self):
         self._stop.set()

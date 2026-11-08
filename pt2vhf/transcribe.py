@@ -53,8 +53,13 @@ class Transcriber:
 
     def _load(self):
         if self._model is None:
+            from .live_caption import model_installed, local_model_path
+            if not model_installed(self.model_size):
+                raise FileNotFoundError("Baixe o modelo Whisper na aba Scanner > Legendas ao vivo.")
             from faster_whisper import WhisperModel
-            self._model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
+            self._model = WhisperModel(str(local_model_path(self.model_size)),
+                                       device="cpu", compute_type="int8",
+                                       local_files_only=True)
         return self._model
 
     def _run(self):

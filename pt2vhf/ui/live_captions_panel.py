@@ -4,13 +4,16 @@ from __future__ import annotations
 import csv
 import time
 
-from PySide6.QtCore import Qt
+from ..live_caption import model_installed
+
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog,
                                QHBoxLayout, QLabel, QPushButton, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
 
 class LiveCaptionsPanel(QWidget):
+    downloadRequested = Signal(str)
     HEADERS = ("Hora", "MHz", "Modo", "Idioma detectado", "Indicativos", "Texto original")
 
     def __init__(self, cfg, parent=None):
@@ -27,6 +30,10 @@ class LiveCaptionsPanel(QWidget):
         self.model.currentIndexChanged.connect(
             lambda _: cfg.__setitem__("live_caption_model", self.model.currentData()))
         top.addWidget(self.model)
+        self.download = QPushButton("Baixar modelo")
+        self.download.setToolTip("Download explícito do modelo; depois ele funciona sem Internet.")
+        self.download.clicked.connect(lambda: self.downloadRequested.emit(self.model.currentData()))
+        top.addWidget(self.download)
         top.addWidget(QLabel("Idioma:"))
         self.language = QComboBox()
         for code, name in (("auto", "Detecção automática"), ("pt", "Português"),
@@ -43,7 +50,12 @@ class LiveCaptionsPanel(QWidget):
         export.clicked.connect(self.export_csv)
         top.addWidget(export)
         main.addLayout(top)
-        note = QLabel("Requer faster-whisper e modelo disponível localmente. Áudio não sai do computador. "
+        self.model_status = QLabel("")
+        main.addWidget(self.model_status)
+        self.model.currentIndexChanged.connect(self.refresh_model_status)
+        self.refresh_model_status()
+        note = QLabel("Reconhecimento local com faster-whisper: escolha e baixe o modelo uma vez. "
+                      "Depois, não precisa de rede durante a transcrição. Áudio nunca é enviado. "
                       "A legenda é gerada em blocos de poucos segundos, não palavra a palavra. "
                       "Tradução automática ainda não está disponível.")
         note.setWordWrap(True)
@@ -56,6 +68,21 @@ class LiveCaptionsPanel(QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setColumnWidth(5, 460)
         main.addWidget(self.table, 1)
+
+    def refresh_model_status(self, *_):
+        size = self.model.currentData()
+        ready = model_installed(size)
+        self.model_status.setText(
+            f"Modelo {size}: instalado — transcrição offline disponível." if ready else
+            f"Modelo {size}: não instalado. Clique em Baixar modelo (Internet só neste passo).")
+        self.download.setEnabled(not ready)
+        return ready
+
+    def set_downloading(self, enabled: bool):
+        self.download.setEnabled(not enabled)
+        self.model.setEnabled(not enabled)
+        if enabled:
+            self.model_status.setText("Baixando modelo; o áudio não é enviado à Internet.")
 
     def add_caption(self, timestamp, text, calls, language, freq, mode):
         row = 0
