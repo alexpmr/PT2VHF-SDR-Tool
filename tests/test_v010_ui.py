@@ -19,7 +19,11 @@ def test_main_navigation_and_lcd_band_theme(monkeypatch, tmp_path, qt_lifecycle)
         assert w.sonde_area.indexOf(w.sonde_panel) >= 0
         assert w.sonde_area.indexOf(w.sonde_feed) >= 0
         assert w.band_bar.parentWidget() is w.lcd
-        assert w.band_bar.y() >= w.lcd.height() - 70
+        scale, ox, oy = w.lcd._canvas()
+        matrix = w.lcd.BAND_RECT
+        assert abs(w.band_bar.y() - (oy + matrix.y() * scale)) <= 2
+        assert len(w.band_bar.buttons) > 10
+        assert w.band_bar.layout().columnCount() == 5
         assert w.band_bar.geometry().right() <= w.lcd.width()
         assert w.band_bar.buttons
         for theme in ("Âmbar", "Verde", "Azul (negativo)", "Noturno", "Branco"):
