@@ -6,13 +6,15 @@
 - Monitor de radiossondas que importa JSON local com ID, posição, altitude, velocidade vertical/horizontal e campos meteorológicos compatíveis.
 - Mapa unificado OpenStreetMap e exportação CSV por tipo de tráfego, com arquivos locais.
 - Controle CAT por Hamlib rigctld: leitura/sincronização opcional de frequência e modo do transceptor e envio manual sem PTT.
+- Bancos de memórias por região/cidade, com salvamento, carregamento confirmado e importação CSV CHIRP por região.
 - Correções de largura em campos de configurações.
 
 ## Uso
 1. Aba Decodificadores → ADS-B / AIS / Sondas: configure o caminho do arquivo gerado pelo **decodificador externo** e clique Atualizar agora ou marque atualização automática.
 2. CAT: instale/configure Hamlib rigctld separado; acesse Configurações → CAT · Hamlib, informe host e porta e use os botões.
-3. Mapa abre um HTML local, mas exige Internet para os tiles OpenStreetMap.
-4. Os feeds externos não alteram a sintonia do RTL-SDR; usar receptores compatíveis paralelos se necessário.
+3. Memórias / Varredura → Região de escuta: salve a região atual, importe CHIRP por região ou ative outra região, substituindo o banco corrente após confirmação.
+4. Mapa abre um HTML local, mas exige Internet para os tiles OpenStreetMap.
+5. Os feeds externos não alteram a sintonia do RTL-SDR; usar receptores compatíveis paralelos se necessário.
 
 ## Limitações e backlog pendente
 - Não existe decodificação RF direta para ADS-B, AIS, RS41, SSTV, DMR, D-STAR ou C4FM.

@@ -183,7 +183,8 @@ deveria ter" e roteiro do README). Implementar conforme viabilidade; a ordem pod
 
 ## Concluídos
 - 0.8.0 (código) — leituras de tráfego ADS-B via JSON readsb/dump1090, AIS NMEA com MMSI,
-  radiossondas por JSON, tabela e mapa unificados, CSV e CAT Hamlib rigctld sem PTT.
+  radiossondas por JSON, tabela e mapa unificados, CSV, CAT Hamlib rigctld sem PTT,
+  bancos de memórias por região/cidade com importação CHIRP CSV.
   **Dependem de decodificadores externos** e não substituem as implementações de RF nativas.
 - 0.5.0 — itens registrados em 07/11/2026: RTL-SDR voltou a abrir (dithering -1 + LIBUSB_ERROR_ACCESS da 0.4.1);
   abas superiores (Receptor, Memórias/Varredura, Scanner, Decodificadores, Receptores extras, Configurações com

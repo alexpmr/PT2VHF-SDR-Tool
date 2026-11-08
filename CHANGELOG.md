@@ -9,7 +9,8 @@ Todas as mudanças relevantes do PT2VHF SDR Tool.
 - Importação de telemetria de radiossondas em JSON local, com dados meteorológicos e fase de subida/descida; sem decodificação RS41 nativa ou previsão de queda.
 - Abas de tráfego com fontes configuráveis, atualização periódica, tabelas, CSV e mapa unificado OSM.
 - CAT Hamlib rigctld: ler frequência/modo e acompanhar o rádio, e enviar a sintonia do SDR manualmente, sem PTT.
-- Formulários de configurações mais compactos; testes determinísticos de ingestão AIS/ADS-B/sondas e CAT.
+- Banco de memórias por região/cidade, com troca confirmada e importação CHIRP CSV isolada por perfil.
+- Formulários de configurações mais compactos; testes determinísticos de ingestão AIS/ADS-B/sondas, CAT e regiões.
 ### Não implementado
 - IA neural offline, tradução/localização integral, SSTV, DMR/D-STAR/C4FM com áudio, ADS-B ou AIS por DSP nativo, decodificação RS41 IQ, Doppler/órbitas, WFM RDS, ACARS e demais itens de pesquisa.
 

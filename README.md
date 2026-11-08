@@ -20,6 +20,7 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 - **Radiossondas:** acompanha JSON local produzido por `radiosonde_auto_rx` ou conversor, mostrando ID, posição, altura, velocidade vertical e dados meteorológicos quando presentes. Não decodifica RS41 diretamente no SDR Tool nem prevê automaticamente a queda.
 - **Mapa conjunto:** posições em mapa OSM/Leaflet gerado localmente, com exportação CSV por fonte. Os tiles exigem Internet; nenhum envio automático para servidores externos.
 - **CAT via Hamlib:** `rigctld` TCP, consulta frequência e modo por demanda ou sincronização de leitura; envio manual de sintonia/modo para o rádio. **Sem PTT**. Requer Hamlib externo configurado.
+- **Perfis por região:** salve os canais da cidade/região atual, carregue outro banco e importe diretamente CSV CHIRP como região independente.
 - **Ajustes compactos** em Configurações e no painel Receptor.
 - A v0.8.0 **não inclui ainda** IA neural, tradução integral, decodificação DMR/D-STAR/C4FM, SSTV, RS41 em IQ, previsão de satélites ou modelos de fala embarcados.
 
