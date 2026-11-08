@@ -51,6 +51,7 @@ def test_scanner_and_favorites_gui(tmp_path, monkeypatch):
     import_packs(w.bank, ["marine"], favorite=True)
     w._memories_changed()
     assert len([b for b in w.fav_bar._buttons if isinstance(b, QtWidgets.QToolButton)]) >= 17
+    w.rx_panel.source.setCurrentText("Simulador")
     w.rx_panel.start_btn.setChecked(True)
     sp = w.scan_panel
     sp.preset.setCurrentIndex(sp.preset.count() - 1)  # personalizada
@@ -88,6 +89,7 @@ def test_v030_assistant_timeshift_extras_gui(tmp_path, monkeypatch):
     assert app is not None
     w = MainWindow()
     w.show()
+    w.rx_panel.source.setCurrentText("Simulador")
     w.rx_panel.start_btn.setChecked(True)
     # detectar modo na portadora AM de 1 kHz do simulador (sintonizada 2 kHz fora)
     w.set_mode("NFM")
