@@ -35,7 +35,7 @@ from .traffic_panel import TrafficFeedsPanel
 from .satellite_panel import SatellitePanel
 from .igate_panel import IGatePanel
 from .sonde_decoder_panel import SondeDecoderPanel
-from .i18n import LANGUAGES, apply_language, flag_icon, translate
+from ..i18n import LANGUAGES, apply_language, flag_icon, translate
 from .rigctl_panel import RigCtlPanel
 from .live_captions_panel import LiveCaptionsPanel
 from .analog import AnalogPanel
