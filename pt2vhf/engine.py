@@ -133,7 +133,7 @@ class Engine:
                     "probabilities": result.probabilities, "frequency_hz": freq}, ts)),
                 lambda error: self.events.put(("iq_classification_error", error, time.time())))
         self.capture_if(max(0.02, float(seconds)),
-                        lambda iq, fs: self.iq_classifier.feed(iq, self.vfo)
+                        lambda iq, fs: self.iq_classifier.feed(iq, self.vfo, sample_rate=fs)
                         if self.iq_classifier is not None else None)
 
     # ----------------------------------------------------------- ciclo de vida
