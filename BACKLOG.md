@@ -4,11 +4,13 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
-> Atualização em 08/11/2026: a 0.6.0 contém **implementação inicial** de teclas de bandas,
-> memória de frequência/modo, centralização do waterfall, padrão RTL-SDR/Avançado e
-> largura compacta dos campos. Permanecem pendentes os refinamentos descritos abaixo
-> (inclusive seleção das bandas nas configurações e testes físicos de compatibilidade).
-> Não considerar esses grupos concluídos sem validação funcional.
+> Revisão da versão 0.7.0 (08/11/2026): a 0.6.0 já incorporou teclas de banda,
+> memória por banda, centralização, padrões do receptor, prévias LCD e seleção das bandas exibidas.
+> A 0.7.0 adicionou instrumentos S/VU analógicos, mapa de detecções RF 24 h,
+> perfil de escuta "Sinal fraco" por DSP convencional e legendas locais com
+> faster-whisper **opcional**. Permanecem pendentes: IA neural, tradução,
+> decodificadores avançados, radiossondas e internacionalização integral.
+> Os detalhamentos abaixo permanecem como backlog até validação completa.
 
 
 ### Teclas de banda no display (um botão por banda) (registrado em 08/11/2026)

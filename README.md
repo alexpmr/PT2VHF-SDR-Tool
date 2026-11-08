@@ -69,6 +69,12 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 - Plano de bandas (IARU R2 / Brasil): HF, PX (11 m), 6 m, FM broadcast, aviação, 2 m, marítimo, 70 cm…
 - VFO A/B, A⇄B, A=B.
 
+### Novidades da 0.7
+- **Instrumentos analógicos**: S-meter de ponteiro e VU de áudio com estilos Valvulado, Militar e Estúdio, selecionáveis na aba Display.
+- **Atividade RF em 24 horas**: nova subaba no Scanner, com mapa de calor das detecções por frequência/hora, persistência e CSV. A amostragem não representa percentual de ocupação do espectro.
+- **Sinal fraco · DSP**: botão para combinação reversível de NB, NR e AGC. Não emprega IA neural.
+- **Legendas ao vivo**: transcrição local da fonia por blocos, com frequência, modo, idioma e indicativos, histórico e CSV. Requer `faster-whisper` e um modelo disponível; download e empacotamento do modelo ainda são opcionais.
+
 ### Novidades da 0.6
 - Fonte RTL-SDR e interface Avançada como opções iniciais (preferências anteriores preservadas).
 - Teclas de banda em duas linhas abaixo do display com acesso rápido e memória de até três frequências/modos.

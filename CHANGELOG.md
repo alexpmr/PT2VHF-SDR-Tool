@@ -2,6 +2,19 @@
 
 Todas as mudanças relevantes do PT2VHF SDR Tool.
 
+## [0.7.0] — 2026-11-08
+### Implementado
+- Dois medidores analógicos vetoriais com ponteiros suavizados: S-meter calibrado em dBm / S-units e VU do áudio em dBFS.
+- Três estilos de instrumento com exemplos em Configurações → Display: Valvulado, Militar e Estúdio.
+- Histórico persistente de detecções do scanner em janela móvel de 24 horas; mapa de calor por frequência (12,5 kHz) e hora, com CSV. Não é medida contínua de ocupação.
+- Perfil "Sinal fraco · DSP" com NB, NR e AGC, reversível ao desligar. Usa DSP clássico, **não** IA neural.
+- Legendas locais da fonia demodulada, por trechos de ~4 segundos, com histórico, frequência, modo, idioma e indicativos, e exportação CSV. Funciona quando faster-whisper/modelo estão instalados (opcional, não embarcado).
+- Ampliação da suíte de testes e limpeza de recursos de interface no CI.
+
+### Permanece pendente
+- IA neural real (RNNoise/DeepFilterNet), tradução da fala para outros idiomas, instalação automática de modelos, idiomas completos da interface, decodificadores de ADS-B/AIS/SSTV/DMR/D-STAR/C4FM e radiossondas.
+- Testes com RTL-SDR real e validação dos pacotes Windows antes de publicar no site.
+
 ## [0.6.0] — 2026-11-08
 ### Adicionado
 - Acesso rápido a bandas junto ao display; 60 m e memória de frequência/modo por banda.
