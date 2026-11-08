@@ -76,3 +76,14 @@ def test_lan_requires_key():
         assert st == 200 and json.loads(body)["mode"] == "NFM"
     finally:
         w.stop()
+
+
+def test_stop_cleans_http_server_thread():
+    """Servidor não deve deixar thread HTTP zumbi no encerramento do Python/Qt."""
+    w = _server()
+    t = w._thread
+    assert t is not None and t.is_alive()
+    w.stop()
+    assert not w.running
+    assert not t.is_alive()
+    assert w._thread is None
