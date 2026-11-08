@@ -2,6 +2,13 @@
 
 Itens registrados pelo mantenedor. Não implementar até o pedido de versão nova.
 
+## Revisão v0.9.0
+- **Incidente radiossonda:** na v0.8.0 só havia importação JSON, por isso ver o waterfall não produzia decodificação. Na v0.9.0 há pipeline do IQ do próprio SDR para fsk_demod + rs41mod, mas ainda depende de executáveis externos e só suporta RS41. A correção não está homologada com sinal RF real nem cobre modelos diferentes.
+- **Satélites:** SGP4 e Doppler RX com TLE local, sem controle rotor ou decodificação de imagens.
+- **APRS:** iGate RX-only opcional, exige passcode verificado; validação em rede real pendente.
+- **Idiomas:** seletor com 7 bandeiras e catálogo parcial; tradução completa continua no backlog.
+- **Ainda pendente:** decodificação nativa multissonda (DFM, M10/M20, RS92 etc.), IA neural, SSTV, DMR/D-STAR/C4FM, ACARS, RDS, tradução local integral, ADS-B/AIS IQ, NOAA APT/Meteor LRPT, POCSAG/FLEX, KiwiSDR remoto, previsão de queda e ajustes restantes.
+
 ## Pendentes
 
 > Revisão do backlog em 0.8.0 (08/11/2026): foram adicionadas interfaces para

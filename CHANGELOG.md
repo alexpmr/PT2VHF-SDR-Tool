@@ -2,6 +2,18 @@
 
 Todas as mudanças relevantes do PT2VHF SDR Tool.
 
+## [0.9.0] — 2026-11-08
+### Implementado em código
+- IQ ao vivo do SDR compartilhado com pipeline RS41: translação para +12 kHz e decimação a 48 kS/s, uso de fsk_demod + rs41mod externos, com fila limitada e telemetria em tabela/mapa.
+- Previsão SGP4 de passagens e ajuste RX Doppler com TLE importado.
+- APRS iGate somente RX desativado por padrão, com autenticação APRS-IS, qAO e bloqueio de retransmissões indevidas.
+- Menu de idiomas e bandeiras com catálogo parcial de traduções para PT, EN, ES, FR, DE, IT e ZH.
+- Testes de DSP IQ, formato de comandos, filtros APRS e órbitas.
+### Limites e não implementados
+- Os programas externos fsk_demod/rs41mod não acompanham Setup/Portable e não há validação RF com uma sonda real. Somente RS41; demais protocolos pendentes.
+- Internacionalização parcial, sem tradução de fonia. Sem IA neural, SSTV, voz digital, ADS-B/AIS DSP nativo, NOAA APT/Meteor LRPT, RDS, ACARS, pagers e KiwiSDR.
+- Site oficial/OTA requerem publicação separada e conferência pública.
+
 ## [0.8.0] — 2026-11-08
 ### Implementado no código
 - Integração ADS-B com arquivos aircraft.json de readsb/dump1090: posições, ICAO, callsign, altitude, velocidade e rumo. Requer demodulador externo.

@@ -14,6 +14,13 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 
 ## Recursos
 
+### Novo na v0.9.0 — RS41 por IQ, órbitas e APRS iGate
+- RS41 diretamente do IQ do SDR: aba Decodificadores > RS41 IQ ao vivo, 400–406 MHz. A aplicação reutiliza a captura atual, converte para IQ complex int16 em 48 kS/s e conecta os programas externos fsk_demod e rs41mod (radiosonde_auto_rx). Os executáveis não são incluídos na distribuição; sem eles, a decodificação não funciona.
+- Satélites: TLE/SGP4 com previsão de passagens, azimute, elevação e correção Doppler opcional em recepção. Dependência sgp4 incluída; requer TLE do usuário. Não controla rotor ou PTT.
+- APRS iGate somente RX: habilitação explícita, indicativo e passcode pessoal, envio RF -> APRS-IS qAO; não envia pacotes à rede RF.
+- Menu de idiomas e bandeiras PT/EN/ES/FR/DE/IT/ZH, com tradução de abas e controles essenciais. Demais mensagens permanecem em português; tradução integral pendente.
+- Diagnóstico de sonda: verifique modelo RS41, instalação dos dois decodificadores, frequência, SNR e sinais válidos. A existência de RF no waterfall não equivale a dados decodificados. DFM, M10/M20, RS92 e outros modelos seguem pendentes.
+
 ### Novo na v0.8.0 — tráfego externo, mapas e CAT
 - **ADS-B (1090 MHz):** importa o arquivo `aircraft.json` de `readsb` ou `dump1090`, com indicativo, posição, altitude, velocidade e rumo. **Exige decodificador externo**; não demodula ADS-B em IQ dentro do SDR Tool.
 - **AIS (161,975/162,025 MHz):** lê arquivos NMEA `!AIVDM` de `AIS-catcher`/`rtl_ais` e decodifica mensagens de posição classe A/B (1, 2, 3, 18, 19) e identificação tipo 5, incluindo MMSI, posição, velocidade e rumo.
