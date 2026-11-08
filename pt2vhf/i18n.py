@@ -7,8 +7,8 @@ em português. Qualquer termo ausente mantém o texto original, sem tradutor onl
 from __future__ import annotations
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap, QPolygon
-from PySide6.QtWidgets import QAction, QAbstractButton, QGroupBox, QLabel, QTabWidget
+from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap, QPolygon
+from PySide6.QtWidgets import QAbstractButton, QGroupBox, QLabel, QTabWidget
 
 LANGUAGES = (
     ("pt", "Português (Brasil)", "BR"),
