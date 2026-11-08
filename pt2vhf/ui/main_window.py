@@ -35,6 +35,7 @@ from .traffic_panel import TrafficFeedsPanel
 from .satellite_panel import SatellitePanel
 from .igate_panel import IGatePanel
 from .sonde_decoder_panel import SondeDecoderPanel
+from .i18n import LANGUAGES, apply_language, flag_icon, translate
 from .rigctl_panel import RigCtlPanel
 from .live_captions_panel import LiveCaptionsPanel
 from .analog import AnalogPanel
@@ -124,6 +125,7 @@ class MainWindow(QMainWindow):
         self._wire()
         self._restore_layout()
         self.apply_level(self.cfg.get("ui_level", "Avançado"))
+        self._language_selected()
         self._apply_receiver_settings()
         self._refresh_markers()
         if self.cfg.get("source") == "RTL-SDR" and not self.cfg.get("rx_ever_connected") and not self.cfg.get("device_name"):
@@ -293,6 +295,14 @@ class MainWindow(QMainWindow):
         self.pres_btn.setToolTip("Modo apresentação: tela cheia sem barras do Windows (F11; Esc sai)")
         self.pres_btn.clicked.connect(lambda: self.set_presentation(not self._presenting))
         h.addWidget(self.pres_btn)
+        self.language_combo = QComboBox()
+        self.language_combo.setToolTip("Idioma da interface (tradução parcial por catálogo)")
+        self.language_combo.setMaximumWidth(180)
+        for code, label, country in LANGUAGES:
+            self.language_combo.addItem(flag_icon(country), label, code)
+        index = self.language_combo.findData(self.cfg.get("language", "pt"))
+        self.language_combo.setCurrentIndex(max(0, index))
+        h.addWidget(self.language_combo)
         self.utc_label = QLabel("")
         self.utc_label.setObjectName("utcLabel")
         h.addWidget(self.utc_label)
@@ -301,7 +311,7 @@ class MainWindow(QMainWindow):
     def _set_running_ui(self, running: bool):
         self.rx_panel.set_running(running)
         self.power_btn.setChecked(running)
-        self.power_btn.setText("■  Desligar" if running else "▶  Ligar")
+        self.power_btn.setText(translate("■  Desligar" if running else "▶  Ligar", self.cfg.get("language", "pt")))
         if not running:
             self.hdr_summary.setText("Receptor parado")
 
@@ -462,10 +472,21 @@ class MainWindow(QMainWindow):
                             "<a href='https://www.pt2vhf.com/sdr'>www.pt2vhf.com</a>."))
         h.addAction(a)
 
+    def _language_selected(self, *_):
+        code = self.language_combo.currentData()
+        if code is None:
+            return
+        self.cfg["language"] = code
+        self.cfg.save()
+        apply_language(self, code)
+        self.statusBar().showMessage(
+            "Idioma alterado. Partes ainda não traduzidas mantêm o português.", 7000)
+
     # ================================================================== ligações
     def _wire(self):
         lcd, wf, rp, mp, ap, mem, dp = (self.lcd, self.wf, self.rx_panel, self.mode_panel,
                                         self.audio_panel, self.mem_panel, self.dec_panel)
+        self.language_combo.currentIndexChanged.connect(self._language_selected)
         self.live_btn.toggled.connect(self._toggle_live_captions)
         self.band_bar.selected.connect(self._band_button)
         self.display_panel.bandsChanged.connect(self._set_visible_bands)

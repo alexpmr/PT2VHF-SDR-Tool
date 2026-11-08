@@ -117,7 +117,8 @@ def flag_icon(country: str) -> QIcon:
 
 def apply_language(root, code: str) -> None:
     """Traduz catálogo nos controles existentes, com retorno confiável a PT-BR."""
-    for widget in [root] + root.findChildren((QLabel, QAbstractButton, QGroupBox)):
+    for widget in (root.findChildren(QLabel) + root.findChildren(QAbstractButton) +
+                   root.findChildren(QGroupBox)):
         if isinstance(widget, QGroupBox):
             getter, setter, key = widget.title, widget.setTitle, "_original_group_title"
         elif isinstance(widget, QLabel):
