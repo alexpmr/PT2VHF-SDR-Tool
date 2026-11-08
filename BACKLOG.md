@@ -2,6 +2,22 @@
 
 Itens registrados pelo mantenedor. Não implementar até o pedido de versão nova.
 
+## Prioridade P0 — RS41 não decodifica sinal real (registrado em 08/11/2026)
+- **Relato confirmado pelo operador:** a transmissão de uma radiossonda **Vaisala RS41** aparece no waterfall do SDR Tool v0.9.0, na frequência correta, porém **nenhum quadro ou telemetria é decodificado**. Isso não é um caso de protocolo de sonda diferente. Status: **falha funcional aberta / sem homologação**. O pipeline IQ adicionado na v0.9.0 não atende ao critério de aceite.
+- **Reproduzir:** ligar o SDR, sintonizar RS41 ativa de 400–406 MHz, abrir o monitor de IQ e iniciar a decodificação; waterfall exibe emissões, tabela permanece vazia. Registrar frequência, taxa de amostragem, ganho, PPM, SNR, estado do decoder e existência/caminho das ferramentas fsk_demod/rs41mod.
+- **Instrumentar ponta a ponta:** adicionar indicadores de IQ entrando, amostras descartadas, centro IQ e deslocamento real do canal, taxa/ganho, estado dos subprocessos e logs de stderr, símbolo/FSK sincronizado, quadros detectados, CRC/FEC válido, JSON emitido, JSON descartado e causa. Atualmente stderr é descartado e frames sem coordenadas podem ser silenciosamente filtrados.
+- **Investigar:** compatibilidade das opções CLI e executáveis instalados de fsk_demod/rs41mod, sentido do deslocamento de FI, filtragem e decimação (continuidade entre blocos), frequência real/PPM, saturação, demodulação FSK e saída de telemetria. Comparar com cadeia de referência radiosonde_auto_rx usando **a mesma gravação IQ**, para diferenciar problema de entrada SDR, DSP, FSK, protocolo e interpretação JSON. Não presumir que testes sintéticos comprovam decodificação RF.
+- **Corrigir experiência de usuário:** avisar sobre ferramentas ausentes, processo terminado, falta de sincronismo/CRC e status "sinal detectado, sem quadros válidos". Não mostrar falso status "decodificando" só porque o processo iniciou.
+- **Aceite obrigatório:** ao menos uma gravação IQ RS41 real de referência com serial, nº do frame, horário, latitude, longitude e altitude válidos; teste com emissão RS41 física usando o SDR Tool; regressão Windows Setup e Portable; demonstrar que a telemetria chega à tabela e ao mapa, sem processos travados, com métricas de erro visíveis. Até cumprir, manter **RS41 = não funcional / P0**.
+
+## Prioridade P1 — Reorganização das abas do SDR Tool (registrada em 08/11/2026)
+- **Remover a aba principal "Decodificadores"** como contêiner genérico; redistribuir os recursos existentes, preservando APRS/DTMF/CTCSS que ainda forem utilizados em uma área apropriada de recepção/sinais.
+- **Remover "APRS iGate RX" da navegação e das funcionalidades expostas**, sem ativação automática nem tráfego APRS-IS; revisar dependências e não deixar componentes órfãos.
+- **Substituir a aba intitulada "RS41 · IQ ao vivo" por uma aba principal "Sondas Meteorológicas"**, com suporte à RS41 e arquitetura para outros modelos sem mudar novamente o nome.
+- **Centralizar em "Sondas Meteorológicas"** tanto a recepção/decodificação do IQ quanto a importação de telemetria JSON, status, frequências, identificação do modelo, lista de sondas, mapa, gráficos e registros.
+- **Separar "ADS-B" e "AIS" em abas independentes**, removendo a aba híbrida "ADS-B / AIS / Sondas". A aba ADS-B só contém aeronaves e a AIS só embarcações, sem subtela "Sonda".
+- **Aceite UI:** não haver abas duplicadas de sonda, nem abas "Decodificadores", "RS41 · IQ ao vivo" ou "APRS iGate RX"; todos os recursos preservados devem ser acessíveis em seu novo local; navegação, níveis de interface e traduções devem refletir os novos títulos; testes Qt e screenshots de homologação.
+
 ## Revisão v0.9.0
 - **Incidente radiossonda:** na v0.8.0 só havia importação JSON, por isso ver o waterfall não produzia decodificação. Na v0.9.0 há pipeline do IQ do próprio SDR para fsk_demod + rs41mod, mas ainda depende de executáveis externos e só suporta RS41. A correção não está homologada com sinal RF real nem cobre modelos diferentes.
 - **Satélites:** SGP4 e Doppler RX com TLE local, sem controle rotor ou decodificação de imagens.
