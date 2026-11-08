@@ -18,6 +18,7 @@ import numpy as np
 
 from .audio import ActivityRecorder, AudioOutput, WavRecorder
 from .neural_audio import NeuralAudioWorker
+from .dsp.iq_classifier_worker import IQClassificationWorker
 from .decoders import aprs as aprs_mod
 from .decoders.afsk import AFSKDemodulator
 from .decoders.tones import CTCSSDetector, DTMFDecoder
@@ -56,6 +57,7 @@ class Engine:
         self.vox_rec: ActivityRecorder | None = None        # botão Gravar áudio com VOX
         self.audio_listeners: list = []
         self.neural_audio: NeuralAudioWorker | None = None
+        self.iq_classifier: IQClassificationWorker | None = None
         self.iq_listeners: list = []  # decoders consume original complex IQ via bounded queues
         self.iq_vox = False                                 # IQ só com transmissão
         self._iq_open_until = 0.0
@@ -119,6 +121,21 @@ class Engine:
             if self._audio_rec is not None and len(audio):
                 self._audio_rec.write(audio)
 
+    def classify_current_signal(self, model_path: str, seconds: float = 0.1):
+        """One-shot IQ classification, advisory only; never retunes or changes mode."""
+        if not self.running:
+            raise RuntimeError("Receptor não está ativo")
+        if self.iq_classifier is None:
+            self.iq_classifier = IQClassificationWorker(
+                model_path,
+                lambda result, freq, ts: self.events.put(("iq_classification", {
+                    "mode": result.mode, "confidence": result.confidence,
+                    "probabilities": result.probabilities, "frequency_hz": freq}, ts)),
+                lambda error: self.events.put(("iq_classification_error", error, time.time())))
+        self.capture_if(max(0.02, float(seconds)),
+                        lambda iq, fs: self.iq_classifier.feed(iq, self.vfo)
+                        if self.iq_classifier is not None else None)
+
     # ----------------------------------------------------------- ciclo de vida
     def start(self, source: IQSource):
         self.stop()
@@ -142,6 +159,9 @@ class Engine:
         self.status["running"] = True
 
     def stop(self):
+        if self.iq_classifier is not None:
+            self.iq_classifier.stop()
+            self.iq_classifier = None
         self._running = False
         if self._thread:
             self._thread.join(timeout=3)
