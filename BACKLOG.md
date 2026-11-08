@@ -4,6 +4,19 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Novos painéis analógicos com VU meter / S-meter de ponteiro (registrado em 08/11/2026)
+- Além do display LCD atual, oferecer **painéis no estilo analógico**, simulando rádios clássicos: instrumentos com
+  **ponteiro** (agulha) e escala iluminada.
+- Instrumentos: **S-meter** (S1…S9+60, dBm), **VU meter** do áudio (nível de saída, com escala em dB e zona
+  vermelha), e opcionalmente medidores de SNR/desvio (FM) e nível do squelch; movimento realista da agulha
+  (inércia, subida rápida e retorno suave, retenção de pico opcional).
+- Mostrador de frequência analógico/vintage (ex.: dial com escala deslizante ou "nixie"), mantendo a leitura
+  digital precisa e as teclas de modo clicáveis.
+- Vários estilos para escolher (ex.: rádio valvulado âmbar, receptor militar/profissional, VU de estúdio),
+  com **exemplo de cada um para escolher** em Configurações → Display (mesmo seletor do item de temas do display).
+- Escalável e nítido em qualquer tamanho (desenho vetorial), leve na CPU, funcionando também no modo apresentação
+  e, se possível, na interface web.
+
 ### Idioma do programa com bandeiras, como nos demais programas PT2VHF (registrado em 08/11/2026)
 - Hoje o SDR Tool só existe em português.
 - Escolha do idioma da interface num **menu suspenso (pull-down) com a bandeira de cada país** ao lado do nome
