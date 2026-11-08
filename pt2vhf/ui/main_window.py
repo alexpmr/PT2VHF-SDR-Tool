@@ -31,9 +31,8 @@ from .settings_panel import SettingsPanel
 from .bandkeys import BandKeys
 from .display_settings import DisplaySettings
 from .occupancy_panel import OccupancyPanel
-from .traffic_panel import TrafficFeedsPanel
+from .traffic_panel import SourceTab
 from .satellite_panel import SatellitePanel
-from .igate_panel import IGatePanel
 from .sonde_decoder_panel import SondeDecoderPanel
 from ..i18n import LANGUAGES, apply_language, flag_icon, translate
 from .rigctl_panel import RigCtlPanel
@@ -153,18 +152,21 @@ class MainWindow(QMainWindow):
         self.audio_panel = AudioPanel(self.cfg)
         self.mem_panel = MemoryPanel(self.bank)
         self.dec_panel = DecoderPanel(self.cfg)
-        self.traffic_panel = TrafficFeedsPanel(self.cfg)
-        self.dec_panel.tabs.addTab(self.traffic_panel, "ADS-B / AIS / Sondas")
+        # Preserva APRS / DTMF / CTCSS, mas remove o contêiner principal genérico.
+        self.adsb_panel = SourceTab("ADS-B", self.cfg)
+        self.ais_panel = SourceTab("AIS", self.cfg)
         self.sonde_panel = SondeDecoderPanel(self.cfg, lambda: self.engine.vfo)
-        self.dec_panel.tabs.addTab(self.sonde_panel, "RS41 · IQ ao vivo")
-        self.igate_panel = IGatePanel(self.cfg)
-        self.dec_panel.tabs.addTab(self.igate_panel, "APRS iGate RX")
+        self.sonde_feed = SourceTab("Sonda", self.cfg)
+        self.sonde_area = QTabWidget()
+        self.sonde_area.addTab(self.sonde_panel, "Recepção RF · RS41")
+        self.sonde_area.addTab(self.sonde_feed, "Telemetria externa")
         self.sonde_worker = None
         self.scan_panel = ScannerPanel(self.cfg, self.bank.categories + ["Descobertas"])
         self.occupancy_panel = OccupancyPanel(self.occupancy)
         self.scan_panel.tabs.addTab(self.occupancy_panel, "Ocupação 24 h")
         self.live_captions_panel = LiveCaptionsPanel(self.cfg)
         self.scan_panel.tabs.addTab(self.live_captions_panel, "Legendas ao vivo")
+        self.scan_panel.tabs.addTab(self.dec_panel, "APRS / DTMF / CTCSS")
         self.sscan: SpectrumScanner | None = None
         self._hits_t = 0.0
         self.assist = AssistBox()
@@ -214,8 +216,8 @@ class MainWindow(QMainWindow):
         self.caption_label.setMinimumHeight(36)
         self.caption_label.setVisible(False)
         cl.addWidget(self.caption_label)
-        self.band_bar = BandKeys(self.cfg.get("bands_visible"))
-        cl.addWidget(self.band_bar)
+        self.band_bar = BandKeys(self.cfg.get("bands_visible"), self.lcd)
+        self.lcd.attach_band_keys(self.band_bar)
         self.fav_bar = FavoritesBar()
         self.fav_bar.refresh(self.bank.channels, self.engine.vfo)
         cl.addWidget(self.fav_bar)
@@ -252,7 +254,9 @@ class MainWindow(QMainWindow):
         for key, title, w in (("rx", "Receptor", self.main_split),
                               ("mem", "Memórias / Varredura", _scroll(self.mem_panel)),
                               ("scan", "Scanner", _scroll(self.scan_panel)),
-                              ("dec", "Decodificadores", _scroll(self.dec_panel)),
+                              ("adsb", "ADS-B", _scroll(self.adsb_panel)),
+                              ("ais", "AIS", _scroll(self.ais_panel)),
+                              ("sondes", "Sondas Meteorológicas", self.sonde_area),
                               ("extras", "Receptores extras", _scroll(self.extras_panel)),
                               ("sat", "Satélites", _scroll(self.sat_panel)),
                               ("settings", "Configurações", self.settings_tabs)):
@@ -901,8 +905,7 @@ class MainWindow(QMainWindow):
         old = self.band_bar
         new = BandKeys(names)
         new.selected.connect(self._band_button)
-        container = self.main_split.widget(0)
-        container.layout().replaceWidget(old, new)
+        self.lcd.attach_band_keys(new)
         old.deleteLater()
         self.band_bar = new
         self._refresh_band_keys()
@@ -1946,8 +1949,6 @@ class MainWindow(QMainWindow):
             n += 1
             if kind == "aprs":
                 self.dec_panel.add_aprs(data, ts)
-                if self.cfg.get("source") in ("RTL-SDR", "rtl_tcp", "SoapySDR"):
-                    self.igate_panel.submit_rf(data)
                 self._web_aprs.appendleft({"t": time.strftime("%H:%M:%S", time.localtime(ts)), "src": data.source,
                                            "type": data.type, "pos": data.position_str(),
                                            "text": (data.comment or data.message or "")[:80]})
@@ -1955,8 +1956,7 @@ class MainWindow(QMainWindow):
             elif kind == "sonde_rx":
                 track, _raw = data
                 self.sonde_panel.add_record(track)
-                sonde_tab = self.traffic_panel.sources["Sonda"]
-                sonde_tab.records = [track] + [x for x in sonde_tab.records if x.ident != track.ident][:499]
+                self.sonde_feed.add_live_record(track)
                 self.sonde_panel.status.setText(
                     f"RS41: {track.ident} · altitude {track.altitude_m} m · "
                     f"{self.sonde_worker.received if self.sonde_worker else 0} quadros")
@@ -2039,12 +2039,12 @@ class MainWindow(QMainWindow):
             if minimal:
                 self.tabs.setCurrentIndex(0)
                 for w in (self.menuBar(), self.statusBar(), self.header, self.tabs.tabBar(), self.audio_scroll,
-                          self.fav_bar, self.band_bar, self.wf_toolbar):
+                          self.fav_bar, self.wf_toolbar):
                     w.setVisible(False)
             self.showFullScreen()
             self.statusBar().showMessage("Modo apresentação — Esc ou F11 para sair", 6000)
         else:
-            for w in (self.menuBar(), self.statusBar(), self.header, self.tabs.tabBar(), self.fav_bar, self.band_bar, self.wf_toolbar):
+            for w in (self.menuBar(), self.statusBar(), self.header, self.tabs.tabBar(), self.fav_bar, self.wf_toolbar):
                 w.setVisible(True)
             self.audio_scroll.setVisible(getattr(self, "_pres_audio", True) and self.audio_action.isChecked())
             self.showMaximized() if getattr(self, "_pres_was_max", False) else self.showNormal()
@@ -2106,7 +2106,7 @@ class MainWindow(QMainWindow):
             combo.blockSignals(False)
         for act in getattr(self, "_level_actions", []):
             act.setChecked(act.text() == name)
-        page_lvl = {"scan": 1, "dec": 1, "extras": 2, "sat": 1}
+        page_lvl = {"scan": 1, "adsb": 1, "ais": 1, "sondes": 1, "extras": 2, "sat": 1}
         for key, page in self.pages.items():
             vis = lvl >= page_lvl.get(key, 0)
             i = self.tabs.indexOf(page)
@@ -2142,7 +2142,6 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, ev):
         self._stop_sonde()
-        self.igate_panel.stop()
         self.rigctl_panel.stop()
         if self.web is not None:
             self.web.stop()

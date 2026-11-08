@@ -35,8 +35,8 @@ class SourceTab(QWidget):
                      "Ex.: C:/readsb/aircraft.json; o SDR não é sintonizado por esta aba.",
             "AIS": "Requer log NMEA !AIVDM do AIS-catcher/rtl_ais (161,975/162,025 MHz). "
                    "A mensagem AIS é decodificada localmente; o sinal RF vem do processo externo.",
-            "Sonda": "Requer telemetria JSON de radiosonde_auto_rx ou conversor compatível "
-                     "(lat/lon, id, alt, vel_v, vel_h). Não há decodificação RS41 pelo IQ nesta aba.",
+            "Sonda": "Importe telemetria JSON de radiosonde_auto_rx ou conversor compatível. "
+                     "Para recepção direta do SDR, utilize a aba Recepção RF neste painel.",
         }
         note = QLabel(explanation[kind])
         note.setWordWrap(True)
@@ -61,6 +61,9 @@ class SourceTab(QWidget):
         bar.addWidget(self.auto)
         bar.addWidget(refresh)
         bar.addWidget(export)
+        map_btn = QPushButton("Mapa OSM")
+        map_btn.clicked.connect(self.open_map)
+        bar.addWidget(map_btn)
         bar.addStretch(1)
         main.addLayout(bar)
         self.status = QLabel("Aguardando arquivo de telemetria local")
@@ -108,20 +111,38 @@ class SourceTab(QWidget):
             self.status.setText(f"Falha na leitura: {exc}")
             return
         self.records = records
+        self._populate(records)
+        self.status.setText(f"{len(records)} posições válidas de {p.name}. "
+                            "A atualização depende do decodificador externo.")
+
+    def add_live_record(self, record):
+        self.records = [record] + [x for x in self.records if x.ident != record.ident][:499]
+        self._populate(self.records)
+        self.status.setText(f"{len(self.records)} posições de sondas meteorológicas")
+
+    def _populate(self, records):
         self.table.setSortingEnabled(False)
         self.table.setRowCount(min(len(records), 500))
-        for row, r in enumerate(records[:500]):
-            values = (r.ident, r.label, f"{r.lat:.5f}", f"{r.lon:.5f}",
-                      "" if r.altitude_m is None else f"{r.altitude_m:.0f}",
-                      "" if r.speed_kmh is None else f"{r.speed_kmh:.1f}",
-                      "" if r.course_deg is None else f"{r.course_deg:.1f}",
-                      "" if r.vertical_ms is None else f"{r.vertical_ms:.1f}",
-                      r.details, time.strftime("%d/%m %H:%M:%S", time.localtime(r.timestamp)))
+        for row, record in enumerate(records[:500]):
+            values = (record.ident, record.label, f"{record.lat:.5f}", f"{record.lon:.5f}",
+                      "" if record.altitude_m is None else f"{record.altitude_m:.0f}",
+                      "" if record.speed_kmh is None else f"{record.speed_kmh:.1f}",
+                      "" if record.course_deg is None else f"{record.course_deg:.1f}",
+                      "" if record.vertical_ms is None else f"{record.vertical_ms:.1f}",
+                      record.details, time.strftime("%d/%m %H:%M:%S", time.localtime(record.timestamp)))
             for col, value in enumerate(values):
                 self.table.setItem(row, col, QTableWidgetItem(value))
         self.table.setSortingEnabled(True)
-        self.status.setText(f"{len(records)} posições válidas de {p.name}. "
-                            "A atualização depende do decodificador externo.")
+
+    def open_map(self):
+        if not self.records:
+            QMessageBox.information(self, "Mapa", "Nenhuma posição válida para exibir.")
+            return
+        try:
+            path = export_map(self.records, config_dir() / ("mapa_" + self.kind.lower().replace("-", "_") + ".html"))
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        except OSError as exc:
+            QMessageBox.warning(self, "Mapa", str(exc))
 
     def _export(self):
         if not self.records:

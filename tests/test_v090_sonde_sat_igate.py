@@ -82,8 +82,13 @@ def test_mainwindow_contains_new_decoder_and_orbital_panels(qt_lifecycle):
     from pt2vhf.ui.main_window import MainWindow
     w = MainWindow()
     try:
-        assert w.dec_panel.tabs.indexOf(w.sonde_panel) >= 0
-        assert w.dec_panel.tabs.indexOf(w.igate_panel) >= 0
+        assert w.scan_panel.tabs.indexOf(w.dec_panel) >= 0
+        assert w.sonde_area.indexOf(w.sonde_panel) >= 0
+        assert w.sonde_area.indexOf(w.sonde_feed) >= 0
+        assert w.tabs.indexOf(w.pages["adsb"]) >= 0
+        assert w.tabs.indexOf(w.pages["ais"]) >= 0
+        assert "dec" not in w.pages
+        assert not hasattr(w, "igate_panel")
         assert w.tabs.indexOf(w.pages["sat"]) >= 0
         assert w.engine.iq_listeners == []
         assert w.sonde_panel.start.isEnabled()

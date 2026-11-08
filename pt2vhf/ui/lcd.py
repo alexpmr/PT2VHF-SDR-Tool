@@ -65,7 +65,7 @@ class LCDDisplay(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(205)
+        self.setMinimumHeight(285)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setMouseTracking(True)
@@ -91,6 +91,25 @@ class LCDDisplay(QWidget):
         self._hover = -1
         self._entry = ""
         self.min_freq, self.max_freq = 24_000, 1_766_000_000
+        self.band_bar = None
+        self._band_height = 66
+
+    def attach_band_keys(self, band_bar):
+        """Mantém as teclas como widgets clicáveis dentro do contorno LCD."""
+        self.band_bar = band_bar
+        band_bar.setParent(self)
+        band_bar.set_theme(self.theme)
+        band_bar.show()
+        self._position_band_keys()
+
+    def _position_band_keys(self):
+        if self.band_bar is not None:
+            self.band_bar.setGeometry(16, self.height() - self._band_height + 3,
+                                      max(50, self.width() - 32), self._band_height - 9)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._position_band_keys()
 
     # ---------------------------------------------------------------- dados
     def set_freq(self, f: float):
@@ -109,6 +128,8 @@ class LCDDisplay(QWidget):
     def set_theme(self, name: str):
         if name in THEMES:
             self.theme = name
+            if self.band_bar is not None:
+                self.band_bar.set_theme(name)
             self.update()
 
     # ---------------------------------------------------------------- desenho
@@ -126,7 +147,7 @@ class LCDDisplay(QWidget):
         p.setPen(QPen(QColor(0, 0, 0, 160), 2))
         p.drawPath(path)
 
-        W, H = r.width(), r.height()
+        W, H = r.width(), r.height() - self._band_height
         x0, y0 = r.left() + 14, r.top() + 8
         mono = QFont("Consolas")
         mono.setStyleHint(QFont.Monospace)
@@ -218,7 +239,8 @@ class LCDDisplay(QWidget):
 
         # --- S-meter
         self._draw_smeter(p, QRectF(x0, fy + dh + H * 0.05, W - 28, H * 0.19), on, ghost, sub)
-        self._draw_keys(p, QRectF(x0, r.bottom() - H * 0.155, W - 28, H * 0.12), on, ghost, bg1)
+        self._draw_keys(p, QRectF(x0, r.bottom() - self._band_height - H * 0.155,
+                                  W - 28, H * 0.12), on, ghost, bg1)
 
         if self.entry_active:
             p.setPen(on)
