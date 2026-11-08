@@ -89,3 +89,24 @@ def test_mainwindow_contains_new_decoder_and_orbital_panels(qt_lifecycle):
         assert w.sonde_panel.start.isEnabled()
     finally:
         w.close()
+
+
+def test_sonde_iq_streaming_has_no_boundary_phase_discontinuity():
+    """O streaming deve produzir o mesmo IQ de um processamento monobloco."""
+    fs = 1_200_000
+    station, center = 402_500_000, 402_650_000
+    n = np.arange(163_843, dtype=np.float64)
+    signal = (0.65 * np.exp(-2j * np.pi * 150_000 / fs * n)).astype(np.complex64)
+    contiguous = ChannelIQ(fs, station).convert(signal, center)
+    decoder = ChannelIQ(fs, station)
+    pieces = []
+    start = 0
+    while start < len(signal):
+        end = min(len(signal), start + 8191)
+        pieces.append(decoder.convert(signal[start:end], center))
+        start = end
+    streamed = b"".join(pieces)
+    assert len(streamed) == len(contiguous)
+    mono = np.frombuffer(contiguous, dtype="<i2").astype(np.int32)
+    split = np.frombuffer(streamed, dtype="<i2").astype(np.int32)
+    assert np.percentile(np.abs(mono - split), 99) <= 2
