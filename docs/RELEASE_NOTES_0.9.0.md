@@ -22,3 +22,7 @@ Referência técnica: https://github.com/projecthorus/radiosonde_auto_rx/wiki/RS
 - Não houve teste com RF real ou binários de demodulação no ambiente do mantenedor; os testes de CI exercitam a conversão sintética de IQ e regras de protocolo.
 - SSTV, DMR/D-STAR/C4FM, IA neural, tradução integral e voz traduzida, RDS, ACARS, ADS-B/AIS por DSP nativo, KiwiSDR e previsão de pouso permanecem no backlog.
 - A publicação no site e a atualização OTA exigem validação separada após a release no GitHub.
+
+## Robustez do IQ
+- Filtro passa-baixas e redução de amostragem com estado contínuo entre blocos do SDR, mesmo com tamanhos variáveis.
+- Teste sintético compara processamento monobloco e streaming, para evitar saltos de fase e perda de sincronismo do decodificador FSK.
