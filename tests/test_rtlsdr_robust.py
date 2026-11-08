@@ -186,3 +186,23 @@ def test_open_failure_after_handle_releases_dongle_and_stub_returns_ok(monkeypat
     s = rs.RtlSdrSource(1_200_000, 145.5e6)
     assert closed == [1234] and s.library == "padrão"
     s.close()
+
+
+def test_recovery_reuses_single_control_thread():
+    """Evita deixar uma thread rtl-ctl bloqueada após cada reconexão USB."""
+    s, devices = _src()
+    try:
+        s.start()
+        original = s._ctl_thread
+        assert original is not None and original.is_alive()
+        assert s.read(timeout=1) is not None
+        devices[-1].stall = True
+        deadline = time.monotonic() + 5
+        while len(devices) < 2 and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert len(devices) >= 2
+        assert s._ctl_thread is original
+    finally:
+        s.close()
+    original.join(timeout=1.0)
+    assert not original.is_alive()
