@@ -28,6 +28,7 @@ from .assist_panels import AssistBox, ExtrasPanel, TimeShiftBox, UpdateControlle
 from .listening import FavoritesBar, PresetDialog, ScannerPanel
 from .settings_panel import SettingsPanel
 from .bandkeys import BandKeys
+from .display_settings import DisplaySettings
 from .panels import AudioPanel, DecoderPanel, MemoryPanel, ModePanel, ReceiverPanel
 from .waterfall import COLORMAPS, SpectrumWaterfall
 
@@ -206,6 +207,8 @@ class MainWindow(QMainWindow):
         self.settings_tabs.setObjectName("settingsTabs")
         self.settings_tabs.addTab(_scroll(self.rx_panel), "Receptor")
         self.settings_tabs.addTab(_scroll(self.mode_panel), "Modo / Filtro")
+        self.display_panel = DisplaySettings(self.cfg, self.lcd_theme)
+        self.settings_tabs.addTab(_scroll(self.display_panel), "Display")
         self.settings_tabs.addTab(_scroll(self.settings_panel), "Geral · Web · Atualizações")
         self.pages = {}
         for key, title, w in (("rx", "Receptor", self.main_split),
@@ -334,8 +337,6 @@ class MainWindow(QMainWindow):
         self.lcd_theme = QComboBox()
         self.lcd_theme.addItems(list(THEMES))
         self.lcd_theme.setCurrentText(self.cfg["lcd_theme"])
-        row.addWidget(QLabel("Display:"))
-        row.addWidget(self.lcd_theme)
         self.level_combo = QComboBox()
         self.level_combo.addItems(LEVELS)
         self.level_combo.setToolTip("Quantidade de recursos na tela: Essencial, Intermediário ou Avançado")
@@ -420,6 +421,7 @@ class MainWindow(QMainWindow):
         lcd, wf, rp, mp, ap, mem, dp = (self.lcd, self.wf, self.rx_panel, self.mode_panel,
                                         self.audio_panel, self.mem_panel, self.dec_panel)
         self.band_bar.selected.connect(self._band_button)
+        self.display_panel.bandsChanged.connect(self._set_visible_bands)
         lcd.freqChanged.connect(self.tune)
         lcd.stepRequested.connect(lambda n: self.tune(self.engine.vfo + n * self.step, snap=True))
         wf.tuneRequested.connect(self.select_transmission)
@@ -777,7 +779,7 @@ class MainWindow(QMainWindow):
 
     def _show_initial_receiver_setup(self):
         """Leva o usuário às configurações na primeira utilização sem receptor configurado."""
-        if self.engine.running or self._presenting:
+        if self.engine.running or self._presenting or self.rx_panel.source.currentText() != "RTL-SDR":
             return
         self.tabs.setCurrentWidget(self.pages["settings"])
         self.settings_tabs.setCurrentIndex(0)
@@ -810,6 +812,18 @@ class MainWindow(QMainWindow):
             return
         reasons = {b.name: self._band_unsupported(b) for b in self.band_bar.bands}
         self.band_bar.refresh(self.engine.vfo, reasons)
+
+    def _set_visible_bands(self, names):
+        """Atualiza as teclas sem reiniciar e preserva a seleção do operador."""
+        self.cfg["bands_visible"] = list(names)
+        old = self.band_bar
+        new = BandKeys(names)
+        new.selected.connect(self._band_button)
+        container = self.main_split.widget(0)
+        container.layout().replaceWidget(old, new)
+        old.deleteLater()
+        self.band_bar = new
+        self._refresh_band_keys()
 
     def _band_button(self, band):
         reason = self._band_unsupported(band)
@@ -1795,12 +1809,12 @@ class MainWindow(QMainWindow):
             if minimal:
                 self.tabs.setCurrentIndex(0)
                 for w in (self.menuBar(), self.statusBar(), self.header, self.tabs.tabBar(), self.audio_scroll,
-                          self.fav_bar, self.wf_toolbar):
+                          self.fav_bar, self.band_bar, self.wf_toolbar):
                     w.setVisible(False)
             self.showFullScreen()
             self.statusBar().showMessage("Modo apresentação — Esc ou F11 para sair", 6000)
         else:
-            for w in (self.menuBar(), self.statusBar(), self.header, self.tabs.tabBar(), self.fav_bar, self.wf_toolbar):
+            for w in (self.menuBar(), self.statusBar(), self.header, self.tabs.tabBar(), self.fav_bar, self.band_bar, self.wf_toolbar):
                 w.setVisible(True)
             self.audio_scroll.setVisible(getattr(self, "_pres_audio", True) and self.audio_action.isChecked())
             self.showMaximized() if getattr(self, "_pres_was_max", False) else self.showNormal()
