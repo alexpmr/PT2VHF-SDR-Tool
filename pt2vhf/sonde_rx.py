@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 
 import numpy as np
-from scipy.signal import resample_poly
+from scipy.signal import resample_poly, butter, sosfilt
 from .traffic import parse_radiosondes
 
 OUTPUT_RATE = 48000
@@ -65,6 +65,12 @@ class ChannelIQ:
             raise ValueError("IQ com taxa inferior a 96 kS/s")
         self._gcd = math.gcd(self.sample_rate, OUTPUT_RATE)
         self._up, self._down = OUTPUT_RATE // self._gcd, self.sample_rate // self._gcd
+        # Taxas múltiplas de 48 kS/s: filtro IIR contínuo + seleção com fase
+        # persistente entre blocos, sem saltos de símbolos a cada read() do SDR.
+        self._sos = (butter(10, 19_000, btype="lowpass", fs=self.sample_rate,
+                            output="sos") if self._up == 1 else None)
+        self._zi = (np.zeros((len(self._sos), 2), dtype=np.complex128)
+                    if self._sos is not None else None)
 
     def convert(self, block, center_hz: float) -> bytes:
         samples = np.asarray(block, dtype=np.complex64).reshape(-1)
@@ -78,17 +84,24 @@ class ChannelIQ:
             self._center = center_hz
             self.samples = 0
             self._tail = np.empty(0, dtype=np.complex64)
+            if self._zi is not None:
+                self._zi.fill(0)
         position = np.arange(samples.size, dtype=np.float64) + self.samples
         self.samples += samples.size
         translated = (samples * np.exp(-2j * math.pi * off / self.sample_rate * position)).astype(np.complex64)
-        # FIR com overlap para reduzir transientes nos limites dos blocos.
-        prefix = self._tail
-        n_prefix_out = math.ceil(len(prefix) * self._up / self._down)
-        joined = np.concatenate((prefix, translated))
-        narrow = resample_poly(joined, self._up, self._down)
-        # Compensa o atraso do trecho anexado, sem introduzir lacunas longas.
-        narrow = narrow[n_prefix_out:]
-        self._tail = joined[-min(len(joined), 10 * self._down):].copy()
+        if self._sos is not None:
+            # Estado do filtro e relógio de amostragem contínuos, mesmo com
+            # blocos de tamanho variável ou não múltiplo do fator de redução.
+            filtered, self._zi = sosfilt(self._sos, translated, zi=self._zi)
+            first = (-(self.samples - len(samples))) % self._down
+            narrow = filtered[first::self._down]
+        else:
+            # Fallback racional para taxas arbitrárias com histórico de entrada.
+            prefix = self._tail
+            n_prefix_out = math.ceil(len(prefix) * self._up / self._down)
+            joined = np.concatenate((prefix, translated))
+            narrow = resample_poly(joined, self._up, self._down)[n_prefix_out:]
+            self._tail = joined[-min(len(joined), 10 * self._down):].copy()
         # O fsk_demod espera I/Q signed 16 bit little-endian, intercalado.
         vals = np.stack((narrow.real, narrow.imag), axis=-1)
         ints = np.round(np.clip(vals, -1, 1) * 30000).astype("<i2")
