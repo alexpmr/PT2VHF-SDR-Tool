@@ -7,7 +7,8 @@ from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, co
 binaries, datas = [], []
 hiddenimports = collect_submodules("pyqtgraph") + ["rtlsdr", "sounddevice"]
 for pkg in ("pyrtlsdrlib", "_sounddevice_data", "pyrnnoise", "faster_whisper",
-            "ctranslate2", "tokenizers", "onnxruntime", "huggingface_hub", "av"):
+            "ctranslate2", "tokenizers", "onnxruntime", "huggingface_hub", "av",
+            "audiolab", "audiolab.av"):
     try:
         binaries += collect_dynamic_libs(pkg)
         datas += collect_data_files(pkg)
@@ -16,6 +17,16 @@ for pkg in ("pyrtlsdrlib", "_sounddevice_data", "pyrnnoise", "faster_whisper",
         pass
 
 import os
+from importlib.util import find_spec
+# audiolab.av usa Jinja2.PackageLoader("audiolab.av", "templates") no pipeline
+# pyrnnoise. PyInstaller nao encontra templates sem inclusao explicita.
+av_spec = find_spec("audiolab.av")
+if av_spec and av_spec.origin:
+    av_templates = os.path.join(os.path.dirname(av_spec.origin), "templates")
+    if os.path.isdir(av_templates):
+        datas.append((av_templates, "audiolab/av/templates"))
+    else:
+        raise RuntimeError("Dependencia audiolab.av sem pasta templates: verifique o wheel")
 datas += [("scripts/apply-update.ps1", "scripts")]
 for f in ("drivers/wdi-simple.exe", "drivers/libwdi-COPYING-LGPL.txt"):
     if os.path.isfile(f):
