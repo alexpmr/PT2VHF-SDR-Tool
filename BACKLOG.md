@@ -4,6 +4,19 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+### Teclas de banda no display (um botão por banda) (registrado em 08/11/2026)
+- Hoje a banda só se escolhe na lista "Bandas" em Configurações → Modo / Filtro.
+- Colocar no **display** uma fileira de teclas de banda, como num transceptor: **160, 80, 60, 40, 30, 20, 17, 15,
+  12, 10, 6, 2 m, 70 cm** (e outras faixas úteis para escuta, ex.: PX/11 m, FM broadcast, aviação, marítimo),
+  um clique por banda.
+- Ao clicar, ir para a banda com o modo adequado (LSB abaixo de 10 MHz, USB acima, FM em VHF/UHF, conforme o plano
+  de bandas) e **lembrar a última frequência/modo usados em cada banda** (band stacking), voltando nela no
+  próximo clique; segundo clique na mesma banda pode alternar entre posições salvas (CW / SSB / digital).
+- Destacar a banda atual; desabilitar/avisar bandas fora do alcance do dispositivo (ex.: HF no RTL-SDR sem
+  amostragem direta ou V4).
+- Escolher em Configurações quais bandas aparecem (radioamador, escuta ou personalizadas) e respeitar os níveis
+  de interface e o modo apresentação; caber sem rolagem (quebra em duas linhas ou "mais…").
+
 ### Botão "Centralizar" no waterfall (registrado em 08/11/2026)
 - Botão na barra do waterfall (e atalho de teclado) que **centraliza a visão no cursor/VFO**: traz a frequência
   sintonizada para o meio do espectro/waterfall, mantendo o zoom atual (útil depois de arrastar ou dar zoom).
