@@ -2,6 +2,20 @@
 
 Todas as mudanças relevantes do PT2VHF SDR Tool.
 
+## [0.6.0] — 2026-11-08
+### Adicionado
+- Acesso rápido a bandas junto ao display; 60 m e memória de frequência/modo por banda.
+- Bandas incompatíveis com o SDR identificado são exibidas esmaecidas; clique informa o motivo.
+- Botão Centralizar (Ctrl+E) no waterfall, sem perder o zoom, com opção Seguir VFO.
+- Primeira execução prefere RTL-SDR e interface Avançada; orientações no painel do receptor.
+- Menus de configuração compactos, sem ocupar a largura total do painel.
+- Testes de regressão para configuração inicial, painel de bandas e zoom.
+
+### Observação
+- Os itens extensos do backlog (modelos locais de IA, decodificadores externos, fonia digital,
+  tradução em tempo real, radiossondas e temas analógicos) permanecem pendentes de implementação e testes.
+- A versão 0.6.0 deve ser empacotada no pipeline Windows e validada com SDR real antes da publicação oficial.
+
 ## [0.5.0] — 2026-11-07
 ### Corrigido
 - **RTL-SDR voltou a abrir** (0.4.1: "Error code -1 when setting PLL dithering mode" seguido de LIBUSB_ERROR_ACCESS):

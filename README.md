@@ -69,6 +69,13 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 - Plano de bandas (IARU R2 / Brasil): HF, PX (11 m), 6 m, FM broadcast, aviação, 2 m, marítimo, 70 cm…
 - VFO A/B, A⇄B, A=B.
 
+### Novidades da 0.6
+- Fonte RTL-SDR e interface Avançada como opções iniciais (preferências anteriores preservadas).
+- Teclas de banda em duas linhas abaixo do display com acesso rápido e memória de até três frequências/modos.
+- Bandas não suportadas esmaecidas e explicadas conforme o receptor configurado.
+- Botão **Centralizar** / Ctrl+E e **Seguir VFO** preservando a escala de zoom.
+- Campos de configuração compactos.
+
 ### Novidades da 0.5
 - **Abas superiores** (Receptor, Memórias / Varredura, Scanner, Decodificadores, Receptores extras, Configurações)
   e cabeçalho com versão/atualização, Ligar/Desligar e relógio UTC.

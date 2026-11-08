@@ -4,6 +4,13 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 ## Pendentes
 
+> Atualização em 08/11/2026: a 0.6.0 contém **implementação inicial** de teclas de bandas,
+> memória de frequência/modo, centralização do waterfall, padrão RTL-SDR/Avançado e
+> largura compacta dos campos. Permanecem pendentes os refinamentos descritos abaixo
+> (inclusive seleção das bandas nas configurações e testes físicos de compatibilidade).
+> Não considerar esses grupos concluídos sem validação funcional.
+
+
 ### Teclas de banda no display (um botão por banda) (registrado em 08/11/2026)
 - **Acréscimo (08/11/2026):** as teclas das bandas que o **SDR em uso não suporta** ficam **esmaecidas**
   (acinzentadas), conforme a faixa real do dispositivo/sintonizador e o modo (ex.: R820T sem amostragem direta não

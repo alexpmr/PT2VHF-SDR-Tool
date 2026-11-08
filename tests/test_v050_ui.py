@@ -63,6 +63,7 @@ def test_top_tabs_header_and_levels(tmp_path, monkeypatch):
     assert w.mode_panel.mode_btns == {}  # modos só no display
     assert w.version_btn.parent() is w.header  # indicador de versão no topo
     assert w.version_btn.text() == "Verificar atualizações"
+    w.rx_panel.source.setCurrentText("Simulador")  # simulador explícito: primeira execução prefere RTL-SDR
     w.power_btn.click()  # liga pelo cabeçalho
     assert w.engine.running and w.rx_panel.start_btn.isChecked() and w.power_btn.text().startswith("■")
     w.apply_level("Essencial")
@@ -152,6 +153,7 @@ def test_reconnect_missing_device_warns_without_dialog(tmp_path, monkeypatch):
 
 def test_simulator_is_not_reconnected(tmp_path, monkeypatch):
     app, w = _window(tmp_path, monkeypatch)
+    w.rx_panel.source.setCurrentText("Simulador")
     w.power_btn.click()
     assert w.engine.running
     w.close()
