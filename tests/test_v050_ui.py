@@ -57,7 +57,7 @@ def test_top_tabs_header_and_levels(tmp_path, monkeypatch):
     app, w = _window(tmp_path, monkeypatch)
     titles = [w.tabs.tabText(i) for i in range(w.tabs.count())]
     assert titles == ["Receptor", "Memórias / Varredura", "Scanner", "Decodificadores",
-                      "Receptores extras", "Configurações"]
+                      "Receptores extras", "Satélites", "Configurações"]
     sub = [w.settings_tabs.tabText(i) for i in range(w.settings_tabs.count())]
     assert sub[:2] == ["Receptor", "Modo / Filtro"]
     assert w.mode_panel.mode_btns == {}  # modos só no display
