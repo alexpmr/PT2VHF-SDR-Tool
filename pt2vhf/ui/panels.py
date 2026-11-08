@@ -21,6 +21,7 @@ from ..decoders.tones import CTCSS_TONES
 from ..dsp.audiofx import EQ_BANDS_HZ, EQ_PRESETS
 from ..dsp.receiver import MODES, SAMPLE_RATES
 from ..memory import BAND_PLAN, MemoryBank, MemoryChannel
+from ..memory_regions import RegionMemoryStore
 from ..sources.network_sources import soapy_devices
 from ..sources.rtlsdr_source import list_devices
 
@@ -644,6 +645,22 @@ class MemoryPanel(QWidget):
             tb.addWidget(b)
         lay.addLayout(tb)
 
+        self.regions = RegionMemoryStore((bank.path.parent if bank.path else config_dir()) / "memorias_regioes.json")
+        rr = QHBoxLayout()
+        rr.addWidget(QLabel("Região de escuta:"))
+        self.region_select = QComboBox()
+        self.region_select.setMaximumWidth(300)
+        self.region_select.addItems(self.regions.names())
+        rr.addWidget(self.region_select)
+        for name, callback in (("Salvar banco nesta região…", self._save_region),
+                               ("Carregar região…", self._load_region),
+                               ("Importar CHIRP como região…", self._import_region)):
+            btn = QPushButton(name)
+            btn.clicked.connect(callback)
+            rr.addWidget(btn)
+        rr.addStretch(1)
+        lay.addLayout(rr)
+
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(["Nome", "Frequência (MHz)", "Modo", "Largura", "Banda", "CTCSS", "Notas"])
         self.tree.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -759,6 +776,69 @@ class MemoryPanel(QWidget):
         if ok and name and name not in self.bank.categories:
             self.bank.categories.append(name)
             self._commit()
+
+    def _region_name(self):
+        name = self.region_select.currentText().strip()
+        value, ok = QInputDialog.getText(self, "Perfil de região", "Nome da cidade/região:", text=name)
+        return value.strip() if ok else ""
+
+    def _update_regions(self, selected):
+        self.region_select.clear()
+        self.region_select.addItems(self.regions.names())
+        self.region_select.setCurrentText(selected)
+
+    def _save_region(self):
+        name = self._region_name()
+        if not name:
+            return
+        if name in self.regions.profiles:
+            if QMessageBox.question(self, "Sobrescrever região",
+                                    f"Substituir as memórias da região '{name}' pelas memórias atuais?") != QMessageBox.Yes:
+                return
+        try:
+            self.regions.save_bank(name, self.bank)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Região", str(exc))
+            return
+        self._update_regions(name)
+        QMessageBox.information(self, "Região", f"Banco atual salvo na região '{name}'.")
+
+    def _load_region(self):
+        name = self.region_select.currentText().strip()
+        if not name:
+            QMessageBox.information(self, "Região", "Selecione uma região salva.")
+            return
+        if QMessageBox.question(self, "Trocar banco de memórias",
+                                f"Carregar '{name}' substituirá o banco ativo. "
+                                "Salve antes a região atual, se necessário. Continuar?") != QMessageBox.Yes:
+            return
+        try:
+            count = self.regions.load_bank(name, self.bank)
+        except (OSError, ValueError, KeyError) as exc:
+            QMessageBox.warning(self, "Região", str(exc))
+            return
+        self._commit()
+        QMessageBox.information(self, "Região", f"{count} canais da região '{name}' carregados.")
+
+    def _import_region(self):
+        name = self._region_name()
+        if not name:
+            return
+        path, _ = QFileDialog.getOpenFileName(self, "CSV CHIRP para a região", "", "CSV (*.csv)")
+        if not path:
+            return
+        if name in self.regions.profiles:
+            if QMessageBox.question(self, "Sobrescrever região",
+                                    f"Substituir o perfil '{name}' pelo conteúdo do CSV?") != QMessageBox.Yes:
+                return
+        try:
+            count = self.regions.import_chirp(name, path)
+        except (OSError, ValueError, csv.Error, UnicodeError) as exc:
+            QMessageBox.warning(self, "Região", str(exc))
+            return
+        self._update_regions(name)
+        QMessageBox.information(self, "Região", f"{count} canais importados na região '{name}'. "
+                                                   "Clique em Carregar região para ativar.")
 
     def _import(self):
         p, _ = QFileDialog.getOpenFileName(self, "Importar CSV (CHIRP)", "", "CSV (*.csv)")
