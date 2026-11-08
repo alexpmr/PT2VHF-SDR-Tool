@@ -20,7 +20,6 @@ def qt_lifecycle():
     PySide6 pode sofrer falha nativa na saída do interpretador se cada teste
     deixar destruir/recriar QApplication enquanto gráficos Qt continuam pendentes.
     """
-    from PySide6.QtCore import QCoreApplication, QEvent
     from PySide6.QtWidgets import QApplication
 
     global _QT_SESSION_APP
@@ -28,12 +27,9 @@ def qt_lifecycle():
     app.setQuitOnLastWindowClosed(False)
     _QT_SESSION_APP = app
     yield app
+    # Não forçar DeferredDelete durante o shutdown: widgets Qt (pyqtgraph)
+    # podem manter callbacks/itens C++ pendentes até o fim da sessão.
+    # Fechamos janelas, processamos eventos e mantemos QApplication viva.
     QApplication.closeAllWindows()
-    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
-    app.processEvents()
-    for w in list(QApplication.topLevelWidgets()):
-        w.close()
-        w.deleteLater()
-    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
     app.processEvents()
     gc.collect()
