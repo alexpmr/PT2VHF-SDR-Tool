@@ -41,7 +41,7 @@ def test_channel_is_shifted_to_dc_and_output_decimated(tmp_path):
     steady=iq[500:-500]
     assert abs(np.mean(steady))>.20
     assert np.std(steady)/abs(np.mean(steady))<.02
-    assert len(list(read_windows(dst, max_windows=2)))==2
+    assert len(list(read_windows(dst, limit=2)))==2
 
 
 @pytest.mark.parametrize("chunk",[257,5000,65536])
