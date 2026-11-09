@@ -13,9 +13,15 @@ def test_main_navigation_and_lcd_band_theme(monkeypatch, tmp_path, qt_lifecycle)
         pages = [w.tabs.tabText(i) for i in range(w.tabs.count())]
         assert "Decodificadores" not in pages
         assert "APRS iGate RX" not in pages
-        assert pages.index("ADS-B") != pages.index("AIS")
-        assert "Sondas Meteorológicas" in pages
-        assert w.scan_panel.tabs.indexOf(w.dec_panel) >= 0
+        assert "Decodificação" in pages and "Ferramentas" in pages
+        assert "ADS-B" not in pages and "AIS" not in pages
+        assert "Sondas Meteorológicas" not in pages and "Satélites" not in pages
+        assert [w.decoder_tabs.tabText(i) for i in range(w.decoder_tabs.count())] == [
+            "ADS-B", "Sondas Meteorológicas", "AIS", "APRS / DTMF / CTCSS"]
+        assert w.decoder_tabs.indexOf(w.dec_panel) >= 0
+        assert w.scan_panel.tabs.indexOf(w.dec_panel) == -1
+        assert [w.tools_tabs.tabText(i) for i in range(w.tools_tabs.count())] == [
+            "Transcrição", "Legendas ao vivo"]
         assert w.sonde_area.indexOf(w.sonde_panel) >= 0
         assert w.sonde_area.indexOf(w.sonde_feed) >= 0
         assert w.band_bar.parentWidget() is w.lcd
