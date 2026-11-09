@@ -12,6 +12,7 @@ on:
       - 'scripts/iq_out_of_family.py'
       - 'scripts/evaluate_iq_ood.py'
       - 'scripts/evaluate_iq_recordings.py'
+      - 'scripts/smoke_iq_wav_onnx.py'
       - 'scripts/export_iq_synthetic_v2.py'
       - 'scripts/evaluate_iq_synthetic_stress.py'
       - 'pt2vhf/dsp/iq_classifier.py'
@@ -74,6 +75,8 @@ jobs:
       - name: Diagnose out-of-family IQ and false-confidence errors
         run: |
           PYTHONPATH=. python scripts/evaluate_iq_ood.py --reference models/iq/synthetic_v2.onnx --candidate models/iq/synthetic_v3.onnx --third-model models/iq/synthetic_v4.onnx --fourth-model models/iq/synthetic_v5.onnx --output models/iq/synthetic_v3_ood_metrics.json
+      - name: Smoke-test WAV parser with real ONNX models and synthetic-only data
+        run: PYTHONPATH=. python scripts/smoke_iq_wav_onnx.py
       - name: Install Qt Linux system libraries
         run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
       - name: Run IQ classifier unit tests
@@ -124,9 +127,12 @@ jobs:
             assert curve["0.999"]["ood_negative_misaccepted"] <= curve["0.8"]["ood_negative_misaccepted"]
           assert stress["conditions"]["nominal"]["top1_accuracy"] >= 0.94
           assert p.is_file() and Path("models/iq/synthetic_v2.onnx").stat().st_size > 0
+          wav_smoke = json.loads(Path("models/iq/synthetic_wav_smoke_metrics.json").read_text(encoding="utf-8"))
+          assert wav_smoke["source"].startswith("SYNTHETIC WAV ONLY")
+          assert set(wav_smoke["result"]["models"]) == {"v2","v3","v4","v5"}
           PY
           cd models/iq
-          sha256sum synthetic_v2.onnx synthetic_v2.pt synthetic_v2_metrics.json synthetic_v2_stress_metrics.json synthetic_v3.onnx synthetic_v3.pt synthetic_v3_metrics.json synthetic_v3_stress_metrics.json synthetic_v3_comparison.json synthetic_v3_ood_metrics.json synthetic_v4.onnx synthetic_v4.pt synthetic_v4_metrics.json synthetic_v5.onnx synthetic_v5.pt synthetic_v5_metrics.json > SHA256SUMS
+          sha256sum synthetic_v2.onnx synthetic_v2.pt synthetic_v2_metrics.json synthetic_v2_stress_metrics.json synthetic_v3.onnx synthetic_v3.pt synthetic_v3_metrics.json synthetic_v3_stress_metrics.json synthetic_v3_comparison.json synthetic_v3_ood_metrics.json synthetic_v4.onnx synthetic_v4.pt synthetic_v4_metrics.json synthetic_v5.onnx synthetic_v5.pt synthetic_v5_metrics.json synthetic_wav_smoke_metrics.json > SHA256SUMS
           sha256sum -c SHA256SUMS
       - name: Upload experimental model and metrics
         uses: actions/upload-artifact@v4
@@ -149,5 +155,6 @@ jobs:
             models/iq/synthetic_v5.onnx
             models/iq/synthetic_v5.pt
             models/iq/synthetic_v5_metrics.json
+            models/iq/synthetic_wav_smoke_metrics.json
             models/iq/SHA256SUMS
           if-no-files-found: error
