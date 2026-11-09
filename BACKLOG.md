@@ -2,6 +2,13 @@
 
 Itens registrados pelo mantenedor. Não implementar até o pedido de versão nova.
 
+## Legendas ao vivo — atualização de interface (09/11/2026)
+- **Implementado no código (sem nova release):** a aba `Legendas ao vivo` sai de Scanner e passa a `Ferramentas → Legendas ao vivo`, reservada a histórico e exportação CSV.
+- **Ferramentas → Transcrição:** download e escolha de modelo Whisper, idioma, habilitação de legendas e opção de transcrever gravações do Scanner concentrados no mesmo lugar.
+- **Popup de transcrição:** quando legendas são habilitadas, abrir a aba principal `Receptor` e sobrepor janela contrastante com **somente o texto reconhecido** (sem frequência, horário, indicativos ou modo). Mostrar mensagem de espera antes da primeira fala; remover imediatamente o popup ao desativar. Atualizar os trechos reconhecidos a cada resultado do worker sem bloquear RF/áudio.
+- **Navegação complementada em código:** `Decodificação` reúne ADS-B, Sondas Meteorológicas, AIS e APRS/DTMF/CTCSS; aba principal Satélites removida sem apagar biblioteca orbital.
+- **Falta homologar:** testes Linux/Qt, teste visual Windows pequeno/máximo, recepção com fala real, desempenho de CPU e publicação de novo instalador/site/OTA. Não declarar liberado sem CI e artefato verificados.
+
 ## Reorganização da navegação — solicitada em 09/11/2026
 - **Criar aba principal `Decodificação`** e agrupar nela, como subabas, **ADS-B**, **Sondas Meteorológicas** e **AIS**, retirando essas três abas da navegação principal sem perder suas telas e funcionalidades.
 - **Remover a aba principal `Satélites`** da interface, sem deixar guia ou página vazia. O pedido é de remoção da aba; não autoriza, por si só, apagar dados ou módulos de previsão e controle de satélites do código.
