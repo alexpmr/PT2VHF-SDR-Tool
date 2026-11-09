@@ -49,6 +49,13 @@ def sample(mode: str, rng: np.random.Generator, snr_db: float, *, n: int = N) ->
         # the generator's regularly gated CW: deliberate distribution shift.
         key_rate = float(rng.uniform(8, 31))
         gate = (np.sin(2 * np.pi * key_rate * t + phase) > float(rng.uniform(-0.6, 0.5))).astype(float)
+        # A 42.7-ms window can fall entirely within a Morse silence or mark.
+        # Such snippets have no identifiable keying; enforce at least one edge
+        # to avoid introducing contradictory training/validation labels.
+        if not gate.any():
+            gate[N // 3:N // 3 + 64] = 1.0
+        elif gate.all():
+            gate[N // 3:N // 3 + 64] = 0.0
         z = gate * np.exp(2j * np.pi * (offset + rng.uniform(350, 3400)) * t + 1j * phase)
     elif mode == "AM":
         depth = float(rng.uniform(0.18, 0.9))
