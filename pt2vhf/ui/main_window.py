@@ -221,7 +221,8 @@ class MainWindow(QMainWindow):
         cl.setContentsMargins(0, 0, 0, 0)
         self.lcd = LCDDisplay()
         self.lcd.set_theme(self.cfg["lcd_theme"])
-        cl.addWidget(self.lcd)
+        self.lcd.set_preferred_scale(self.cfg.get("lcd_scale_percent", 100))
+        cl.addWidget(self.lcd, alignment=Qt.AlignHCenter)
         self.analog_panel = AnalogPanel(self.cfg.get("analog_style", "Valvulado"))
         self.analog_panel.setVisible(bool(self.cfg.get("analog_enabled", False)))
         cl.addWidget(self.analog_panel)
@@ -538,7 +539,10 @@ class MainWindow(QMainWindow):
         self.live_captions_panel.downloadRequested.connect(self._download_caption_model)
         self.band_bar.selected.connect(self._band_button)
         self.display_panel.bandsChanged.connect(self._set_visible_bands)
+        self.display_panel.lcdScaleChanged.connect(self._set_lcd_scale)
         self.display_panel.analogChanged.connect(self._analog_display_changed)
+        rp.source.currentTextChanged.connect(lambda *_: self._refresh_band_keys())
+        rp.device.currentIndexChanged.connect(lambda *_: self._refresh_band_keys())
         lcd.freqChanged.connect(self.tune)
         lcd.stepRequested.connect(lambda n: self.tune(self.engine.vfo + n * self.step, snap=True))
         wf.tuneRequested.connect(self.select_transmission)
@@ -917,20 +921,34 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(msg, 18000)
 
     def _band_unsupported(self, band):
+        """Bandas não confirmadas como sintonizáveis são ocultadas no LCD."""
         mid = (band.start + band.end) / 2
         src = self.engine.source
         if src is not None:
             return src.check_freq(mid) or ""
-        if self.cfg.get("source") == "RTL-SDR" and self.cfg.get("device_name"):
+        source = self.rx_panel.source.currentText()
+        if source == "Simulador":
+            return ""
+        if source == "RTL-SDR":
             from ..sources.rtlsdr_source import tuning_range
-            device = self.cfg.get("device_name", "")
+            current = self.rx_panel.device.currentText().strip()
+            device = current if current[:1].isdigit() else self.cfg.get("device_name", "")
+            if not device or not str(device)[:1].isdigit():
+                return "Faixa desconhecida: conecte ou selecione o SDR."
             v4 = "V4" in device.upper()
             low, high = tuning_range("R828D" if v4 else "R820T", v4,
                                      int(self.cfg.get("direct_sampling", 0)), device)
-            if not low <= mid <= high:
-                return (f"{band.name}: fora da faixa do último SDR ({low / 1e6:g}–"
-                        f"{high / 1e6:g} MHz). Verifique a amostragem direta ou o dispositivo.")
-        return ""
+            if low <= mid <= high:
+                return ""
+            return f"{band.name}: fora da faixa do SDR ({low / 1e6:g}–{high / 1e6:g} MHz)."
+        return "Conecte a fonte para identificar a faixa de recepção."
+
+    def _set_lcd_scale(self, percent):
+        """Aplica escala manual persistente, mantendo a proporção vetorial do LCD."""
+        percent = max(50, min(150, int(percent)))
+        self.cfg["lcd_scale_percent"] = percent
+        self.lcd.set_preferred_scale(percent)
+        self.cfg.save()
 
     def _refresh_band_keys(self):
         if not hasattr(self, "band_bar"):
