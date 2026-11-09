@@ -46,6 +46,10 @@ jobs:
         run: python scripts/train_iq_unknown_v4.py
       - name: Export and verify v4 candidate ONNX
         run: python scripts/export_iq_synthetic_v2.py --checkpoint models/iq/synthetic_v4.pt --output models/iq/synthetic_v4.onnx
+      - name: Train intermediate UNKNOWN v5 candidate (45%, diagnostic only)
+        run: python scripts/train_iq_unknown_v4.py --unknown-fraction 0.45 --model-stem synthetic_v5
+      - name: Export and verify v5 ONNX
+        run: python scripts/export_iq_synthetic_v2.py --checkpoint models/iq/synthetic_v5.pt --output models/iq/synthetic_v5.onnx
       - name: Smoke-test application ONNX classifier
         run: |
           python - <<'PY'
@@ -67,7 +71,7 @@ jobs:
           python scripts/compare_iq_stress.py --reference models/iq/synthetic_v2_stress_metrics.json --candidate models/iq/synthetic_v3_stress_metrics.json --output models/iq/synthetic_v3_comparison.json
       - name: Diagnose out-of-family IQ and false-confidence errors
         run: |
-          PYTHONPATH=. python scripts/evaluate_iq_ood.py --reference models/iq/synthetic_v2.onnx --candidate models/iq/synthetic_v3.onnx --third-model models/iq/synthetic_v4.onnx --output models/iq/synthetic_v3_ood_metrics.json
+          PYTHONPATH=. python scripts/evaluate_iq_ood.py --reference models/iq/synthetic_v2.onnx --candidate models/iq/synthetic_v3.onnx --third-model models/iq/synthetic_v4.onnx --fourth-model models/iq/synthetic_v5.onnx --output models/iq/synthetic_v3_ood_metrics.json
       - name: Install Qt Linux system libraries
         run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
       - name: Run IQ classifier unit tests
@@ -98,13 +102,18 @@ jobs:
           assert ood["classes_not_evaluated"] == ["WFM"]
           assert ood["models"]["v2"]["labeled_samples"] == ood["models"]["v3"]["labeled_samples"]
           assert ood["models"]["v2"]["negative_samples"] == ood["models"]["v3"]["negative_samples"]
-          assert set(ood["models"]) == {"v2", "v3", "v4"}
+          assert set(ood["models"]) == {"v2", "v3", "v4", "v5"}
           assert ood["models"]["v4"]["negative_samples"] == 320
           assert ood["models"]["v4"]["labeled_samples"] == 960
+          assert ood["models"]["v5"]["labeled_samples"] == 960
+          assert ood["models"]["v5"]["negative_samples"] == 320
           unknown4 = json.loads(Path("models/iq/synthetic_v4_metrics.json").read_text(encoding="utf-8"))
           assert unknown4["labels"] == data["labels"]
           assert unknown4["unknown_examples_replaced"] > 0
-          for m in ("v2", "v3", "v4"):
+          unknown5 = json.loads(Path("models/iq/synthetic_v5_metrics.json").read_text(encoding="utf-8"))
+          assert unknown5["labels"] == data["labels"]
+          assert 0 < unknown5["unknown_examples_replaced"] < unknown4["unknown_examples_replaced"]
+          for m in ("v2", "v3", "v4", "v5"):
             curve = ood["models"][m]["confidence_threshold_analysis"]
             assert list(curve) == ["0.8", "0.9", "0.95", "0.99", "0.999"]
             assert curve["0.8"]["ood_samples"] == 320
@@ -115,7 +124,7 @@ jobs:
           assert p.is_file() and Path("models/iq/synthetic_v2.onnx").stat().st_size > 0
           PY
           cd models/iq
-          sha256sum synthetic_v2.onnx synthetic_v2.pt synthetic_v2_metrics.json synthetic_v2_stress_metrics.json synthetic_v3.onnx synthetic_v3.pt synthetic_v3_metrics.json synthetic_v3_stress_metrics.json synthetic_v3_comparison.json synthetic_v3_ood_metrics.json synthetic_v4.onnx synthetic_v4.pt synthetic_v4_metrics.json > SHA256SUMS
+          sha256sum synthetic_v2.onnx synthetic_v2.pt synthetic_v2_metrics.json synthetic_v2_stress_metrics.json synthetic_v3.onnx synthetic_v3.pt synthetic_v3_metrics.json synthetic_v3_stress_metrics.json synthetic_v3_comparison.json synthetic_v3_ood_metrics.json synthetic_v4.onnx synthetic_v4.pt synthetic_v4_metrics.json synthetic_v5.onnx synthetic_v5.pt synthetic_v5_metrics.json > SHA256SUMS
           sha256sum -c SHA256SUMS
       - name: Upload experimental model and metrics
         uses: actions/upload-artifact@v4
@@ -135,5 +144,8 @@ jobs:
             models/iq/synthetic_v4.onnx
             models/iq/synthetic_v4.pt
             models/iq/synthetic_v4_metrics.json
+            models/iq/synthetic_v5.onnx
+            models/iq/synthetic_v5.pt
+            models/iq/synthetic_v5_metrics.json
             models/iq/SHA256SUMS
           if-no-files-found: error

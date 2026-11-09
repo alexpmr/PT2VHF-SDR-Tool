@@ -15,8 +15,14 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--epochs", type=int, default=22)
     p.add_argument("--train-count", type=int, default=8400)
+    p.add_argument("--unknown-fraction", type=float, default=0.90,
+                   help="Fraction of UNKNOWN training examples replaced with diverse synthetic negatives")
+    p.add_argument("--model-stem", choices=("synthetic_v4", "synthetic_v5"),
+                   default="synthetic_v4")
     p.add_argument("--output-dir", type=Path, default=Path("models/iq"))
     args = p.parse_args()
+    if not (0 <= args.unknown_fraction <= 1):
+        raise ValueError("unknown-fraction must be between zero and one")
     torch.set_num_threads(2)
     torch.manual_seed(20261113)
     np.random.seed(20261113)
@@ -25,7 +31,7 @@ def main():
     unknown_index = CLASSES.index("UNKNOWN")
     replaced = 0
     for i in torch.where(y == unknown_index)[0].tolist():
-        if rng.random() < .9:
+        if rng.random() < args.unknown_fraction:
             z = unknown_iq(rng)
             if rng.random() < .65:
                 z = augment_iq(z, rng)
@@ -51,7 +57,9 @@ def main():
         confusion[actual,predicted] += 1
     metrics = {
         "labels": list(CLASSES), "train_samples": len(y),
-        "unknown_examples_replaced": replaced, "unknown_families": FAMILIES,
+        "unknown_examples_replaced": replaced,
+        "unknown_fraction": args.unknown_fraction,
+        "unknown_families": FAMILIES,
         "validation_samples": len(validation_y),
         "validation_accuracy": float(np.mean(pred==truth)),
         "per_class_recall": {name:float(confusion[i,i]/max(confusion[i].sum(),1))
@@ -59,8 +67,8 @@ def main():
         "confusion_matrix": confusion.tolist(),
         "limitations": "Synthetic labels are ambiguous; not validated on live RF"}
     args.output_dir.mkdir(parents=True,exist_ok=True)
-    torch.save(model.state_dict(),args.output_dir/"synthetic_v4.pt")
-    (args.output_dir/"synthetic_v4_metrics.json").write_text(
+    torch.save(model.state_dict(),args.output_dir/f"{args.model_stem}.pt")
+    (args.output_dir/f"{args.model_stem}_metrics.json").write_text(
         json.dumps(metrics,indent=2)+"\n",encoding="utf-8")
     print(json.dumps(metrics,indent=2),flush=True)
 
