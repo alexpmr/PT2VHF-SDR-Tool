@@ -75,3 +75,25 @@ Nesse caso pode obter --center-hz do JSON; para WAVs legados sem sidecar,
 Estes metadados não são assinados nem provam RF real. O WAV do programa
 já recebe remoção DC por bloco antes de ser escrito; o sidecar declara
 esse processamento. Encerramentos abruptos podem deixar WAVs sem sidecar.
+
+## Proteção contra interrupção e alteração de gravações
+
+Na branch experimental, o gravador cria um sidecar `nome.wav.iq.json` com
+`capture_state: recording` e `completed: false` **no início** da gravação.
+Esse marcador é intencionalmente inadequado para o conversor. Após fechar
+o WAV, o aplicativo calcula SHA-256 **do arquivo inteiro**, informa seu
+tamanho e substitui atomicamente o sidecar pelo estado `complete`.
+
+O conversor verifica o tamanho e o SHA-256 antes de preparar o IQ canalizado.
+Uma divergência de conteúdo, arquivos com metadados incompletos ou gravações
+interrompidas são rejeitados — inclusive quando `--center-hz` é informado.
+Gravações antigas, sem sidecar, exigem centro manual; sidecars legados
+(schema 1) permanecem aceitos, mas `capture_integrity_verified` será `false`.
+Um arquivo novo e válido (schema 2) informa `capture_integrity_verified: true`.
+
+Esse SHA-256 permite detectar corrupção ou alteração acidental. **Não é uma
+assinatura digital nem autentica a origem RF**: uma pessoa pode trocar
+deliberadamente WAV e JSON. O cálculo integral ocorre no encerramento do
+arquivo, podendo introduzir atraso ao finalizar gravações muito extensas.
+Evite usar essa funcionalidade em gravações prolongadas sem monitorar espaço
+em disco e os limites do formato WAV RIFF.
