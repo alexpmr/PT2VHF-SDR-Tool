@@ -86,7 +86,7 @@ def test_mainwindow_contains_new_decoder_and_orbital_panels(qt_lifecycle):
     from pt2vhf.ui.main_window import MainWindow
     w = MainWindow()
     try:
-        assert w.decoder_tabs.indexOf(w.dec_panel) >= 0
+        assert w.decoder_tabs.widget(3).widget() is w.dec_panel
         assert w.scan_panel.tabs.indexOf(w.dec_panel) == -1
         assert w.sonde_area.indexOf(w.sonde_panel) >= 0
         assert w.sonde_area.indexOf(w.sonde_feed) >= 0
