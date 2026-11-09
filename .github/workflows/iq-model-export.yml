@@ -42,7 +42,7 @@ jobs:
           PY
       - name: Evaluate ONNX on unseen synthetic signals and RF-like impairments
         run: |
-          python scripts/evaluate_iq_synthetic_stress.py --model models/iq/synthetic_v2.onnx --output models/iq/synthetic_v2_stress_metrics.json
+          PYTHONPATH=. python scripts/evaluate_iq_synthetic_stress.py --model models/iq/synthetic_v2.onnx --output models/iq/synthetic_v2_stress_metrics.json
       - name: Install Qt Linux system libraries
         run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
       - name: Run IQ classifier unit tests
