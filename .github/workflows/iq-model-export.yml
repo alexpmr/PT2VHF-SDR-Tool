@@ -7,6 +7,8 @@ on:
       - 'scripts/train_iq_augmented_v3.py'
       - 'scripts/iq_augmentation.py'
       - 'scripts/compare_iq_stress.py'
+      - 'scripts/iq_out_of_family.py'
+      - 'scripts/evaluate_iq_ood.py'
       - 'scripts/export_iq_synthetic_v2.py'
       - 'scripts/evaluate_iq_synthetic_stress.py'
       - 'pt2vhf/dsp/iq_classifier.py'
@@ -14,6 +16,7 @@ on:
       - 'tests/test_iq_classifier_resampling.py'
       - 'tests/test_iq_classifier_contract.py'
       - 'tests/test_iq_augmentation.py'
+      - 'tests/test_iq_ood_signals.py'
       - '.github/workflows/iq-model-export.yml'
 jobs:
   train-export-validate:
@@ -55,6 +58,9 @@ jobs:
       - name: Compare augmented candidate with fixed synthetic baseline
         run: |
           python scripts/compare_iq_stress.py --reference models/iq/synthetic_v2_stress_metrics.json --candidate models/iq/synthetic_v3_stress_metrics.json --output models/iq/synthetic_v3_comparison.json
+      - name: Diagnose out-of-family IQ and false-confidence errors
+        run: |
+          PYTHONPATH=. python scripts/evaluate_iq_ood.py --reference models/iq/synthetic_v2.onnx --candidate models/iq/synthetic_v3.onnx --output models/iq/synthetic_v3_ood_metrics.json
       - name: Install Qt Linux system libraries
         run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
       - name: Run IQ classifier unit tests
@@ -62,7 +68,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           python -m pip install scipy pytest PySide6==6.11.3
-          python -m pytest -q tests/test_iq_classifier.py tests/test_iq_classifier_worker.py tests/test_iq_classifier_resampling.py tests/test_iq_classifier_contract.py tests/test_iq_augmentation.py
+          python -m pytest -q tests/test_iq_classifier.py tests/test_iq_classifier_worker.py tests/test_iq_classifier_resampling.py tests/test_iq_classifier_contract.py tests/test_iq_augmentation.py tests/test_iq_ood_signals.py
       - name: Verify synthetic validation metrics and record checksums
         run: |
           python - <<'PY'
@@ -81,11 +87,15 @@ jobs:
           assert candidate["labels"] == data["labels"]
           assert candidate["validation_v2_seed"]["accuracy"] >= 0.94
           assert all(comparison["criteria"].values())
+          ood = json.loads(Path("models/iq/synthetic_v3_ood_metrics.json").read_text(encoding="utf-8"))
+          assert ood["classes_not_evaluated"] == ["WFM"]
+          assert ood["models"]["v2"]["labeled_samples"] == ood["models"]["v3"]["labeled_samples"]
+          assert ood["models"]["v2"]["negative_samples"] == ood["models"]["v3"]["negative_samples"]
           assert stress["conditions"]["nominal"]["top1_accuracy"] >= 0.94
           assert p.is_file() and Path("models/iq/synthetic_v2.onnx").stat().st_size > 0
           PY
           cd models/iq
-          sha256sum synthetic_v2.onnx synthetic_v2.pt synthetic_v2_metrics.json synthetic_v2_stress_metrics.json synthetic_v3.onnx synthetic_v3.pt synthetic_v3_metrics.json synthetic_v3_stress_metrics.json synthetic_v3_comparison.json > SHA256SUMS
+          sha256sum synthetic_v2.onnx synthetic_v2.pt synthetic_v2_metrics.json synthetic_v2_stress_metrics.json synthetic_v3.onnx synthetic_v3.pt synthetic_v3_metrics.json synthetic_v3_stress_metrics.json synthetic_v3_comparison.json synthetic_v3_ood_metrics.json > SHA256SUMS
           sha256sum -c SHA256SUMS
       - name: Upload experimental model and metrics
         uses: actions/upload-artifact@v4
@@ -101,5 +111,6 @@ jobs:
             models/iq/synthetic_v3_metrics.json
             models/iq/synthetic_v3_stress_metrics.json
             models/iq/synthetic_v3_comparison.json
+            models/iq/synthetic_v3_ood_metrics.json
             models/iq/SHA256SUMS
           if-no-files-found: error
