@@ -59,3 +59,19 @@ O modo indicado deve ser confirmado **independentemente** da rede neural. WFM n�
 
 
 Consulte também docs/IQ_DATASET_AUDIT.md para a auditoria de qualidade e detecção de trechos repetidos entre sessões.
+
+## Metadados de proveniência da captura IQ
+
+O gravador desta branch experimental gera um sidecar no formato
+nome.wav.iq.json ao finalizar a captura. Ele registra centro e taxa de
+amostragem, VFO/mode iniciais, uso de VOX, contagem de frames e mudanças
+de centro/taxa durante a gravação. Não contém amostras nem indicativos.
+
+O conversor consulta o sidecar automaticamente, bloqueia capturas com
+VOX, mudanças de centro, erros de amostragem ou metadados incompletos.
+Nesse caso pode obter --center-hz do JSON; para WAVs legados sem sidecar,
+--center-hz permanece obrigatório.
+
+Estes metadados não são assinados nem provam RF real. O WAV do programa
+já recebe remoção DC por bloco antes de ser escrito; o sidecar declara
+esse processamento. Encerramentos abruptos podem deixar WAVs sem sidecar.
