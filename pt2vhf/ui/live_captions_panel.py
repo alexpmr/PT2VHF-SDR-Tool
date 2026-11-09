@@ -19,6 +19,9 @@ class LiveCaptionsPanel(QWidget):
     def __init__(self, cfg, parent=None):
         super().__init__(parent)
         main = QVBoxLayout(self)
+        # Separate settings from the caption history: both are hosted under Ferramentas.
+        self.settings_widget = QWidget()
+        settings_layout = QVBoxLayout(self.settings_widget)
         top = QHBoxLayout()
         top.addWidget(QLabel("Modelo local:"))
         self.model = QComboBox()
@@ -49,9 +52,9 @@ class LiveCaptionsPanel(QWidget):
         export = QPushButton("Exportar CSV")
         export.clicked.connect(self.export_csv)
         top.addWidget(export)
-        main.addLayout(top)
+        settings_layout.addLayout(top)
         self.model_status = QLabel("")
-        main.addWidget(self.model_status)
+        settings_layout.addWidget(self.model_status)
         self.model.currentIndexChanged.connect(self.refresh_model_status)
         self.refresh_model_status()
         note = QLabel("Reconhecimento local com faster-whisper: escolha e baixe o modelo uma vez. "
@@ -59,7 +62,8 @@ class LiveCaptionsPanel(QWidget):
                       "A legenda é gerada em blocos de poucos segundos, não palavra a palavra. "
                       "Tradução automática ainda não está disponível.")
         note.setWordWrap(True)
-        main.addWidget(note)
+        settings_layout.addWidget(note)
+        settings_layout.addStretch(1)
         self.table = QTableWidget(0, len(self.HEADERS))
         self.table.setHorizontalHeaderLabels(self.HEADERS)
         self.table.verticalHeader().setVisible(False)
