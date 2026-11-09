@@ -82,6 +82,35 @@ def test_lcd_theme_band_selection_and_unavailable_bands(qt_lifecycle):
         keys.refresh(145_500_000, {"20 m": "O SDR atual não recebe HF"})
         assert keys.buttons["2 m"].isChecked()
         assert not keys.buttons["20 m"].isChecked()
-        assert "HF" in keys.buttons["20 m"].toolTip()
+        assert keys.buttons["20 m"].isHidden()
+        assert not keys.buttons["20 m"].isEnabled()
+        assert not keys.buttons["2 m"].isHidden()
+        assert keys.visible_names == ["2 m"]
+    finally:
+        lcd.close()
+
+def test_manual_scale_keeps_aspect_and_compacts_available_bands(qt_lifecycle):
+    lcd = LCDDisplay()
+    keys = BandKeys(["20 m", "2 m", "70 cm"], lcd)
+    lcd.attach_band_keys(keys)
+    try:
+        lcd.set_preferred_scale(70)
+        assert lcd._preferred_percent == 70
+        assert lcd.maximumWidth() == round(lcd.DESIGN_WIDTH * 0.7)
+        assert lcd.maximumHeight() == round(lcd.DESIGN_HEIGHT * 0.7)
+        assert lcd.sizeHint().width() == round(lcd.DESIGN_WIDTH * 0.7)
+        keys.refresh(145_500_000, {"20 m": "Sem recepção HF", "70 cm": "Sem UHF"})
+        assert keys.visible_names == ["2 m"]
+        assert keys.buttons["20 m"].isHidden()
+        assert keys.buttons["70 cm"].isHidden()
+        assert keys.buttons["2 m"].isEnabled()
+        assert keys.layout().itemAtPosition(0, 0).widget() is keys.buttons["2 m"]
+        keys.refresh(433_000_000, {"20 m": "Sem HF"})
+        assert keys.visible_names == ["2 m", "70 cm"]
+        assert keys.layout().itemAtPosition(0, 1).widget() is keys.buttons["70 cm"]
+        lcd.set_preferred_scale(800)
+        assert lcd._preferred_percent == 150
+        lcd.set_preferred_scale(10)
+        assert lcd._preferred_percent == 50
     finally:
         lcd.close()
