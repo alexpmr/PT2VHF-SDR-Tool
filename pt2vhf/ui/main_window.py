@@ -429,7 +429,7 @@ class MainWindow(QMainWindow):
         row.addWidget(self.weak_btn)
         self.live_btn = QPushButton("Legendas")
         self.live_btn.setCheckable(True)
-        self.live_btn.setToolTip("Transcreve fonia com faster-whisper local. Baixe o modelo em Scanner > Legendas.")
+        self.live_btn.setToolTip("Transcreve fonia com faster-whisper local. Configure em Ferramentas > Transcrição.")
         row.addWidget(self.live_btn)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
