@@ -5,9 +5,11 @@ on:
     paths:
       - 'scripts/train_iq_synthetic_ci.py'
       - 'scripts/export_iq_synthetic_v2.py'
+      - 'scripts/evaluate_iq_synthetic_stress.py'
       - 'pt2vhf/dsp/iq_classifier.py'
       - 'pt2vhf/dsp/iq_classifier_worker.py'
       - 'tests/test_iq_classifier_resampling.py'
+      - 'tests/test_iq_classifier_contract.py'
       - '.github/workflows/iq-model-export.yml'
 jobs:
   train-export-validate:
@@ -38,6 +40,9 @@ jobs:
           assert abs(sum(result.probabilities.values()) - 1.0) < 1e-5
           print(result)
           PY
+      - name: Evaluate ONNX on unseen synthetic signals and RF-like impairments
+        run: |
+          python scripts/evaluate_iq_synthetic_stress.py --model models/iq/synthetic_v2.onnx --output models/iq/synthetic_v2_stress_metrics.json
       - name: Install Qt Linux system libraries
         run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
       - name: Run IQ classifier unit tests
@@ -45,7 +50,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           python -m pip install scipy pytest PySide6==6.11.3
-          python -m pytest -q tests/test_iq_classifier.py tests/test_iq_classifier_worker.py tests/test_iq_classifier_resampling.py
+          python -m pytest -q tests/test_iq_classifier.py tests/test_iq_classifier_worker.py tests/test_iq_classifier_resampling.py tests/test_iq_classifier_contract.py
       - name: Verify synthetic validation metrics and record checksums
         run: |
           python - <<'PY'
@@ -54,10 +59,16 @@ jobs:
           p = Path("models/iq/synthetic_v2_metrics.json")
           data = json.loads(p.read_text(encoding="utf-8"))
           print("Synthetic validation metrics:", data)
+          stress = json.loads(Path("models/iq/synthetic_v2_stress_metrics.json").read_text(encoding="utf-8"))
+          assert data["validation_samples"] == 1400
+          assert data["accuracy"] >= 0.94
+          assert stress["scope"].startswith("Experimental synthetic-only")
+          assert len(stress["conditions"]) == 6
+          assert stress["conditions"]["nominal"]["top1_accuracy"] >= 0.94
           assert p.is_file() and Path("models/iq/synthetic_v2.onnx").stat().st_size > 0
           PY
           cd models/iq
-          sha256sum synthetic_v2.onnx synthetic_v2.pt synthetic_v2_metrics.json > SHA256SUMS
+          sha256sum synthetic_v2.onnx synthetic_v2.pt synthetic_v2_metrics.json synthetic_v2_stress_metrics.json > SHA256SUMS
           sha256sum -c SHA256SUMS
       - name: Upload experimental model and metrics
         uses: actions/upload-artifact@v4
@@ -67,5 +78,6 @@ jobs:
             models/iq/synthetic_v2.onnx
             models/iq/synthetic_v2.pt
             models/iq/synthetic_v2_metrics.json
+            models/iq/synthetic_v2_stress_metrics.json
             models/iq/SHA256SUMS
           if-no-files-found: error
