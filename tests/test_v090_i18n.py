@@ -21,7 +21,10 @@ def test_ui_language_changes_without_mutating_internal_values(monkeypatch, tmp_p
         assert w.language_combo.count() == 7
         w.language_combo.setCurrentIndex(w.language_combo.findData("en"))
         assert w.tabs.tabText(0) == "Receiver"
-        assert w.tabs.tabText(w.tabs.indexOf(w.pages["sat"])) == "Satellites"
+        assert w.tabs.tabText(w.tabs.indexOf(w.pages["decode"])) == "Decoding"
+        assert w.tabs.tabText(w.tabs.indexOf(w.pages["tools"])) == "Tools"
+        assert w.tools_tabs.tabText(0) == "Transcription"
+        assert w.tools_tabs.tabText(1) == "Live captions"
         assert w.cfg["language"] == "en"
         assert w.cfg["mode"] in ("NFM", "AM", "WFM", "USB", "LSB", "CW")
         w.language_combo.setCurrentIndex(w.language_combo.findData("pt"))
