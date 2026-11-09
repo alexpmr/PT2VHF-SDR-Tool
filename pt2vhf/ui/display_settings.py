@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
-                               QLabel, QRadioButton, QButtonGroup, QVBoxLayout, QWidget)
+                               QLabel, QRadioButton, QButtonGroup, QSlider, QVBoxLayout, QWidget)
 
 from .analog import AnalogPanel, STYLES
 
@@ -48,6 +48,7 @@ class ThemeTile(QFrame):
 class DisplaySettings(QWidget):
     bandsChanged = Signal(list)
     analogChanged = Signal(bool, str)
+    lcdScaleChanged = Signal(int)
 
     def __init__(self, cfg, theme_combo, parent=None):
         super().__init__(parent)
@@ -73,6 +74,24 @@ class DisplaySettings(QWidget):
         row.addWidget(self.theme_combo)
         row.addStretch()
         main.addLayout(row)
+
+        scale_group = QGroupBox("Tamanho do display LCD")
+        scale_row = QHBoxLayout(scale_group)
+        scale_row.addWidget(QLabel("Escala:"))
+        self.lcd_scale = QSlider(Qt.Horizontal)
+        self.lcd_scale.setRange(50, 150)
+        self.lcd_scale.setSingleStep(5)
+        self.lcd_scale.setPageStep(10)
+        self.lcd_scale.setTickInterval(25)
+        self.lcd_scale.setTickPosition(QSlider.TicksBelow)
+        self.lcd_scale.setValue(int(cfg.get("lcd_scale_percent", 100)))
+        self.lcd_scale.setMaximumWidth(310)
+        self.lcd_scale_value = QLabel(f"{self.lcd_scale.value()}%")
+        self.lcd_scale.valueChanged.connect(self._lcd_scale_changed)
+        scale_row.addWidget(self.lcd_scale)
+        scale_row.addWidget(self.lcd_scale_value)
+        scale_row.addStretch()
+        main.addWidget(scale_group)
 
         group = QGroupBox("Teclas de banda exibidas junto ao display")
         band_grid = QGridLayout(group)
@@ -115,6 +134,10 @@ class DisplaySettings(QWidget):
         self.analog_enable.toggled.connect(self._analog_changed)
         main.addWidget(analog_group)
         main.addStretch()
+
+    def _lcd_scale_changed(self, percent):
+        self.lcd_scale_value.setText(f"{percent}%")
+        self.lcdScaleChanged.emit(int(percent))
 
     def select_theme(self, name):
         for key, tile in self.tiles.items():
