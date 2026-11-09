@@ -2,6 +2,26 @@
 
 **Estado:** somente branch `feature/iq-signal-classifier`, PR #2 em rascunho. Não foi integrado à `main` nem publicado em instaladores. **Nenhuma acurácia com RF real foi medida.**
 
+## Conclusão dos candidatos v4/v5 e preparação de RF real — 09/11/2026
+
+- [Treinamento v4 e avaliação dos três primeiros candidatos](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42691075377): 40 testes IQ aprovados; v4 treinado com aproximadamente 90% dos exemplos UNKNOWN substituídos por famílias negativas sintéticas independentes; artefato ZIP ID `13706388890`.
+- [Comparação dos quatro modelos](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42691788442): CI aprovado, 40 testes IQ, 4 exportações ONNX validadas (opset 18); artefato ZIP ID `13707158122`, SHA-256 `91d3c7e7558849783a3fe2591d208bddd0e970aac5dafb7594205493869b82f5`. V5 usa **45%** de exemplos UNKNOWN substituídos, contra 90% no v4; todos avaliados sobre os mesmos 960 exemplos rotulados e 320 negativos por modelo.
+
+| Métrica sintética externa (mesmo workflow) | v3 | v4 | v5 |
+| --- | ---: | ---: | ---: |
+| Acurácia geral top-1 | 70,0% | **77,2%** | 69,5% |
+| Recall UNKNOWN (média sobre SNR 0/6/12/20 dB) | 0% | **100%** | 60% |
+| Erros de classificação com confiança ≥80% | 24,7% | **15,2%** | 19,3% |
+| Falsa aceitação OOD com confiança ≥80% | 86,3% | 20,3% | **18,4%** |
+| Sinais conhecidos corretamente aceitos com confiança ≥80% | **78,2%** | 61,4% | 66,5% |
+| Erro de calibração ECE | 0,248 | **0,157** | 0,207 |
+
+O v4 reduz falso positivo e recupera UNKNOWN, mas tem recall de CW entre **12,5% e 20%** (dependendo de SNR); o v5 não resolve o problema. A falsa aceitação de portadora contínua no v4 ainda é ~78,7%. **Nenhum modelo deve ser integrado à sintonia automática nem promovido para produção.** Treinar e ajustar continuamente na mesma bateria sintética cria risco de sobreajuste por seleção de hiperparâmetros; reservar conjunto RF independente e sessões cegas.
+
+- **Preparado o próximo gate:** [protocolo para gravações reais](IQ_RF_EVALUATION.md) e `scripts/evaluate_iq_recordings.py` com WAV IQ estéreo PCM16/48 kS/s centrado e metadados rotulados por sessão. O relatório contém matriz de confusão e média por sessão, sem nomes/indicativos no JSON. O caminho de arquivos é restrito à pasta de gravações.
+- [CI da ferramenta WAV](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42693172356): **163 testes Linux/Qt aprovados**, incluindo leitor e agregação com WAV sintetizados. **Nenhuma captura de antena/SDR foi utilizada nesse CI.**
+- **Critério de passagem a campo:** gravações com rótulo verificado externamente, múltiplas sessões e SDRs, SNR variado, sinais vazios e testes de detecção de desconhecidos; WFM requer contrato de taxa de amostragem diferente. Não transportar o relatório sintético para uma alegação de acurácia em RF.
+
 ## Avaliação independente do gerador e confiança OOD (09/11/2026)
 
 **Achado de bloqueio para implantação:** os modelos têm generalização insuficiente para sinais sintéticos gerados fora da família de treino. A medida nominal anterior (v3 97,50%) cai para **70,0%** em um conjunto de teste diferente, sem nenhuma captura SDR real. Não extrapolar a taxa para a operação no ar.
