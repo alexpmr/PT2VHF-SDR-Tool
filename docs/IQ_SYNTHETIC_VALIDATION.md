@@ -2,6 +2,31 @@
 
 **Estado:** somente branch `feature/iq-signal-classifier`, PR #2 em rascunho. Não foi integrado à `main` nem publicado em instaladores. **Nenhuma acurácia com RF real foi medida.**
 
+## Avaliação independente do gerador e confiança OOD (09/11/2026)
+
+**Achado de bloqueio para implantação:** os modelos têm generalização insuficiente para sinais sintéticos gerados fora da família de treino. A medida nominal anterior (v3 97,50%) cai para **70,0%** em um conjunto de teste diferente, sem nenhuma captura SDR real. Não extrapolar a taxa para a operação no ar.
+
+- Código de geração independente: `scripts/iq_out_of_family.py`; avaliador `scripts/evaluate_iq_ood.py`; unitários `tests/test_iq_ood_signals.py`.
+- Amostras por modelo: **960 rotuladas** (CW, AM, NFM, USB, LSB e UNKNOWN; SNR 0/6/12/20 dB, 40 por classe/nível) e **320 sinais sem classe conhecida** (portadora contínua, chirp, múltiplas portadoras e ruído impulsivo).
+- **WFM intencionalmente excluído:** 48 kS/s / 2.048 IQ não permite avaliar corretamente o espectro ocupado de FM comercial. Exige novo contrato de taxa de amostragem/modelagem ou extração de atributos apropriada.
+- **Acurácia top-1:** v2 **67,6%**; v3 **70,0%**. Erros de alta confiança (probabilidade máxima ≥0,80) em 24,0% (v2) e 24,7% (v3) das amostras rotuladas. ECE de 10 bins 0,257 (v2) / 0,248 (v3).
+- **Ponto crítico:** no conjunto de ruído colorido rotulado UNKNOWN, o v3 teve recall **0%** em todos os níveis de SNR; o v2 também caiu para 0% a partir de 6 dB.
+- **Alarmes falsos v3 em sinais sem classe conhecida com limiar 0,80:** portadora contínua 88,7%; chirp 62,5%; múltiplas portadoras 93,8%; ruído impulsivo **100%**.
+
+| Limiar de confiança v3 | Conhecidos corretamente aceitos | Ruído UNKNOWN incorretamente aceito | Sinais fora das classes incorretamente aceitos |
+| --- | ---: | ---: | ---: |
+| 0,80 | 78,2% | 100,0% | 86,3% |
+| 0,90 | 74,5% | 100,0% | 79,7% |
+| 0,95 | 70,5% | 99,4% | 75,0% |
+| 0,99 | 61,6% | 82,5% | 65,0% |
+| 0,999 | 52,1% | 17,5% | 54,1% |
+
+**Interpretação:** aumentar o limiar de softmax sozinho **não separa classes conhecidas de sinais desconhecidos**; mesmo a 99,9%, 54,1% das amostras OOD são incorretamente aceitas, enquanto apenas 52,1% dos sinais válidos são aceitos corretamente. São métricas específicas de sinais sintéticos, não uma estimativa de RF real.
+
+**Orientação para o próximo experimento:** treinar uma classe UNKNOWN com diversidade muito maior e dados independentes, medir *false accept rate* sob distribuição deslocada, calibrar decisões separadamente da classe, usar detecção de ocupação/qualidade do canal e testar validação por sessão/equipamento em gravações IQ verdadeiras. **Não ativar seleção automática de modo no receptor.** 
+
+Evidências: <https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42668781926> (execução OOD aprovada, relatório e modelo), análise inicial de limiares em <https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42669412249> (resultados medidos, mas CI reprovado por import do teste, posteriormente corrigido).
+
 ## Resultado adicional: treinamento robusto v3 (09/11/2026)
 
 - **Modelo candidato v3:** mesma arquitetura e mesmas sete classes do v2; 8.400 exemplos de treinamento, com 80% de probabilidade de augmentations aleatórias (ganho/fase, frequência ±380 Hz, desequilíbrio I/Q, DC e ruído adicional). Treinamento determinístico com 22 épocas.
