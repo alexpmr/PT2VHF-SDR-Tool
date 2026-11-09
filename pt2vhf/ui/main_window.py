@@ -176,7 +176,8 @@ class MainWindow(QMainWindow):
         self.decoder_tabs.addTab(_scroll(self.dec_panel), "APRS / DTMF / CTCSS")
         # Configuração Whisper e histórico são páginas independentes, sem controles duplicados.
         self.tools_tabs = QTabWidget()
-        self.tools_tabs.addTab(_scroll(self.live_captions_panel.settings_widget), "Transcrição")
+        self.caption_settings_page = _scroll(self.live_captions_panel.settings_widget)
+        self.tools_tabs.addTab(self.caption_settings_page, "Transcrição")
         self.tools_tabs.addTab(self.live_captions_panel, "Legendas ao vivo")
         self.sscan: SpectrumScanner | None = None
         self._hits_t = 0.0
@@ -1855,7 +1856,7 @@ class MainWindow(QMainWindow):
                 self.live_btn.blockSignals(False)
                 self.cfg["live_caption_enabled"] = False
                 self.tabs.setCurrentWidget(self.pages["tools"])
-                self.tools_tabs.setCurrentWidget(self.live_captions_panel.settings_widget.parentWidget())
+                self.tools_tabs.setCurrentWidget(self.caption_settings_page)
                 QMessageBox.information(
                     self, "Transcrição local",
                     f"Modelo Whisper {size} não disponível. Abra Ferramentas > Transcrição "
