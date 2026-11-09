@@ -1,6 +1,13 @@
 # Backlog — PT2VHF SDR Tool
 
-Itens registrados pelo mantenedor. Não implementar até o pedido de versão nova.
+Itens registrados pelo mantenedor. Implementar somente com solicitação de versão; distinguir código, testes, homologação e publicação.
+
+## Estado da v0.13.0 — 09/11/2026
+- **Publicado:** GitHub Release v0.13.0 com Setup/Portable Windows x64, hashes SHA-256 e build CI Windows/Linux aprovado (SHA `067920719c69eda68b5c5c850d09ca731f257fae`).
+- **Site:** catálogo público `updates.json` e endpoint `update.php?product=sdr` anunciam v0.13.0. Downloads passam pelo site e seguem até a release do GitHub. O workflow de segmentação dos arquivos no repositório do site falhou antes de executar os passos.
+- **Pendente P1 — OTA:** `update.php` fornece URLs `download.php?product=sdr&file=...`, mas o `updater.py` somente aceita `/downloads/sdr-tool/...` e não segue redirecionamentos. **Atualização automática não homologada**; manter SHA-256/tamanho/origem oficial ao corrigir. Download manual disponível na página oficial.
+- **Pendente de homologação:** testes com SDR real (RS41, bandas, S-meter), interface Windows em monitores diversos e qualidade de transcrição. Decodificadores RF adicionais seguem no backlog.
+
 
 ## P1 — tamanho ajustável do LCD e ocultação de bandas incompatíveis (09/11/2026)
 - **Redimensionamento pelo usuário:** permitir aumentar ou reduzir o tamanho do display LCD diretamente na interface ou em `Configurações → Display`, com controle claro e previsível; salvar a **última dimensão/escala escolhida** nas preferências e restaurá-la após reiniciar o aplicativo.
@@ -9,7 +16,7 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 - **Atualização dinâmica:** recalcular os botões visíveis ao conectar/desconectar, trocar fonte ou receptor, alterar direct sampling ou atualizar as capacidades reportadas pelo driver. Exibir apenas a interseção entre bandas configuradas pelo usuário e bandas realmente disponíveis; não apagar da configuração as preferências de bandas ocultadas. Sem capacidade conhecida, não inventar suporte; apresentar estado de receptor/capacidade ainda não identificada.
 - **Layout/aceite:** reorganizar a grade de até 5 colunas conforme a quantidade de bandas disponíveis sem espaços vazios ou controles sobrepostos; verificar RTL-SDR V3/V4 (inclusive HF), simulador, rtl_tcp e SoapySDR quando houver hardware; conferir persistência após reinício, monitores de tamanhos diferentes, os 5 temas, modo apresentação e cliques após escala. Testes Qt automatizados e homologação visual em Windows.
 - **Precedência:** este pedido substitui a regra anterior de `bandas indisponíveis esmaecidas`; o redimensionamento automático existente não atende sozinho à exigência de **ajuste manual persistente**.
-- **Status:** controles de escala persistente e ocultação dinâmica implementados no código da v0.13.0, com regressões Qt; pendente homologação visual/SDR real, build Windows e publicação no site.
+- **Status:** escala persistente e ocultação de bandas implementadas na v0.13.0, com CI e build Windows aprovados e catálogo publicado no site; faltam homologação visual/SDR real e correção do OTA.
 
 ## Legendas ao vivo — atualização de interface (09/11/2026)
 - **Implementado no código (sem nova release):** a aba `Legendas ao vivo` sai de Scanner e passa a `Ferramentas → Legendas ao vivo`, reservada a histórico e exportação CSV.
