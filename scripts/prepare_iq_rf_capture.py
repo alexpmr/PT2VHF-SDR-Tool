@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.signal import firwin, lfilter
+from pt2vhf.iq_provenance import sidecar_path
 
 RATE = 48000
 LABELS = ("CW", "AM", "NFM", "USB", "LSB", "UNKNOWN")
@@ -32,12 +33,48 @@ def input_info(src: Path):
     return fs, frames
 
 
-def convert(source: Path, dest: Path, center_hz: float, target_hz: float, chunk=65536):
+def check_recording_metadata(source: Path, sample_rate: int, frames: int,
+                             requested_center: float | None) -> tuple[float, bool]:
+    """Reject invalid PT2VHF capture metadata; legacy WAV needs manual center.
+
+    Metadata is unsigned operator information, not trusted proof of RF.
+    """
+    path = sidecar_path(source)
+    if not path.exists():
+        if requested_center is None:
+            raise ValueError("Missing --center-hz and PT2VHF IQ sidecar")
+        return float(requested_center), False
+    meta = json.loads(path.read_text(encoding="utf-8"))
+    if (meta.get("schema_version") != 1 or
+        meta.get("capture_kind") != "pt2vhf_raw_iq" or
+        meta.get("wav_name") != source.name or
+        meta.get("completed") is not True):
+        raise ValueError("Invalid/incomplete IQ recording sidecar")
+    if (meta.get("suitable_for_continuous_channelization") is not True or
+        meta.get("invalid_reasons") or meta.get("iq_vox") is not False or
+        meta.get("center_change_count") != 0 or
+        meta.get("sample_rate_change_count") != 0):
+        raise ValueError("IQ recording changed frequency/rate or used VOX; cannot channelize safely")
+    if (meta.get("sample_rate_hz") != sample_rate or
+        meta.get("written_frames") != frames):
+        raise ValueError("IQ sidecar sample rate/frame count mismatch")
+    center = meta.get("center_hz")
+    if not isinstance(center, (int, float)) or not math.isfinite(float(center)) or center <= 0:
+        raise ValueError("Invalid center frequency in IQ sidecar")
+    if requested_center is not None and abs(float(center) - float(requested_center)) > 0.5:
+        raise ValueError("Requested center frequency differs from IQ recording sidecar")
+    return float(center), True
+
+
+def convert(source: Path, dest: Path, center_hz: float | None, target_hz: float, chunk=65536):
     if chunk < 1:
         raise ValueError("chunk must be positive")
-    if not all(math.isfinite(float(v)) and v > 0 for v in (center_hz, target_hz)):
+    if not math.isfinite(float(target_hz)) or target_hz <= 0:
+        raise ValueError("Frequencies must be positive and finite")
+    if center_hz is not None and (not math.isfinite(float(center_hz)) or center_hz <= 0):
         raise ValueError("Frequencies must be positive and finite")
     fs, frames = input_info(source)
+    center_hz, metadata_checked = check_recording_metadata(source, fs, frames, center_hz)
     ratio = fs // RATE
     delta = float(target_hz) - float(center_hz)
     if abs(delta) >= fs / 2 - RATE / 2:
@@ -96,6 +133,7 @@ def convert(source: Path, dest: Path, center_hz: float, target_hz: float, chunk=
         os.link(tmp, dest)
         return {"input_rate":fs, "output_rate":RATE, "frames":written,
                 "center_hz":center_hz, "target_hz":target_hz,
+                "capture_metadata_checked":metadata_checked,
                 "provenance_verified":False}
     finally:
         if tmp is not None:
@@ -138,7 +176,8 @@ def main():
     p=argparse.ArgumentParser(description="Convert broadband IQ WAV to 48k channel IQ for ONNX tests")
     p.add_argument("--input",type=Path,required=True)
     p.add_argument("--output",type=Path,required=True)
-    p.add_argument("--center-hz",type=float,required=True)
+    p.add_argument("--center-hz",type=float,
+                   help="Required for legacy WAV; optional when valid .iq.json sidecar exists")
     p.add_argument("--target-hz",type=float,required=True)
     p.add_argument("--mode",choices=LABELS,required=True)
     p.add_argument("--device",required=True)
