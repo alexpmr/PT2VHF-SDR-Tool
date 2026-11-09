@@ -9,6 +9,8 @@ import numpy as np
 import torch
 from torch import nn
 
+ONNX_OPSET = 18  # PyTorch's current exporter emits 18; avoid failed 17 down-conversion.
+
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
@@ -36,12 +38,24 @@ def main():
     example = torch.from_numpy(rng.normal(size=(1,2,2048)).astype("float32"))
     with torch.no_grad():
         torch.onnx.export(model, example, str(args.output), input_names=["iq"],
-                          output_names=["logits"], opset_version=17)
-    onnx.checker.check_model(onnx.load(str(args.output)))
+                          output_names=["logits"], opset_version=ONNX_OPSET)
+    model_proto = onnx.load(str(args.output))
+    onnx.checker.check_model(model_proto)
+    exported_opsets = {item.domain: item.version for item in model_proto.opset_import}
+    actual_opset = exported_opsets.get("", exported_opsets.get("ai.onnx"))
+    if actual_opset != ONNX_OPSET:
+        raise RuntimeError(f"Unexpected ONNX opset: requested {ONNX_OPSET}, found {actual_opset}")
     session = ort.InferenceSession(str(args.output), providers=["CPUExecutionProvider"])
+    if session.get_inputs()[0].shape != [1, 2, 2048]:
+        raise RuntimeError(f"Unexpected ONNX input shape: {session.get_inputs()[0].shape}")
+    if session.get_outputs()[0].shape != [1, 7]:
+        raise RuntimeError(f"Unexpected ONNX output shape: {session.get_outputs()[0].shape}")
     errors = []
-    for _ in range(10):
-        data = rng.normal(size=(1,2,2048)).astype("float32")
+    # Verify both arbitrary tensors and examples from each signal class.
+    from train_iq_synthetic_ci import CLASSES, sample
+    samples = [rng.normal(size=(1, 2, 2048)).astype("float32") for _ in range(10)]
+    samples.extend(sample(label, rng)[None] for label in CLASSES for _ in range(3))
+    for data in samples:
         with torch.no_grad():
             expected = model(torch.from_numpy(data)).numpy()
         actual = session.run(None, {"iq": data})[0]
@@ -49,7 +63,7 @@ def main():
     max_error = max(errors)
     if max_error > 1e-4:
         raise RuntimeError(f"ONNX parity failed: max error {max_error}")
-    print(f"ONNX validated: {args.output}; max absolute error={max_error:.8f}")
+    print(f"ONNX opset {ONNX_OPSET} validated: {args.output}; {len(samples)} parity cases; max absolute error={max_error:.8f}")
 
 if __name__ == "__main__":
     main()
