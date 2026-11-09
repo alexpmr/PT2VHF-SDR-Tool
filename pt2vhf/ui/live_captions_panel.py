@@ -7,7 +7,7 @@ import time
 from ..live_caption import model_installed
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog,
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDialog,
                                QHBoxLayout, QLabel, QPushButton, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
@@ -22,6 +22,8 @@ class LiveCaptionsPanel(QWidget):
         # Separate settings from the caption history: both are hosted under Ferramentas.
         self.settings_widget = QWidget()
         settings_layout = QVBoxLayout(self.settings_widget)
+        self.enable_live = QCheckBox("Exibir legendas em tempo real no receptor")
+        settings_layout.addWidget(self.enable_live)
         top = QHBoxLayout()
         top.addWidget(QLabel("Modelo local:"))
         self.model = QComboBox()
