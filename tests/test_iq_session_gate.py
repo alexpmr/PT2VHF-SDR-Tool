@@ -111,3 +111,34 @@ def test_bad_limits_rejected(bad):
     rows=[("AM","AM",.96,"known"),("UNKNOWN","UNKNOWN",.96,"unknown")]
     with pytest.raises(ValueError,match="Invalid limits"):
         select(rows,max_far=bad)
+
+
+
+def test_audit_rejects_partial_iq_window_reuse_in_modified_wav(tmp_path):
+    """Different complete files are still a leak if a real IQ window was copied."""
+    a = manifest(tmp_path, "cal.json", "cal", 1200)
+    b = manifest(tmp_path, "hold.json", "hold", 1700)
+    with wave.open(str(tmp_path / "cal-0.wav"), "rb") as wav_file:
+        copied_first_window = wav_file.readframes(2048)
+    with wave.open(str(tmp_path / "hold-0.wav"), "rb") as wav_file:
+        original = wav_file.readframes(4096)
+    with wave.open(str(tmp_path / "hold-0.wav"), "wb") as wav_file:
+        wav_file.setnchannels(2)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(48000)
+        wav_file.writeframes(copied_first_window + original[2048*4:])
+    assert digest(tmp_path / "cal-0.wav") != digest(tmp_path / "hold-0.wav")
+    with pytest.raises(ValueError, match="Identical IQ window"):
+        audit(a, b, tmp_path)
+
+
+def test_sampled_window_hashes_reproducible_and_bounded(tmp_path):
+    from scripts.iq_session_gate import sampled_iq_window_hashes
+    manifest(tmp_path, "cal.json", "cal", 1400)
+    path = tmp_path / "cal-0.wav"
+    a = sampled_iq_window_hashes(path)
+    b = sampled_iq_window_hashes(path, edge_windows=1)
+    assert a and b
+    assert b.issubset(a)
+    with pytest.raises(ValueError, match="positive"):
+        sampled_iq_window_hashes(path, edge_windows=0)
