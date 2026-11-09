@@ -29,8 +29,9 @@ def test_band_keys_unsupported_tooltip(monkeypatch):
     bar = BandKeys(["40 m", "2 m", "70 cm"])
     bar.refresh(145.570e6, {"40 m": "Fora do alcance"})
     assert bar.buttons["2 m"].isChecked()
-    assert bar.buttons["40 m"].isEnabled()
-    assert "Fora do alcance" in bar.buttons["40 m"].toolTip()
+    assert not bar.buttons["40 m"].isEnabled()
+    assert bar.buttons["40 m"].isHidden()
+    assert bar.visible_names == ["2 m", "70 cm"]
     bar.close()
 
 
