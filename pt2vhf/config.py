@@ -62,6 +62,7 @@ DEFAULTS = {
     "wf_speed": 20,
     "spectrum_avg": 0.5,
     "lcd_theme": "Âmbar",
+    "lcd_scale_percent": 100,  # último tamanho manual do LCD (50–150%)
     "ui_level": "Avançado",
     "band_stacks": {},
     "bands_visible": ["160 m", "80 m", "60 m", "40 m", "30 m", "20 m", "17 m",
