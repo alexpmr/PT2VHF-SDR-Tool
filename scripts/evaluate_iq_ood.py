@@ -12,7 +12,10 @@ from pathlib import Path
 import numpy as np
 
 from pt2vhf.dsp.iq_classifier import CLASSES, IQClassifier
-from iq_out_of_family import NEGATIVES, SUPPORTED, negative, sample
+if __package__:
+    from .iq_out_of_family import NEGATIVES, SUPPORTED, negative, sample
+else:
+    from iq_out_of_family import NEGATIVES, SUPPORTED, negative, sample
 
 SNR_LEVELS_DB = (0, 6, 12, 20)
 SEED = 20261112
