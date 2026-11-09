@@ -32,7 +32,7 @@ def ece(confidences: np.ndarray, hits: np.ndarray, bins=10) -> float:
     return error
 
 
-def run(reference_path: Path, candidate_path: Path, count_per_class_snr: int = 40, negatives_per_kind: int = 80) -> dict:
+def run(reference_path: Path, candidate_path: Path, count_per_class_snr: int = 40, negatives_per_kind: int = 80, third_model_path: Path | None = None) -> dict:
     if min(count_per_class_snr, negatives_per_kind) < 1:
         raise ValueError("Sample counts must be positive")
     rng = np.random.default_rng(SEED)
@@ -41,7 +41,10 @@ def run(reference_path: Path, candidate_path: Path, count_per_class_snr: int = 4
     unknown = [(kind, negative(kind, rng))
                for kind in NEGATIVES for _ in range(negatives_per_kind)]
     summary = {}
-    for key, path in (("v2", reference_path), ("v3", candidate_path)):
+    models = [("v2", reference_path), ("v3", candidate_path)]
+    if third_model_path is not None:
+        models.append(("v4", third_model_path))
+    for key, path in models:
         model = IQClassifier(path, min_confidence=0.80)
         by_snr, per_class = {}, {}
         all_probs, all_hits, all_wrong_high = [], [], []
@@ -168,10 +171,11 @@ def main():
     parser.add_argument("--reference", type=Path, required=True)
     parser.add_argument("--candidate", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--third-model", type=Path)
     parser.add_argument("--per-class-snr", type=int, default=40)
     parser.add_argument("--per-negative", type=int, default=80)
     args = parser.parse_args()
-    result = run(args.reference, args.candidate, args.per_class_snr, args.per_negative)
+    result = run(args.reference, args.candidate, args.per_class_snr, args.per_negative, args.third_model)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n",
                            encoding="utf-8")
