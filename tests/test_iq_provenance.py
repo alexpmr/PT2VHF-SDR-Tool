@@ -118,3 +118,132 @@ def test_engine_stop_finalizes_sidecar(tmp_path):
     sidecar=json.loads(sidecar_path(wav).read_text())
     assert sidecar["written_frames"]==4096
     assert sidecar["suitable_for_continuous_channelization"]
+
+def test_pending_marker_exists_before_iq_data(tmp_path):
+    from pt2vhf.engine import Engine
+    from pt2vhf.dsp.receiver import Receiver
+
+    class Source:
+        center_freq = 145500000
+        sample_rate = 240000
+        name = "SYNTHETIC"
+
+    engine = Engine()
+    engine.source = Source()
+    engine.rx = Receiver(240000)
+    path = engine.start_iq_recording(str(tmp_path))
+    marker = json.loads(sidecar_path(path).read_text(encoding="utf-8"))
+    assert marker["schema_version"] == 2
+    assert marker["capture_state"] == "recording"
+    assert marker["completed"] is False
+    assert marker["suitable_for_continuous_channelization"] is False
+    assert "capture_not_completed" in marker["invalid_reasons"]
+    assert marker["wav_sha256"] is None
+    engine.stop_iq_recording()
+    finished = json.loads(sidecar_path(path).read_text(encoding="utf-8"))
+    assert finished["capture_state"] == "complete"
+    assert finished["completed"] is True
+    assert finished["wav_sha256"] is not None
+    assert not finished["suitable_for_continuous_channelization"]
+
+
+def test_new_capture_integrity_and_actual_sha256(tmp_path):
+    from pt2vhf.iq_provenance import sha256_file
+
+    source, dest = tmp_path / "source.wav", tmp_path / "channel.wav"
+    make_wav(source)
+    completed = metadata(source).final_report(24000)
+    assert completed["schema_version"] == 2
+    assert completed["wav_sha256"] == sha256_file(source)
+    assert completed["wav_size_bytes"] == source.stat().st_size
+    write_sidecar(source, completed)
+    converted = convert(source, dest, None, 145501000)
+    assert converted["capture_integrity_verified"] is True
+    assert converted["capture_metadata_checked"] is True
+    assert converted["provenance_verified"] is False
+
+
+def test_changed_payload_with_same_file_size_is_rejected(tmp_path):
+    source, dest = tmp_path / "source.wav", tmp_path / "channel.wav"
+    make_wav(source)
+    write_sidecar(source, metadata(source).final_report(24000))
+    with source.open("r+b") as f:
+        f.seek(100)
+        original = f.read(1)
+        f.seek(100)
+        f.write(bytes([original[0] ^ 0x80]))
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        convert(source, dest, None, 145501000)
+    assert not dest.exists()
+
+
+def test_changed_file_length_is_rejected(tmp_path):
+    source, dest = tmp_path / "source.wav", tmp_path / "channel.wav"
+    make_wav(source)
+    write_sidecar(source, metadata(source).final_report(24000))
+    with source.open("ab") as f:
+        f.write(b"padding")
+    with pytest.raises(ValueError, match="file size"):
+        convert(source, dest, None, 145501000)
+    assert not dest.exists()
+
+
+@pytest.mark.parametrize("bad", ["missing_sha", "invalid_sha", "missing_size", "missing_complete"])
+def test_corrupted_completed_sidecar_fails_closed(tmp_path, bad):
+    source, dest = tmp_path / "source.wav", tmp_path / "channel.wav"
+    make_wav(source)
+    report = metadata(source).final_report(24000)
+    if bad == "missing_sha":
+        report.pop("wav_sha256")
+    elif bad == "invalid_sha":
+        report["wav_sha256"] = "G" * 64
+    elif bad == "missing_size":
+        report.pop("wav_size_bytes")
+    else:
+        report["capture_state"] = "recording"
+    write_sidecar(source, report)
+    with pytest.raises(ValueError, match="SHA-256|file size"):
+        convert(source, dest, None, 145501000)
+    assert not dest.exists()
+
+
+def test_incomplete_capture_never_falls_back_to_legacy_mode(tmp_path):
+    source, dest = tmp_path / "source.wav", tmp_path / "channel.wav"
+    make_wav(source)
+    write_sidecar(source, metadata(source).pending_report())
+    with pytest.raises(ValueError, match="Invalid/incomplete"):
+        convert(source, dest, 145500000, 145501000)
+    assert not dest.exists()
+
+
+def test_legacy_sidecar_allowed_but_integrity_unverified(tmp_path):
+    source, dest = tmp_path / "source.wav", tmp_path / "channel.wav"
+    make_wav(source)
+    write_sidecar(source, metadata(source).report(24000))
+    result = convert(source, dest, None, 145501000)
+    assert result["capture_metadata_checked"]
+    assert result["capture_integrity_verified"] is False
+
+
+def test_engine_collision_does_not_overwrite_iq(tmp_path):
+    from pt2vhf.engine import Engine
+    from pt2vhf.dsp.receiver import Receiver
+
+    class Source:
+        center_freq = 145500000
+        sample_rate = 240000
+        name = "SYNTHETIC"
+
+    engine = Engine()
+    engine.source = Source()
+    engine.rx = Receiver(240000)
+    first = engine.start_iq_recording(str(tmp_path))
+    with engine._lock:
+        engine._iq_rec.write(np.full(4096, .1+0j, dtype=np.complex64))
+        engine._iq_provenance.observe(145500000, 240000, 4096, True)
+    engine.stop_iq_recording()
+    original_content = first.read_bytes()
+    second = engine.start_iq_recording(str(tmp_path))
+    assert second != first
+    engine.stop_iq_recording()
+    assert first.read_bytes() == original_content
