@@ -42,6 +42,38 @@ def test_main_navigation_and_lcd_band_theme(monkeypatch, tmp_path, qt_lifecycle)
         w.close()
 
 
+
+def test_lcd_scale_persists_and_unknown_sdr_hides_unavailable_bands(monkeypatch, tmp_path, qt_lifecycle):
+    from pt2vhf.ui.main_window import MainWindow
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    w = MainWindow()
+    try:
+        w._set_lcd_scale(75)
+        assert w.lcd._preferred_percent == 75
+        assert w.cfg["lcd_scale_percent"] == 75
+        # Um SDR V3/R820T sem amostragem direta não recebe 20 metros.
+        w.cfg["device_name"] = "0: RTL2832U R820T"
+        w.cfg["direct_sampling"] = 0
+        w._refresh_band_keys()
+        assert w.band_bar.buttons["20 m"].isHidden()
+        assert not w.band_bar.buttons["2 m"].isHidden()
+        # V4 com upconverter interno recebe HF sem desabilitar a preferência do operador.
+        w.cfg["device_name"] = "0: RTL-SDR Blog V4"
+        w._refresh_band_keys()
+        assert not w.band_bar.buttons["20 m"].isHidden()
+        assert "20 m" in w.cfg["bands_visible"]
+    finally:
+        w.close()
+    fresh = MainWindow()
+    try:
+        assert fresh.cfg["lcd_scale_percent"] == 75
+        assert fresh.lcd._preferred_percent == 75
+        assert fresh.display_panel.lcd_scale.value() == 75
+    finally:
+        fresh.close()
+
+
 def test_sonde_feed_shares_history_and_labeled_map(qt_lifecycle, tmp_path):
     from pt2vhf.ui.traffic_panel import SourceTab
     tab = SourceTab("Sonda", {"traffic_sonda_path": "", "traffic_sonda_auto": False})
