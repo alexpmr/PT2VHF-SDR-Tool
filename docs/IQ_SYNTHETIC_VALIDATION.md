@@ -2,6 +2,27 @@
 
 **Estado:** somente branch `feature/iq-signal-classifier`, PR #2 em rascunho. Não foi integrado à `main` nem publicado em instaladores. **Nenhuma acurácia com RF real foi medida.**
 
+## Resultado adicional: treinamento robusto v3 (09/11/2026)
+
+- **Modelo candidato v3:** mesma arquitetura e mesmas sete classes do v2; 8.400 exemplos de treinamento, com 80% de probabilidade de augmentations aleatórias (ganho/fase, frequência ±380 Hz, desequilíbrio I/Q, DC e ruído adicional). Treinamento determinístico com 22 épocas.
+- **Validação sem degradação adicional:** 98,00% no conjunto comparável à v2 (seed 991) e 98,57% em segundo conjunto da mesma família geradora (seed 18739). Estes valores **não** são aferições com rádio real.
+- **Comparação justa:** o mesmo benchmark sintético com seis cenários e 560 exemplos por cenário foi aplicado a ambos os arquivos ONNX; arquitetura, rótulos, sementes e condições mantidos idênticos.
+
+| Condição | v2 top-1 | v3 top-1 | Δ pontos percentuais | v3 decisão ≥0,80 |
+| --- | ---: | ---: | ---: | ---: |
+| Nominal | 98,75% | 97,50% | −1,25 | 95,4% |
+| Ganho/fase | 98,04% | 97,86% | −0,18 | 96,4% |
+| Offset DC | 98,75% | 97,50% | −1,25 | 95,4% |
+| Desequilíbrio I/Q | 97,68% | 97,50% | −0,18 | 95,9% |
+| CFO +350 Hz | 93,57% | 95,36% | +1,79 | 92,5% |
+| Ruído extra −5 dB | 69,29% | **81,61%** | **+12,32** | 70,7% |
+
+- **Ganho real do teste:** resistência ao ruído intenso aumentou **12,32 pontos percentuais**, com perda nominal de 1,25 ponto. O modelo v3 é apenas **candidato experimental preferido no cenário sintético**; não está validado para RF real e não substitui o v2 automaticamente.
+- **Exportação:** ONNX opset 18, 31 verificações de paridade PyTorch/ONNX, erro absoluto máximo `1,526 × 10⁻⁵` para v3; 21 testes específicos de IQ passaram. CI Linux/Qt também aprovado na revisão testada.
+- **Artefato:** [workflow experimental v3](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42666998020), artefato `pt2vhf-iq-synthetic-onnx-experimental` (ID `13696702534`, ZIP SHA-256 `8926a761ed48670c7a0fae0f29c011b5e9d66a63e974e37c1b132d5170f7a87f`), inclui **ambos os modelos**, métricas e comparação. [Suíte geral](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42666998240) aprovada.
+- **Risco experimental:** o sinal WFM sintético em 48 kS/s não representa adequadamente uma transmissão FM comercial de faixa larga; CW sintetizado com portadora deslocada também pode divergir de IQ real centrado. A alta acurácia pode ser específica do gerador. **Não fazer merge nem publicar como recurso de produção.**
+- **Próximo gate:** obter gravações I/Q reais etiquetadas, preferencialmente WAV I/Q estéreo PCM 16-bit, com frequência central, sample rate, modo, modelo do SDR, ganho e informações de recepção. Usar diferentes equipamentos/sessões, exemplos sem sinal e SNR variados; nunca tratar janelas do mesmo arquivo como sessões independentes. Não incluir dados privados sem consentimento.
+
 ## Evidência reproduzível
 
 - GitHub Actions: [Experimental IQ model training and ONNX export](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42665370841), SHA `cef788e62711947ded1bfbb16281843b1a74a198`; job aprovado.
