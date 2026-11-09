@@ -14,6 +14,12 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 
 ## Recursos
 
+### v0.13.0 — LCD ajustável, seleção de bandas e navegação
+- **Tamanho do LCD:** em Configurações → Display, escolha de 50% a 150%; último valor salvo e aplicado ao reiniciar, com proporção vetorial e ajuste automático em telas menores.
+- **Bandas exibidas:** apenas bandas suportadas pelo dispositivo selecionado ficam clicáveis/visíveis no LCD; grade recomposta sem lacunas e preferências mantidas ao trocar de SDR.
+- **Navegação:** Decodificação agrupa ADS-B, Sondas Meteorológicas, AIS e APRS/DTMF/CTCSS; Ferramentas agrupa Transcrição e Legendas ao vivo. Ativar legendas exibe popup de texto sobre o receptor.
+- **Situação:** alterações no código-fonte; execução com RF físico, comportamento visual do Windows e publicação devem ser verificados em separado. RS41 real e decodificadores adicionais continuam em backlog.
+
 ### v0.12.0 — IA neural e transcrição de voz offline
 - **RNNoise (rede neural real):** redução neural de ruído de voz em NFM/AM/USB/LSB/DSB, com botão no painel de áudio e mistura áudio seco/tratado de 0 a 100%. O modelo RNN vem no backend pyrnnoise (licença Apache-2.0), incluído nos binários.
 - **Recepção sem bloqueios:** inferência em thread separada com fila limitada para manter o SDR responsivo. Sob sobrecarga de CPU, áudio antigo pode ser descartado. IQ, waterfall, S-meter, APRS/DTMF/CTCSS, CW/RAW e gravações IQ não passam pelo denoiser. WFM é preservado para evitar prejudicar música. Áudio tratado alimenta saída, web, gravação contínua e legendas; gravação de atividade permanece original.
