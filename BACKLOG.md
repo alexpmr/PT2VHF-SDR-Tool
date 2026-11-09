@@ -8,6 +8,13 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 - **Critérios de aceite:** as três seções de decodificação continuam acessíveis em `Decodificação`, com estados e recursos preservados; `Satélites` desaparece da navegação principal; conferir layout estreito, modo apresentação e traduções dos títulos.
 - **Precedência:** este pedido substitui a orientação anterior do backlog que determinava manter ADS-B, AIS e Sondas Meteorológicas como abas principais separadas.
 
+### Ferramentas e sinais auxiliares — 09/11/2026
+- **Criar a aba principal `Ferramentas`**, caso ainda não exista, e nela a subaba **`Transcrição`**. Centralizar nessa subaba as **configurações de transcrição de áudio** atualmente expostas em `Scanner → Legendas ao vivo` (escolha de modelo Whisper tiny/base/small, download e status do modelo, idioma/detecção automática e parâmetros de transcrição existentes). Evitar opções de configuração duplicadas em outras abas.
+- **Preservar a experiência de legendas em tempo real** sob o LCD quando ativadas. Manter acessíveis as legendas reconhecidas, histórico e exportação CSV; a reorganização não deve desativar recursos já funcionais.
+- **Mover `APRS / DTMF / CTCSS` de `Scanner` para `Decodificação`**, como quarta subaba, preservando seus controles e decodificação. O protocolo correto é **DTMF** (não "DTML").
+- **Navegação desejada em `Decodificação`:** ADS-B | Sondas Meteorológicas | AIS | APRS / DTMF / CTCSS.
+- **Aceite:** os controles de transcrição aparecem em `Ferramentas → Transcrição`; `Scanner` não apresenta mais abas duplicadas de configuração ou `APRS / DTMF / CTCSS`; quatro subabas operacionais em `Decodificação`; manter recursos, estado, ajustes persistidos, traduções e responsividade.
+
 ## Revisão v0.12.0 — IA neural e transcrição
 - **IA neural na fonia:** RNNoise (RNN) em worker 48 kHz, ativa em NFM/AM/USB/LSB/DSB, com controle de intensidade e fila limitada. Não interfere nos dados IQ, APRS nem no S-meter.
 - **Transcrição local:** faster-whisper/CTranslate2 no empacotamento e modelos tiny/base/small baixados por solicitação explícita. Recepção ao vivo gera legendas com frequência, horário, idioma e indicativos; WAV do Scanner usa o mesmo modelo.
