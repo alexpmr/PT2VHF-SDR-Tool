@@ -5,6 +5,7 @@ I=left and Q=right, already centered on the desired signal. WFM unsupported.
 """
 import argparse
 import json
+import math
 import wave
 from collections import defaultdict
 from pathlib import Path
@@ -20,6 +21,8 @@ def read_manifest(path: Path, root: Path) -> list:
     if not isinstance(rows, list) or not rows:
         raise ValueError("Manifest needs a nonempty recordings array")
     result = []
+    seen_files = set()
+    session_devices = {}
     for row in rows:
         if not isinstance(row, dict):
             raise ValueError("Expected a recording object")
@@ -34,13 +37,23 @@ def read_manifest(path: Path, root: Path) -> list:
         source = (root / relative).resolve()
         if not source.is_relative_to(root.resolve()):
             raise ValueError("WAV path leaves recordings root")
+        if source in seen_files:
+            raise ValueError("Duplicate WAV in manifest: recording cannot be counted twice")
+        seen_files.add(source)
+        session_id = str(row["session_id"]).strip()
+        device_name = str(row["device"]).strip()
+        if not session_id or not device_name:
+            raise ValueError("session_id and device must be nonempty")
+        if session_id in session_devices and session_devices[session_id] != device_name:
+            raise ValueError("A session_id cannot span different SDR devices")
+        session_devices[session_id] = device_name
         if not source.is_file() or source.suffix.lower() != ".wav":
             raise ValueError("WAV file not found")
         if source.stat().st_size > 512 * 1024 * 1024:
             raise ValueError("WAV exceeds 512 MiB cap")
-        if float(row["frequency_hz"]) <= 0:
+        if not math.isfinite(float(row["frequency_hz"])) or float(row["frequency_hz"]) <= 0:
             raise ValueError("Invalid frequency")
-        result.append((source, row["mode"], str(row["session_id"]), str(row["device"])))
+        result.append((source, row["mode"], session_id, device_name))
     return result
 
 
@@ -66,6 +79,11 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100):
     sessions = defaultdict(lambda: [0, 0])
     devices = set()
     confidence_errors = 0
+    acceptance = {str(t): {"known_correct": 0, "known_wrong": 0,
+                           "known_accepted": 0, "unknown_misaccepted": 0}
+                  for t in (0.8, 0.95, 0.99)}
+    known_total = 0
+    unknown_total = 0
     for path, label, session, device in rows:
         devices.add(device)
         got = 0
@@ -76,6 +94,18 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100):
             sessions[session][0] += 1
             sessions[session][1] += int(predicted == label)
             confidence_errors += int(predicted != label and result.confidence >= .80)
+            if label == "UNKNOWN":
+                unknown_total += 1
+            else:
+                known_total += 1
+            for threshold, counts in acceptance.items():
+                accepted = predicted != "UNKNOWN" and result.confidence >= float(threshold)
+                if label == "UNKNOWN":
+                    counts["unknown_misaccepted"] += int(accepted)
+                else:
+                    counts["known_accepted"] += int(accepted)
+                    counts["known_correct"] += int(accepted and predicted == label)
+                    counts["known_wrong"] += int(accepted and predicted != label)
             got += 1
         if not got:
             raise ValueError(f"No usable IQ samples: {path.name}")
@@ -86,6 +116,19 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100):
         "devices": len(devices), "recordings": len(rows),
         "accuracy_top1": float(np.trace(confusion)/total),
         "high_confidence_error_rate": float(confidence_errors/total),
+        "known_windows": known_total, "unknown_windows": unknown_total,
+        "acceptance_curve": {
+            threshold: {
+                "correct_known_accepted_rate": (v["known_correct"]/known_total
+                                                if known_total else None),
+                "wrong_known_accepted_rate": (v["known_wrong"]/known_total
+                                              if known_total else None),
+                "known_coverage": (v["known_accepted"]/known_total
+                                   if known_total else None),
+                "unknown_false_accept_rate": (v["unknown_misaccepted"]/unknown_total
+                                              if unknown_total else None),
+            } for threshold,v in acceptance.items()
+        },
         "per_class_recall": {label:float(confusion[i,i]/confusion[i].sum())
                              if confusion[i].sum() else None
                              for i,label in enumerate(CLASSES)},
@@ -95,19 +138,52 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100):
     }
 
 
+
+def evaluate_multiple_models(manifest: Path, root: Path, models: dict[str, object],
+                             max_windows: int = 100) -> dict:
+    """Compare models on the same local IQ WAV windows, sessions and metadata."""
+    if not models:
+        raise ValueError("At least one model is required")
+    reports = {alias: evaluate(manifest, root, model, max_windows)
+               for alias, model in models.items()}
+    first = next(iter(reports.values()))
+    for alias, report in reports.items():
+        for key in ("sample_windows", "sessions", "devices", "recordings",
+                    "known_windows", "unknown_windows"):
+            if report[key] != first[key]:
+                raise ValueError(f"Model {alias} did not process the same dataset")
+    return {
+        "scope": "Local offline comparison on identical operator-labeled IQ WAV windows",
+        "models": reports,
+        "limitations": "Operator labels and source authenticity must be independently verified",
+    }
+
+
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--manifest",type=Path,required=True)
     p.add_argument("--root",type=Path,required=True)
     p.add_argument("--model",type=Path,required=True)
+    p.add_argument("--additional-model", action="append", default=[],
+                   metavar="ALIAS=ONNX", help="Additional ONNX model on the same IQ recordings")
     p.add_argument("--out",type=Path,required=True)
     p.add_argument("--max-windows",type=int,default=100)
     a=p.parse_args()
-    report=evaluate(a.manifest,a.root,IQClassifier(a.model),a.max_windows)
+    if a.additional_model:
+        models = {"base": IQClassifier(a.model)}
+        for item in a.additional_model:
+            alias, sep, model_path = item.partition("=")
+            if not sep or not alias or not model_path or alias in models:
+                raise ValueError("Use unique ALIAS=ONNX for --additional-model")
+            models[alias] = IQClassifier(Path(model_path))
+        report = evaluate_multiple_models(a.manifest, a.root, models, a.max_windows)
+    else:
+        report = evaluate(a.manifest, a.root, IQClassifier(a.model), a.max_windows)
     a.out.parent.mkdir(parents=True,exist_ok=True)
     a.out.write_text(json.dumps(report,indent=2)+"\n",encoding="utf-8")
-    print("RF-labelled candidate evaluation:",report["sessions"],"sessions,",report["sample_windows"],"windows")
-    if report["sessions"]<3 or report["devices"]<2:
+    first = next(iter(report["models"].values())) if "models" in report else report
+    print("Operator-labelled IQ evaluation:",first["sessions"],"sessions,",first["sample_windows"],"windows")
+    if first["sessions"]<3 or first["devices"]<2:
         print("NOT HOMOLOGATED: collect at least three sessions and two different SDRs")
 
 

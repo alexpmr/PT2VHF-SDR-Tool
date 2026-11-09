@@ -11,6 +11,7 @@ on:
       - 'scripts/compare_iq_stress.py'
       - 'scripts/iq_out_of_family.py'
       - 'scripts/evaluate_iq_ood.py'
+      - 'scripts/evaluate_iq_recordings.py'
       - 'scripts/export_iq_synthetic_v2.py'
       - 'scripts/evaluate_iq_synthetic_stress.py'
       - 'pt2vhf/dsp/iq_classifier.py'
@@ -20,6 +21,7 @@ on:
       - 'tests/test_iq_augmentation.py'
       - 'tests/test_iq_ood_signals.py'
       - 'tests/test_iq_unknown_curriculum.py'
+      - 'tests/test_iq_recordings.py'
       - '.github/workflows/iq-model-export.yml'
 jobs:
   train-export-validate:
@@ -79,7 +81,7 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: |
           python -m pip install scipy pytest PySide6==6.11.3
-          python -m pytest -q tests/test_iq_classifier.py tests/test_iq_classifier_worker.py tests/test_iq_classifier_resampling.py tests/test_iq_classifier_contract.py tests/test_iq_augmentation.py tests/test_iq_ood_signals.py tests/test_iq_unknown_curriculum.py
+          python -m pytest -q tests/test_iq_classifier.py tests/test_iq_classifier_worker.py tests/test_iq_classifier_resampling.py tests/test_iq_classifier_contract.py tests/test_iq_augmentation.py tests/test_iq_ood_signals.py tests/test_iq_unknown_curriculum.py tests/test_iq_recordings.py
       - name: Verify synthetic validation metrics and record checksums
         run: |
           python - <<'PY'

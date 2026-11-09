@@ -63,3 +63,72 @@ def test_aggregate_report_does_not_expose_session_names(tmp_path):
     assert report["accuracy_top1"]==1
     assert report["session_macro_accuracy"]==1
     assert "private-session-1" not in json.dumps(report)
+
+
+
+def test_manifest_rejects_duplicate_recordings(tmp_path):
+    make_wav(tmp_path/"a.wav")
+    m=manifest(tmp_path)
+    data=json.loads(m.read_text())
+    data["recordings"].append(dict(data["recordings"][0], session_id="other-session"))
+    m.write_text(json.dumps(data))
+    with pytest.raises(ValueError,match="Duplicate WAV"):
+        read_manifest(m,tmp_path)
+
+
+def test_manifest_rejects_session_crossing_devices(tmp_path):
+    make_wav(tmp_path/"a.wav")
+    make_wav(tmp_path/"b.wav")
+    m=manifest(tmp_path)
+    data=json.loads(m.read_text())
+    data["recordings"].append(dict(data["recordings"][0],path="b.wav",device="different SDR"))
+    m.write_text(json.dumps(data))
+    with pytest.raises(ValueError,match="session_id cannot span"):
+        read_manifest(m,tmp_path)
+
+
+@pytest.mark.parametrize("frequency",[float("nan"),float("inf"),-5])
+def test_manifest_rejects_invalid_frequency(tmp_path,frequency):
+    make_wav(tmp_path/"a.wav")
+    m=manifest(tmp_path)
+    data=json.loads(m.read_text())
+    data["recordings"][0]["frequency_hz"]=frequency
+    m.write_text(json.dumps(data))
+    with pytest.raises(ValueError,match="Invalid frequency"):
+        read_manifest(m,tmp_path)
+
+
+def test_acceptance_metrics_with_unknown_and_comparison(tmp_path):
+    from scripts.evaluate_iq_recordings import evaluate_multiple_models
+    make_wav(tmp_path/"a.wav")
+    make_wav(tmp_path/"b.wav")
+    m=manifest(tmp_path)
+    data=json.loads(m.read_text())
+    data["recordings"].append({
+        "path":"b.wav","mode":"UNKNOWN","session_id":"session-unknown",
+        "device":"fake SDR","frequency_hz":145650000})
+    m.write_text(json.dumps(data))
+    class AlwaysAM:
+        def predict(self,iq):
+            return Classification("AM",.99,{k:(1 if k=="AM" else 0) for k in CLASSES})
+    reports=evaluate_multiple_models(m,tmp_path,{"v2":AlwaysAM(),"v3":AlwaysAM()})
+    assert set(reports["models"])=={"v2","v3"}
+    x=reports["models"]["v2"]
+    assert x["known_windows"]==4 and x["unknown_windows"]==4
+    assert x["accuracy_top1"]==.5
+    for t in ("0.8","0.95","0.99"):
+        assert x["acceptance_curve"][t]["correct_known_accepted_rate"]==1
+        assert x["acceptance_curve"][t]["unknown_false_accept_rate"]==1
+    assert "session-unknown" not in json.dumps(reports)
+
+
+def test_acceptance_metrics_when_all_known_or_unknown(tmp_path):
+    make_wav(tmp_path/"a.wav")
+    class Stub:
+        def predict(self,iq):
+            return Classification("AM",.99,{k:(1 if k=="AM" else 0) for k in CLASSES})
+    known=evaluate(manifest(tmp_path),tmp_path,Stub())
+    assert known["acceptance_curve"]["0.8"]["unknown_false_accept_rate"] is None
+    unknown=evaluate(manifest(tmp_path,label="UNKNOWN"),tmp_path,Stub())
+    assert unknown["acceptance_curve"]["0.8"]["known_coverage"] is None
+    assert unknown["acceptance_curve"]["0.8"]["unknown_false_accept_rate"]==1
