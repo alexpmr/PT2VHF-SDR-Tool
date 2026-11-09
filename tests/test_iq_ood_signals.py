@@ -24,6 +24,12 @@ def test_unlabelled_negative_signals_are_finite(kind):
     assert np.sqrt(np.mean(np.abs(x) ** 2)) == pytest.approx(1, abs=1e-6)
 
 
+def test_confidence_calibration_error_function():
+    from scripts.evaluate_iq_ood import ece
+    assert ece(np.array([0.8, 0.8]), np.array([True, False])) == pytest.approx(0.3)
+    assert ece(np.array([1.0, 1.0]), np.array([True, True])) == pytest.approx(0.0)
+
+
 def test_generator_rejects_wfm_and_invalid_shapes():
     with pytest.raises(ValueError, match="Unsupported"):
         sample("WFM", np.random.default_rng(6), 10)

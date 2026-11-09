@@ -91,6 +91,13 @@ jobs:
           assert ood["classes_not_evaluated"] == ["WFM"]
           assert ood["models"]["v2"]["labeled_samples"] == ood["models"]["v3"]["labeled_samples"]
           assert ood["models"]["v2"]["negative_samples"] == ood["models"]["v3"]["negative_samples"]
+          for m in ("v2", "v3"):
+            curve = ood["models"][m]["confidence_threshold_analysis"]
+            assert list(curve) == ["0.8", "0.9", "0.95", "0.99", "0.999"]
+            assert curve["0.8"]["ood_samples"] == 320
+            assert curve["0.8"]["known_samples"] == 800
+            assert curve["0.8"]["unknown_samples"] == 160
+            assert curve["0.999"]["ood_negative_misaccepted"] <= curve["0.8"]["ood_negative_misaccepted"]
           assert stress["conditions"]["nominal"]["top1_accuracy"] >= 0.94
           assert p.is_file() and Path("models/iq/synthetic_v2.onnx").stat().st_size > 0
           PY
