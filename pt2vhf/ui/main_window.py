@@ -179,6 +179,9 @@ class MainWindow(QMainWindow):
         self.caption_settings_page = _scroll(self.live_captions_panel.settings_widget)
         self.tools_tabs.addTab(self.caption_settings_page, "Transcrição")
         self.tools_tabs.addTab(self.live_captions_panel, "Legendas ao vivo")
+        # A opção de transcrever gravações também pertence à área de Ferramentas.
+        self.live_captions_panel.settings_widget.layout().insertWidget(
+            1, self.scan_panel.transcribe)
         self.sscan: SpectrumScanner | None = None
         self._hits_t = 0.0
         self.assist = AssistBox()
@@ -529,6 +532,9 @@ class MainWindow(QMainWindow):
                                         self.audio_panel, self.mem_panel, self.dec_panel)
         self.language_combo.currentIndexChanged.connect(self._language_selected)
         self.live_btn.toggled.connect(self._toggle_live_captions)
+        self.live_captions_panel.enable_live.toggled.connect(self.live_btn.setChecked)
+        self.live_btn.toggled.connect(
+            lambda _on: self.live_captions_panel.enable_live.setChecked(self.live_btn.isChecked()))
         self.live_captions_panel.downloadRequested.connect(self._download_caption_model)
         self.band_bar.selected.connect(self._band_button)
         self.display_panel.bandsChanged.connect(self._set_visible_bands)
