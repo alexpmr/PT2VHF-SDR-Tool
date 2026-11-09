@@ -38,6 +38,7 @@ class RtlTcpSource(IQSource):
             raise SourceError("Servidor não respondeu com cabeçalho rtl_tcp")
         tuner, _ngains = struct.unpack(">II", hdr[4:])
         self.tuner = RTL_TCP_TUNERS.get(tuner, "desconhecido")
+        self.direct_sampling = 0
         self.sock.settimeout(2)
         self._cmd(0x02, self.sample_rate)
         self._cmd(0x01, int(center_freq))
@@ -75,7 +76,17 @@ class RtlTcpSource(IQSource):
                 del buf[:nbytes]
         self._running = False
 
+    def check_freq(self, hz):
+        from .rtlsdr_source import tuning_range
+        if self.tuner == "desconhecido":
+            return "Sintonizador rtl_tcp não identificado."
+        lo, hi = tuning_range(self.tuner, False, self.direct_sampling)
+        return "" if lo <= hz <= hi else f"rtl_tcp ({self.tuner}): fora de {lo / 1e6:g}–{hi / 1e6:g} MHz."
+
     def set_center_freq(self, hz):
+        problem = self.check_freq(hz)
+        if problem:
+            raise SourceError(problem)
         super().set_center_freq(hz)
         self._cmd(0x01, int(hz))
 
@@ -95,6 +106,7 @@ class RtlTcpSource(IQSource):
 
     def set_direct_sampling(self, mode):
         self._cmd(0x09, int(mode))
+        self.direct_sampling = int(mode)
 
     def close(self):
         super().close()
@@ -131,6 +143,10 @@ class SoapySource(IQSource):
         self.dev = SoapySDR.Device(args)
         self.dev.setSampleRate(SOAPY_SDR_RX, 0, self.sample_rate)
         self.dev.setFrequency(SOAPY_SDR_RX, 0, center_freq)
+        self.frequency_ranges = []
+        for freq_range in self.dev.getFrequencyRange(SOAPY_SDR_RX, 0):
+            self.frequency_ranges.append((float(freq_range.minimum()),
+                                          float(freq_range.maximum())))
         rng = self.dev.getGainRange(SOAPY_SDR_RX, 0)
         self.gains_db = [float(g) for g in np.arange(rng.minimum(), rng.maximum() + 0.1, 1.0)]
         self.set_gain(gain)
@@ -150,7 +166,16 @@ class SoapySource(IQSource):
                 self._push(buf[:got].copy())
         self.dev.deactivateStream(self.stream)
 
+    def check_freq(self, hz):
+        if any(lo <= hz <= hi for lo, hi in self.frequency_ranges):
+            return ""
+        return ("SoapySDR: faixa de sintonia não identificada." if not self.frequency_ranges
+                else f"SoapySDR: {hz / 1e6:g} MHz fora das faixas do dispositivo.")
+
     def set_center_freq(self, hz):
+        problem = self.check_freq(hz)
+        if problem:
+            raise SourceError(problem)
         super().set_center_freq(hz)
         self.dev.setFrequency(self._rx, 0, hz)
 
