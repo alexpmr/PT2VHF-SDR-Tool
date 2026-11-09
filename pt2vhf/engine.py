@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 
 from .audio import ActivityRecorder, AudioOutput, WavRecorder
+from .iq_provenance import IQCaptureProvenance, write_sidecar
 from .neural_audio import NeuralAudioWorker
 from .dsp.iq_classifier_worker import IQClassificationWorker
 from .decoders import aprs as aprs_mod
@@ -78,6 +79,7 @@ class Engine:
         self._wf_acc = 0.0
         self._audio_rec: WavRecorder | None = None
         self._iq_rec: WavRecorder | None = None
+        self._iq_provenance: IQCaptureProvenance | None = None
         self._lock = threading.Lock()
         self.audio_tap = None  # callback opcional (testes)
         self._make_decoders()
@@ -325,14 +327,38 @@ class Engine:
         name = datetime.now().strftime(f"PT2VHF_%Y%m%d_%H%M%S_{int(self.center_freq)}Hz_IQ.wav")
         p = Path(folder) / name
         with self._lock:
-            self._iq_rec = WavRecorder(p, self.sample_rate, 2)
+            if self._iq_rec is not None:
+                raise RuntimeError("Já existe uma gravação IQ ativa")
+            source = self.source
+            if source is None or self.sample_rate <= 0:
+                raise RuntimeError("Fonte SDR não está conectada")
+            metadata = IQCaptureProvenance(
+                p, center_hz=source.center_freq, sample_rate=source.sample_rate,
+                vfo_hz=self.vfo, source=source.name,
+                mode=self.rx.mode if self.rx is not None else "",
+                vox=self.iq_vox,
+            )
+            self._iq_rec = WavRecorder(p, source.sample_rate, 2)
+            self._iq_provenance = metadata
         return p
 
     def stop_iq_recording(self):
+        report = None
+        wav_path = None
         with self._lock:
             if self._iq_rec:
-                self._iq_rec.close()
+                rec = self._iq_rec
+                rec.close()
+                wav_path = rec.path
+                if self._iq_provenance is not None:
+                    report = self._iq_provenance.report(rec.samples)
                 self._iq_rec = None
+                self._iq_provenance = None
+        if report is not None and wav_path is not None:
+            try:
+                write_sidecar(wav_path, report)
+            except Exception:
+                log.exception("Não foi possível salvar metadados IQ de %s", wav_path)
 
     @property
     def recording_audio(self):
@@ -358,8 +384,14 @@ class Engine:
 
         blk = blk - np.mean(blk)  # remove DC (pico central do RTL-SDR)
         with self._lock:
-            if self._iq_rec and (not self.iq_vox or rx.squelch.is_open or time.monotonic() < self._iq_open_until):
-                self._iq_rec.write(blk)
+            if self._iq_rec is not None:
+                should_write = (not self.iq_vox or rx.squelch.is_open
+                                or time.monotonic() < self._iq_open_until)
+                if self._iq_provenance is not None:
+                    self._iq_provenance.observe(src.center_freq, src.sample_rate,
+                                                len(blk), should_write)
+                if should_write:
+                    self._iq_rec.write(blk)
 
         fs = src.sample_rate
         for listener in tuple(self.iq_listeners):
