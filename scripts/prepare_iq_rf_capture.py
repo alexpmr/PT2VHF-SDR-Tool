@@ -6,6 +6,7 @@ chunks with a continuous NCO and FIR state. Never overwrite output recordings.
 """
 from __future__ import annotations
 import argparse
+import hmac
 import json
 import math
 import os
@@ -15,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.signal import firwin, lfilter
-from pt2vhf.iq_provenance import sidecar_path
+from pt2vhf.iq_provenance import sha256_file, sidecar_path
 
 RATE = 48000
 LABELS = ("CW", "AM", "NFM", "USB", "LSB", "UNKNOWN")
@@ -34,7 +35,7 @@ def input_info(src: Path):
 
 
 def check_recording_metadata(source: Path, sample_rate: int, frames: int,
-                             requested_center: float | None) -> tuple[float, bool]:
+                             requested_center: float | None) -> tuple[float, bool, bool]:
     """Reject invalid PT2VHF capture metadata; legacy WAV needs manual center.
 
     Metadata is unsigned operator information, not trusted proof of RF.
@@ -43,9 +44,9 @@ def check_recording_metadata(source: Path, sample_rate: int, frames: int,
     if not path.exists():
         if requested_center is None:
             raise ValueError("Missing --center-hz and PT2VHF IQ sidecar")
-        return float(requested_center), False
+        return float(requested_center), False, False
     meta = json.loads(path.read_text(encoding="utf-8"))
-    if (meta.get("schema_version") != 1 or
+    if (meta.get("schema_version") not in (1, 2) or
         meta.get("capture_kind") != "pt2vhf_raw_iq" or
         meta.get("wav_name") != source.name or
         meta.get("completed") is not True):
@@ -63,7 +64,20 @@ def check_recording_metadata(source: Path, sample_rate: int, frames: int,
         raise ValueError("Invalid center frequency in IQ sidecar")
     if requested_center is not None and abs(float(center) - float(requested_center)) > 0.5:
         raise ValueError("Requested center frequency differs from IQ recording sidecar")
-    return float(center), True
+    integrity_ok = False
+    if meta["schema_version"] == 2:
+        checksum = meta.get("wav_sha256")
+        if (meta.get("capture_state") != "complete" or
+            not isinstance(checksum, str) or len(checksum) != 64 or
+            any(ch not in "0123456789abcdef" for ch in checksum)):
+            raise ValueError("Incomplete or invalid WAV SHA-256 in IQ sidecar")
+        if (type(meta.get("wav_size_bytes")) is not int or
+            meta["wav_size_bytes"] != source.stat().st_size):
+            raise ValueError("WAV file size differs from IQ sidecar")
+        if not hmac.compare_digest(sha256_file(source), checksum):
+            raise ValueError("WAV SHA-256 mismatch: recording changed after capture")
+        integrity_ok = True
+    return float(center), True, integrity_ok
 
 
 def convert(source: Path, dest: Path, center_hz: float | None, target_hz: float, chunk=65536):
@@ -74,7 +88,7 @@ def convert(source: Path, dest: Path, center_hz: float | None, target_hz: float,
     if center_hz is not None and (not math.isfinite(float(center_hz)) or center_hz <= 0):
         raise ValueError("Frequencies must be positive and finite")
     fs, frames = input_info(source)
-    center_hz, metadata_checked = check_recording_metadata(source, fs, frames, center_hz)
+    center_hz, metadata_checked, integrity_verified = check_recording_metadata(source, fs, frames, center_hz)
     ratio = fs // RATE
     delta = float(target_hz) - float(center_hz)
     if abs(delta) >= fs / 2 - RATE / 2:
@@ -134,6 +148,7 @@ def convert(source: Path, dest: Path, center_hz: float | None, target_hz: float,
         return {"input_rate":fs, "output_rate":RATE, "frames":written,
                 "center_hz":center_hz, "target_hz":target_hz,
                 "capture_metadata_checked":metadata_checked,
+                "capture_integrity_verified":integrity_verified,
                 "provenance_verified":False}
     finally:
         if tmp is not None:

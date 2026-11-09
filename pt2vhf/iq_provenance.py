@@ -6,6 +6,7 @@ channelization. No personal IDs, callsigns or sample content are stored.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -16,6 +17,15 @@ from pathlib import Path
 
 def _utc():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def sha256_file(path: Path) -> str:
+    """Hash a closed WAV in bounded memory. This verifies integrity, not RF origin."""
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(4 * 1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def sidecar_path(wav: Path) -> Path:
@@ -68,6 +78,36 @@ class IQCaptureProvenance:
             self.frames += count
         else:
             self.skipped_blocks += 1
+
+    def pending_report(self) -> dict:
+        """Written when capture starts, so a crash cannot resemble legacy WAV."""
+        report = self.report(0)
+        report.update(
+            schema_version=2,
+            capture_state="recording",
+            completed_utc=None,
+            completed=False,
+            wav_sha256=None,
+            wav_size_bytes=None,
+            suitable_for_continuous_channelization=False,
+            invalid_reasons=["capture_not_completed"],
+        )
+        return report
+
+    def final_report(self, wav_frames: int) -> dict:
+        """Called after WAV close; missing digest leaves the pending marker intact."""
+        file_size = self.wav.stat().st_size
+        checksum = sha256_file(self.wav)
+        if file_size != self.wav.stat().st_size:
+            raise RuntimeError("WAV changed during SHA-256 calculation")
+        report = self.report(wav_frames)
+        report.update(
+            schema_version=2,
+            capture_state="complete",
+            wav_sha256=checksum,
+            wav_size_bytes=file_size,
+        )
+        return report
 
     def report(self, wav_frames: int) -> dict:
         reasons = []

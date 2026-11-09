@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 
 from .audio import ActivityRecorder, AudioOutput, WavRecorder
-from .iq_provenance import IQCaptureProvenance, write_sidecar
+from .iq_provenance import IQCaptureProvenance, sidecar_path, write_sidecar
 from .neural_audio import NeuralAudioWorker
 from .dsp.iq_classifier_worker import IQClassificationWorker
 from .decoders import aprs as aprs_mod
@@ -325,8 +325,12 @@ class Engine:
 
     def start_iq_recording(self, folder: str) -> Path:
         name = datetime.now().strftime(f"PT2VHF_%Y%m%d_%H%M%S_{int(self.center_freq)}Hz_IQ.wav")
-        p = Path(folder) / name
         with self._lock:
+            p = Path(folder) / name
+            candidate_number = 1
+            while p.exists() or sidecar_path(p).exists():
+                p = Path(folder) / f"{Path(name).stem}_{candidate_number}.wav"
+                candidate_number += 1
             if self._iq_rec is not None:
                 raise RuntimeError("Já existe uma gravação IQ ativa")
             source = self.source
@@ -338,27 +342,36 @@ class Engine:
                 mode=self.rx.mode if self.rx is not None else "",
                 vox=self.iq_vox,
             )
-            self._iq_rec = WavRecorder(p, source.sample_rate, 2)
+            rec = WavRecorder(p, source.sample_rate, 2)
+            try:
+                write_sidecar(p, metadata.pending_report())
+            except Exception:
+                rec.close()
+                p.unlink(missing_ok=True)
+                raise
+            self._iq_rec = rec
             self._iq_provenance = metadata
         return p
 
     def stop_iq_recording(self):
-        report = None
+        metadata = None
         wav_path = None
+        frames = 0
         with self._lock:
             if self._iq_rec:
                 rec = self._iq_rec
                 rec.close()
                 wav_path = rec.path
-                if self._iq_provenance is not None:
-                    report = self._iq_provenance.report(rec.samples)
+                frames = rec.samples
+                metadata = self._iq_provenance
                 self._iq_rec = None
                 self._iq_provenance = None
-        if report is not None and wav_path is not None:
+        if metadata is not None and wav_path is not None:
             try:
-                write_sidecar(wav_path, report)
+                # Keep the incomplete marker until WAV is closed and hashed.
+                write_sidecar(wav_path, metadata.final_report(frames))
             except Exception:
-                log.exception("Não foi possível salvar metadados IQ de %s", wav_path)
+                log.exception("Falha ao finalizar integridade IQ de %s; sidecar pendente", wav_path)
 
     @property
     def recording_audio(self):
