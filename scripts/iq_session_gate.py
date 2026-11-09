@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import math
+import wave
 from pathlib import Path
 
 from pt2vhf.dsp.iq_classifier import CLASSES, IQClassifier
@@ -25,6 +26,32 @@ def digest(path):
     return sha.hexdigest()
 
 
+def sampled_iq_window_hashes(path: Path, edge_windows: int = 16) -> set[bytes]:
+    """Sample first/last nonzero IQ windows for partial data leakage detection.
+
+    Only exact byte-for-byte 2048-IQ-sample matches are caught. Edited,
+    rechannelized or time-shifted reuse still needs human provenance checks.
+    """
+    if edge_windows < 1:
+        raise ValueError("edge_windows must be positive")
+    result = set()
+    with wave.open(str(path), "rb") as wav:
+        if (wav.getnchannels(), wav.getsampwidth(), wav.getframerate(),
+                wav.getcomptype()) != (2, 2, 48000, "NONE"):
+            raise ValueError("Split audit requires stereo 48k PCM16 IQ WAV")
+        count = wav.getnframes() // 2048
+        indices = sorted(set(range(min(edge_windows, count))) |
+                         set(range(max(0, count-edge_windows), count)))
+        for index in indices:
+            wav.setpos(index * 2048)
+            raw = wav.readframes(2048)
+            if len(raw) != 8192:
+                raise ValueError("Truncated IQ sample window")
+            if any(raw):  # all-zero samples have no diagnostic uniqueness
+                result.add(hashlib.sha256(raw).digest())
+    return result
+
+
 def audit(cal_manifest: Path, hold_manifest: Path, root: Path):
     cal, hold = read_manifest(cal_manifest, root), read_manifest(hold_manifest, root)
     if len(cal) + len(hold) > 2000:
@@ -35,6 +62,14 @@ def audit(cal_manifest: Path, hold_manifest: Path, root: Path):
         raise ValueError("Overlapping WAV paths")
     if {digest(r[0]) for r in cal} & {digest(r[0]) for r in hold}:
         raise ValueError("Identical WAV content across split: recording leakage")
+    # Different WAVs may still contain an identical excerpt (e.g., trimming
+    # or appending a tail). Prevent exact sample reuse across split sessions.
+    calibration_windows = set()
+    for source, *_ in cal:
+        calibration_windows.update(sampled_iq_window_hashes(source))
+    for source, *_ in hold:
+        if calibration_windows & sampled_iq_window_hashes(source):
+            raise ValueError("Identical IQ window across calibration/holdout: test leakage")
     for label, rows in (("calibration", cal), ("holdout", hold)):
         modes = {r[1] for r in rows}
         if len({r[2] for r in rows}) < 2 or "UNKNOWN" not in modes or len(modes) == 1:
