@@ -2,6 +2,15 @@
 
 Itens registrados pelo mantenedor. Não implementar até o pedido de versão nova.
 
+## P1 — tamanho ajustável do LCD e ocultação de bandas incompatíveis (09/11/2026)
+- **Redimensionamento pelo usuário:** permitir aumentar ou reduzir o tamanho do display LCD diretamente na interface ou em `Configurações → Display`, com controle claro e previsível; salvar a **última dimensão/escala escolhida** nas preferências e restaurá-la após reiniciar o aplicativo.
+- **Escala uniforme:** redimensionar proporcionalmente todos os elementos do LCD — frequência, fontes, segmentos, S-meter, indicadores, teclas de modo, matriz de bandas e áreas clicáveis — sem distorção, recorte, sobreposição ou perda de cliques. Preservar a proporção original ao maximizar/restaurar, trocar monitor, reduzir a janela ou usar modo apresentação; limitar temporariamente a escala ao espaço disponível sem substituir o tamanho preferido salvo.
+- **Bandas incompatíveis não aparecem:** na matriz de seleção rápida dentro do LCD, **ocultar completamente** as bandas fora do alcance do SDR atualmente selecionado/conectado; não exibir botões esmaecidos ou clicáveis para essas bandas. Determinar a compatibilidade por capacidades efetivas do dispositivo/fonte (incluindo direct sampling, conversores e limitações do driver), sem tratar ausência de suporte como autorização para sintonizar.
+- **Atualização dinâmica:** recalcular os botões visíveis ao conectar/desconectar, trocar fonte ou receptor, alterar direct sampling ou atualizar as capacidades reportadas pelo driver. Exibir apenas a interseção entre bandas configuradas pelo usuário e bandas realmente disponíveis; não apagar da configuração as preferências de bandas ocultadas. Sem capacidade conhecida, não inventar suporte; apresentar estado de receptor/capacidade ainda não identificada.
+- **Layout/aceite:** reorganizar a grade de até 5 colunas conforme a quantidade de bandas disponíveis sem espaços vazios ou controles sobrepostos; verificar RTL-SDR V3/V4 (inclusive HF), simulador, rtl_tcp e SoapySDR quando houver hardware; conferir persistência após reinício, monitores de tamanhos diferentes, os 5 temas, modo apresentação e cliques após escala. Testes Qt automatizados e homologação visual em Windows.
+- **Precedência:** este pedido substitui a regra anterior de `bandas indisponíveis esmaecidas`; o redimensionamento automático existente não atende sozinho à exigência de **ajuste manual persistente**.
+- **Status:** pendente de implementação e homologação; apenas registrado no backlog.
+
 ## Legendas ao vivo — atualização de interface (09/11/2026)
 - **Implementado no código (sem nova release):** a aba `Legendas ao vivo` sai de Scanner e passa a `Ferramentas → Legendas ao vivo`, reservada a histórico e exportação CSV.
 - **Ferramentas → Transcrição:** download e escolha de modelo Whisper, idioma, habilitação de legendas e opção de transcrever gravações do Scanner concentrados no mesmo lugar.
@@ -47,7 +56,7 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 ## Ajuste P1 — grade de bandas no espaço direito do LCD e escala responsiva (08/11/2026)
 - **Referência visual:** imagem do mantenedor de 08/11/2026, com área delimitada em azul **à direita dos dígitos da frequência, acima do S-meter**, na porção livre do painel âmbar.
 - **Alteração de posição:** retirar a grade de bandas atualmente desenhada como duas fileiras **abaixo das teclas de modos**. Colocar as teclas diretamente na região marcada, **dentro do mesmo LCD**, sem barra/painel independente e sem esconder as teclas AUTO/NFM/WFM/AM/USB/LSB/CW/DSB/RAW/A-SINT.
-- **Grade fixa de 5 colunas**, com tantas linhas quanto necessárias para as bandas habilitadas nas configurações; ordenar conforme o plano de bandas. Cada tecla deve ter o mesmo estilo visual das **teclas de modo do LCD** (contorno, preenchimento ativo, tipografia, cantos e contraste), sem parecer um widget Qt separado ou uma faixa solta. Preservar estados habilitado, indisponível, ativo e tooltip.
+- **Grade de até 5 colunas**, com tantas linhas quanto necessárias para as bandas **habilitadas nas configurações e suportadas pelo SDR atual**; ordenar conforme o plano de bandas. Cada tecla deve ter o mesmo estilo visual das **teclas de modo do LCD** (contorno, preenchimento ativo, tipografia, cantos e contraste), sem parecer um widget Qt separado ou uma faixa solta. Bandas indisponíveis ficam **ocultas**, não esmaecidas; preservar destaque da banda ativa e tooltips das disponíveis.
 - **Layout do painel direito:** reorganizar a área do LCD para que a matriz não se sobreponha aos dígitos, unidade MHz, S-meter, indicadores BUSY/MEM/banda/CTCSS, hora ou dBm. Onde necessário, compactar/mover os indicadores secundários sem perder informação.
 - **Responsividade obrigatória:** quando a janela, o monitor, uma tela remota ou o modo apresentação dispuser de menos largura/altura, **reduzir o LCD inteiro proporcionalmente** (frequência, segmentos, S-meter, indicadores, fontes, teclas de modo, matriz de bandas, hitboxes), mantendo a proporção original e **sem cortar/podar** elementos, números ou controles. Ajustar o widget em resizeEvent/sizeHint/heightForWidth e usar escala única de desenho/layout; preservar o mapeamento correto de cliques/roda do mouse às coordenadas escaladas. Se necessário, usar margens internas/letterboxing em vez de crop/overflow.
 - **Aceite:** em janela larga, janela estreita e modo apresentação, todos os itens do LCD continuam visíveis; matriz completa com 5 colunas na região marcada; botões clicáveis e feedback de seleção; nenhum botão de banda abaixo da fileira de modos; evidências visuais/screenshot nos 5 temas; regressões automatizadas Qt para resize e clique em coordenadas escaladas.
@@ -64,7 +73,7 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 - **Solicitação:** mover os botões de seleção rápida de bandas, atualmente exibidos em uma barra independente **abaixo** do display LCD, **para dentro do contorno/painel visual do LCD** (referência: imagem enviada pelo mantenedor em 08/11/2026).
 - **Layout:** inserir uma fileira ou duas fileiras compactas de teclas de banda na região inferior do LCD, compatíveis com a fileira existente de modos (AUTO/NFM/WFM/AM/USB/LSB/CW/DSB/RAW/A-SINT), **sem substituir as teclas de modos**, sem cobrir frequência, indicadores, medidor S, horário ou demais leituras. Priorizar largura fluida, displays pequenos e modo apresentação; se necessário, oferecer agrupamento/alternância de bandas sem rolagem horizontal obrigatória.
 - **Identidade visual:** as teclas passam a pertencer ao painel LCD, com fundo, bordas, tipografia, contraste e estado ativo coerentes com os temas visuais existentes (inclusive tema âmbar apresentado); evitar uma segunda barra escura solta na página.
-- **Comportamento preservado:** bandas configuradas como visíveis, seleção e destaque da banda ativa, sintonia e restauração de frequência/modo por banda, avisos/teclas esmaecidas para bandas fora do alcance do SDR, tooltips e atualização ao trocar dispositivo devem continuar funcionando.
+- **Comportamento preservado:** bandas configuradas como visíveis **e suportadas pelo SDR**, seleção e destaque da banda ativa, sintonia e restauração de frequência/modo por banda, tooltips e atualização ao trocar dispositivo devem continuar funcionando. Bandas incompatíveis **não aparecem na matriz**, sem apagar as preferências salvas.
 - **Aceite:** nenhuma barra independente de bandas abaixo do LCD; todos os botões de bandas visíveis na área interna do LCD, sem sobreposição de controles ou perda de informações, com screenshot em monitor normal e estreito e testes de tema/navegação.
 - **Status:** implementado no código da v0.10.0; **homologação visual em Windows ainda pendente**.
 
@@ -109,12 +118,7 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 
 
 ### Teclas de banda no display (um botão por banda) (registrado em 08/11/2026)
-- **Acréscimo (08/11/2026):** as teclas das bandas que o **SDR em uso não suporta** ficam **esmaecidas**
-  (acinzentadas), conforme a faixa real do dispositivo/sintonizador e o modo (ex.: R820T sem amostragem direta não
-  recebe HF; V4 recebe HF pelo conversor; HackRF/Airspy/rtl_tcp/SoapySDR pela faixa informada pelo driver).
-  Atualizar ao trocar de fonte/dispositivo ou ligar/desligar a amostragem direta; dica (tooltip) explicando o motivo
-  e o que fazer; clique em tecla esmaecida só mostra o aviso, sem sintonizar. Sem receptor ligado, usar a faixa do
-  último dispositivo configurado.
+- **Atualização de requisito (09/11/2026; substitui esmaecimento de 08/11):** **ocultar** as teclas de bandas que o SDR em uso não suporta, conforme a faixa real do dispositivo/sintonizador e modo (ex.: R820T sem amostragem direta não recebe HF; V4 pode receber HF pelo conversor; demais fontes segundo capacidade real informada pelo driver). Atualizar ao trocar de fonte/dispositivo ou alterar amostragem direta. Nenhuma banda incompatível deve aparecer como botão clicável; sem receptor identificado, não pressupor capacidade de recepção.
 - Hoje a banda só se escolhe na lista "Bandas" em Configurações → Modo / Filtro.
 - Colocar no **display** uma fileira de teclas de banda, como num transceptor: **160, 80, 60, 40, 30, 20, 17, 15,
   12, 10, 6, 2 m, 70 cm** (e outras faixas úteis para escuta, ex.: PX/11 m, FM broadcast, aviação, marítimo),
@@ -122,8 +126,7 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 - Ao clicar, ir para a banda com o modo adequado (LSB abaixo de 10 MHz, USB acima, FM em VHF/UHF, conforme o plano
   de bandas) e **lembrar a última frequência/modo usados em cada banda** (band stacking), voltando nela no
   próximo clique; segundo clique na mesma banda pode alternar entre posições salvas (CW / SSB / digital).
-- Destacar a banda atual; desabilitar/avisar bandas fora do alcance do dispositivo (ex.: HF no RTL-SDR sem
-  amostragem direta ou V4).
+- Destacar a banda atual; **ocultar** do LCD bandas fora do alcance do dispositivo (ex.: HF no RTL-SDR sem amostragem direta ou conversor HF). Manter a preferência salva para quando houver SDR compatível.
 - Escolher em Configurações quais bandas aparecem (radioamador, escuta ou personalizadas) e respeitar os níveis
   de interface e o modo apresentação; caber sem rolagem (quebra em duas linhas ou "mais…").
 
