@@ -9,7 +9,7 @@ Itens registrados pelo mantenedor. Não implementar até o pedido de versão nov
 - **Atualização dinâmica:** recalcular os botões visíveis ao conectar/desconectar, trocar fonte ou receptor, alterar direct sampling ou atualizar as capacidades reportadas pelo driver. Exibir apenas a interseção entre bandas configuradas pelo usuário e bandas realmente disponíveis; não apagar da configuração as preferências de bandas ocultadas. Sem capacidade conhecida, não inventar suporte; apresentar estado de receptor/capacidade ainda não identificada.
 - **Layout/aceite:** reorganizar a grade de até 5 colunas conforme a quantidade de bandas disponíveis sem espaços vazios ou controles sobrepostos; verificar RTL-SDR V3/V4 (inclusive HF), simulador, rtl_tcp e SoapySDR quando houver hardware; conferir persistência após reinício, monitores de tamanhos diferentes, os 5 temas, modo apresentação e cliques após escala. Testes Qt automatizados e homologação visual em Windows.
 - **Precedência:** este pedido substitui a regra anterior de `bandas indisponíveis esmaecidas`; o redimensionamento automático existente não atende sozinho à exigência de **ajuste manual persistente**.
-- **Status:** pendente de implementação e homologação; apenas registrado no backlog.
+- **Status:** controles de escala persistente e ocultação dinâmica implementados no código da v0.13.0, com regressões Qt; pendente homologação visual/SDR real, build Windows e publicação no site.
 
 ## Legendas ao vivo — atualização de interface (09/11/2026)
 - **Implementado no código (sem nova release):** a aba `Legendas ao vivo` sai de Scanner e passa a `Ferramentas → Legendas ao vivo`, reservada a histórico e exportação CSV.
