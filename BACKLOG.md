@@ -2,6 +2,12 @@
 
 Itens registrados pelo mantenedor. Não implementar até o pedido de versão nova.
 
+## Reorganização da navegação — solicitada em 09/11/2026
+- **Criar aba principal `Decodificação`** e agrupar nela, como subabas, **ADS-B**, **Sondas Meteorológicas** e **AIS**, retirando essas três abas da navegação principal sem perder suas telas e funcionalidades.
+- **Remover a aba principal `Satélites`** da interface, sem deixar guia ou página vazia. O pedido é de remoção da aba; não autoriza, por si só, apagar dados ou módulos de previsão e controle de satélites do código.
+- **Critérios de aceite:** as três seções de decodificação continuam acessíveis em `Decodificação`, com estados e recursos preservados; `Satélites` desaparece da navegação principal; conferir layout estreito, modo apresentação e traduções dos títulos.
+- **Precedência:** este pedido substitui a orientação anterior do backlog que determinava manter ADS-B, AIS e Sondas Meteorológicas como abas principais separadas.
+
 ## Revisão v0.12.0 — IA neural e transcrição
 - **IA neural na fonia:** RNNoise (RNN) em worker 48 kHz, ativa em NFM/AM/USB/LSB/DSB, com controle de intensidade e fila limitada. Não interfere nos dados IQ, APRS nem no S-meter.
 - **Transcrição local:** faster-whisper/CTranslate2 no empacotamento e modelos tiny/base/small baixados por solicitação explícita. Recepção ao vivo gera legendas com frequência, horário, idioma e indicativos; WAV do Scanner usa o mesmo modelo.
