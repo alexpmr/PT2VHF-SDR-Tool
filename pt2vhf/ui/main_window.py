@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QSettings, Qt, QTimer
+from PySide6.QtCore import QByteArray, QEvent, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QLabel, QMainWindow,
                                QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget)
@@ -168,8 +168,16 @@ class MainWindow(QMainWindow):
         self.occupancy_panel = OccupancyPanel(self.occupancy)
         self.scan_panel.tabs.addTab(self.occupancy_panel, "Ocupação 24 h")
         self.live_captions_panel = LiveCaptionsPanel(self.cfg)
-        self.scan_panel.tabs.addTab(self.live_captions_panel, "Legendas ao vivo")
-        self.scan_panel.tabs.addTab(self.dec_panel, "APRS / DTMF / CTCSS")
+        # Agrupa os receptores/decodificadores por protocolo.
+        self.decoder_tabs = QTabWidget()
+        self.decoder_tabs.addTab(_scroll(self.adsb_panel), "ADS-B")
+        self.decoder_tabs.addTab(self.sonde_area, "Sondas Meteorológicas")
+        self.decoder_tabs.addTab(_scroll(self.ais_panel), "AIS")
+        self.decoder_tabs.addTab(_scroll(self.dec_panel), "APRS / DTMF / CTCSS")
+        # Configuração Whisper e histórico são páginas independentes, sem controles duplicados.
+        self.tools_tabs = QTabWidget()
+        self.tools_tabs.addTab(_scroll(self.live_captions_panel.settings_widget), "Transcrição")
+        self.tools_tabs.addTab(self.live_captions_panel, "Legendas ao vivo")
         self.sscan: SpectrumScanner | None = None
         self._hits_t = 0.0
         self.assist = AssistBox()
@@ -213,12 +221,18 @@ class MainWindow(QMainWindow):
         self.analog_panel = AnalogPanel(self.cfg.get("analog_style", "Valvulado"))
         self.analog_panel.setVisible(bool(self.cfg.get("analog_enabled", False)))
         cl.addWidget(self.analog_panel)
-        self.caption_label = QLabel("")
-        self.caption_label.setWordWrap(True)
-        self.caption_label.setObjectName("bigLabel")
-        self.caption_label.setMinimumHeight(36)
-        self.caption_label.setVisible(False)
-        cl.addWidget(self.caption_label)
+        # Janela flutuante não modal sobre o receptor: apenas as palavras reconhecidas.
+        self.receiver_left = left
+        self.caption_popup = QLabel("", left)
+        self.caption_popup.setObjectName("captionPopup")
+        self.caption_popup.setAlignment(Qt.AlignCenter)
+        self.caption_popup.setWordWrap(True)
+        self.caption_popup.setStyleSheet(
+            "QLabel#captionPopup { background: rgba(13, 17, 24, 238); color: #ffffff; "
+            "border: 2px solid #f0b44a; border-radius: 11px; "
+            "font-size: 20px; font-weight: 650; padding: 14px 18px; }")
+        self.caption_popup.hide()
+        left.installEventFilter(self)
         self.band_bar = BandKeys(self.cfg.get("bands_visible"), self.lcd)
         self.lcd.attach_band_keys(self.band_bar)
         self.fav_bar = FavoritesBar()
@@ -257,11 +271,9 @@ class MainWindow(QMainWindow):
         for key, title, w in (("rx", "Receptor", self.main_split),
                               ("mem", "Memórias / Varredura", _scroll(self.mem_panel)),
                               ("scan", "Scanner", _scroll(self.scan_panel)),
-                              ("adsb", "ADS-B", _scroll(self.adsb_panel)),
-                              ("ais", "AIS", _scroll(self.ais_panel)),
-                              ("sondes", "Sondas Meteorológicas", self.sonde_area),
+                              ("decode", "Decodificação", self.decoder_tabs),
+                              ("tools", "Ferramentas", self.tools_tabs),
                               ("extras", "Receptores extras", _scroll(self.extras_panel)),
-                              ("sat", "Satélites", _scroll(self.sat_panel)),
                               ("settings", "Configurações", self.settings_tabs)):
             self.tabs.addTab(w, title)
             self.pages[key] = w
@@ -274,6 +286,25 @@ class MainWindow(QMainWindow):
         for w in (self.status_src, self.status_cpu, self.status_audio):
             self.statusBar().addPermanentWidget(w)
         self._build_menu()
+
+    def eventFilter(self, watched, event):
+        if watched is getattr(self, "receiver_left", None) and event.type() == QEvent.Resize:
+            self._position_caption_popup()
+        return super().eventFilter(watched, event)
+
+    def _position_caption_popup(self):
+        """Centraliza a legenda sobre a área do receptor, sem afetar o LCD."""
+        area = getattr(self, "receiver_left", None)
+        popup = getattr(self, "caption_popup", None)
+        if area is None or popup is None:
+            return
+        width = max(150, min(800, int(area.width() * 0.82), area.width() - 12))
+        available_height = max(40, area.height() - 12)
+        preferred_height = popup.heightForWidth(width)
+        height = min(available_height, max(75, min(245, preferred_height if preferred_height > 0 else 90)))
+        x = max(0, (area.width() - width) // 2)
+        y = max(0, min(area.height() - height - 12, int(area.height() * 0.63)))
+        popup.setGeometry(x, y, width, height)
 
     def _build_header(self):
         from PySide6.QtWidgets import QFrame, QHBoxLayout
@@ -1823,11 +1854,11 @@ class MainWindow(QMainWindow):
                 self.live_btn.setChecked(False)
                 self.live_btn.blockSignals(False)
                 self.cfg["live_caption_enabled"] = False
-                self.tabs.setCurrentWidget(self.pages["scan"])
-                self.scan_panel.tabs.setCurrentWidget(self.live_captions_panel)
+                self.tabs.setCurrentWidget(self.pages["tools"])
+                self.tools_tabs.setCurrentWidget(self.live_captions_panel.settings_widget.parentWidget())
                 QMessageBox.information(
                     self, "Transcrição local",
-                    f"Modelo Whisper {size} não disponível. Abra Scanner > Legendas "
+                    f"Modelo Whisper {size} não disponível. Abra Ferramentas > Transcrição "
                     "e clique em 'Baixar modelo'. Depois, a operação será offline.")
                 return
             self.caption_worker = LiveCaptionWorker(
@@ -1838,9 +1869,12 @@ class MainWindow(QMainWindow):
                 meta_provider=lambda: (float(self.engine.vfo), str(self.mode)),
             )
             self.engine.audio_listeners.append(self.caption_worker.feed)
-            self.caption_label.setText("Transcrição local ativa — aguardando fonia...")
-            self.caption_label.setVisible(True)
             self.cfg["live_caption_enabled"] = True
+            self.tabs.setCurrentWidget(self.pages["rx"])
+            self.caption_popup.setText("Aguardando transmissão de voz...")
+            self._position_caption_popup()
+            self.caption_popup.raise_()
+            self.caption_popup.show()
         else:
             if self.caption_worker is not None:
                 callback = self.caption_worker.feed
@@ -1851,7 +1885,8 @@ class MainWindow(QMainWindow):
                 self.caption_worker.stop()
                 self.caption_worker = None
             self.cfg["live_caption_enabled"] = False
-            self.caption_label.setVisible(False)
+            self.caption_popup.hide()
+            self.caption_popup.clear()
 
     def _toggle_transcription(self, on):
         from ..transcribe import Transcriber, backend_available
@@ -1861,7 +1896,7 @@ class MainWindow(QMainWindow):
             if not backend_available() or not model_installed(size):
                 self.scan_panel.transcribe.setChecked(False)
                 QMessageBox.information(self, "Transcrição",
-                    "Baixe o modelo em Scanner > Legendas ao vivo. "
+                    "Baixe o modelo em Ferramentas > Transcrição. "
                     "Nenhum modelo é baixado automaticamente.")
                 return
             self.transcriber = Transcriber(
@@ -2066,13 +2101,16 @@ class MainWindow(QMainWindow):
             elif kind == "transcription":
                 self.scan_panel.set_transcription(*data)
             elif kind == "live_caption":
-                stamp, recognized, calls, lang, meta = data
-                freq, mode = meta if meta is not None else (eng.vfo, self.mode)
-                self.live_captions_panel.add_caption(stamp, recognized, calls, lang, freq, mode)
-                self.caption_label.setText(f"{freq / 1e6:.5f} MHz · {mode}: {recognized}")
-                self._live_caption_last = stamp
+                if self.cfg.get("live_caption_enabled", False):
+                    stamp, recognized, calls, lang, meta = data
+                    freq, mode = meta if meta is not None else (eng.vfo, self.mode)
+                    self.live_captions_panel.add_caption(stamp, recognized, calls, lang, freq, mode)
+                    recognized = str(recognized).strip()
+                    if recognized:
+                        self.caption_popup.setText(recognized)
+                        self._position_caption_popup()
+                        self._live_caption_last = stamp
             elif kind == "caption_error":
-                self.caption_label.setText(f"Legendas: {data}")
                 self.statusBar().showMessage(f"Transcrição local: {data}", 10000)
             elif kind == "caption_model_download":
                 size, ok, detail = data
@@ -2218,7 +2256,7 @@ class MainWindow(QMainWindow):
             combo.blockSignals(False)
         for act in getattr(self, "_level_actions", []):
             act.setChecked(act.text() == name)
-        page_lvl = {"scan": 1, "adsb": 1, "ais": 1, "sondes": 1, "extras": 2, "sat": 1}
+        page_lvl = {"scan": 1, "decode": 1, "tools": 0, "extras": 2}
         for key, page in self.pages.items():
             vis = lvl >= page_lvl.get(key, 0)
             i = self.tabs.indexOf(page)
