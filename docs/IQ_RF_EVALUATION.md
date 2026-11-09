@@ -56,3 +56,6 @@ python -m scripts.prepare_iq_rf_capture --input "C:\IQ\PT2VHF_20261109_180000_14
 Requer NumPy e SciPy, WAV IQ estéreo de 16 bits com sample rate múltiplo inteiro de 48.000 Hz, até 3,072 MS/s. O sinal precisa ficar dentro da faixa capturada, com margem de 24 kHz das bordas de Nyquist. **Mantenha a frequência central fixa** durante a gravação; se o receptor mudar de centro, faça uma nova sessão. Em capturas com squelch/VOX, podem ocorrer descontinuidades.
 
 O modo indicado deve ser confirmado **independentemente** da rede neural. WFM não é suportado neste formato. O conversor apenas prepara arquivos para avaliação: não verifica a autenticidade da RF nem certifica os rótulos. Separe gravações e sessões de treinamento, calibração e holdout. Evite incluir sinais privados e não publique os WAV sem consentimento.
+
+
+Consulte também docs/IQ_DATASET_AUDIT.md para a auditoria de qualidade e detecção de trechos repetidos entre sessões.
