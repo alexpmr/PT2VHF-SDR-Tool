@@ -106,7 +106,9 @@ def convert(source: Path, dest: Path, center_hz: float | None, target_hz: float,
         source, fs, frames, center_hz
     )
     delta = float(target_hz) - float(center_hz)
-    if abs(delta) >= fs / 2 - RATE / 2:
+    # A 48k IQ WAV may already be channelized and needs no guard band if
+    # it is NOT frequency-shifted. Any retuning requires a wider capture.
+    if abs(delta) >= fs / 2 - RATE / 2 and not (fs == RATE and delta == 0):
         raise ValueError("Target too close to Nyquist edge of recorded IQ")
     if dest.exists():
         raise FileExistsError("Output exists; refusing to overwrite IQ")
