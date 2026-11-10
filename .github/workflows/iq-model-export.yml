@@ -16,6 +16,7 @@ on:
       - 'scripts/compare_iq_stress.py'
       - 'scripts/iq_out_of_family.py'
       - 'scripts/evaluate_iq_ood.py'
+      - 'tests/test_iq_ood_signals.py'
       - 'scripts/smoke_iq_wav_onnx.py'
       - 'scripts/export_iq_synthetic_v2.py'
       - 'scripts/evaluate_iq_synthetic_stress.py'
@@ -78,6 +79,28 @@ jobs:
       - name: Diagnose out-of-family IQ and false-confidence errors
         run: |
           PYTHONPATH=. python scripts/evaluate_iq_ood.py --reference models/iq/synthetic_v2.onnx --candidate models/iq/synthetic_v3.onnx --third-model models/iq/synthetic_v4.onnx --fourth-model models/iq/synthetic_v5.onnx --output models/iq/synthetic_v3_ood_metrics.json
+      - name: Repeat OOD holdout with alternate seed (experimental robustness)
+        run: |
+          PYTHONPATH=. python scripts/evaluate_iq_ood.py --reference models/iq/synthetic_v2.onnx --candidate models/iq/synthetic_v3.onnx --third-model models/iq/synthetic_v4.onnx --fourth-model models/iq/synthetic_v5.onnx --seed 20261113 --output models/iq/synthetic_v3_ood_altseed_metrics.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("models/iq")
+          old = json.loads((root / "synthetic_v3_ood_metrics.json").read_text())
+          new = json.loads((root / "synthetic_v3_ood_altseed_metrics.json").read_text())
+          assert old["seed"] == 20261112 and new["seed"] == 20261113
+          assert set(old["models"]) == set(new["models"]) == {"v2", "v3", "v4", "v5"}
+          for name in old["models"]:
+              a, b = old["models"][name], new["models"][name]
+              assert a["labeled_samples"] == b["labeled_samples"] == 960
+              assert a["negative_samples"] == b["negative_samples"] == 320
+              for metric in ("top1_accuracy", "high_confidence_wrong_rate", "expected_calibration_error_10_bins"):
+                  print(f"{name} {metric}: seed0={a[metric]:.3f} seed1={b[metric]:.3f} delta={b[metric]-a[metric]:+.3f}")
+              for kind in a["negative_ood"]:
+                  rate0 = a["negative_ood"][kind]["high_confidence_known_class_rate"]
+                  rate1 = b["negative_ood"][kind]["high_confidence_known_class_rate"]
+                  print(f"{name} OOD {kind}: seed0={rate0:.3f} seed1={rate1:.3f} delta={rate1-rate0:+.3f}")
+          PY
       - name: Smoke-test WAV parser with real ONNX models and synthetic-only data
         run: PYTHONPATH=. python scripts/smoke_iq_wav_onnx.py
       - name: Install Qt Linux system libraries
@@ -135,7 +158,7 @@ jobs:
           assert set(wav_smoke["result"]["models"]) == {"v2","v3","v4","v5"}
           PY
           cd models/iq
-          sha256sum synthetic_v2.onnx synthetic_v2.pt synthetic_v2_metrics.json synthetic_v2_stress_metrics.json synthetic_v3.onnx synthetic_v3.pt synthetic_v3_metrics.json synthetic_v3_stress_metrics.json synthetic_v3_comparison.json synthetic_v3_ood_metrics.json synthetic_v4.onnx synthetic_v4.pt synthetic_v4_metrics.json synthetic_v5.onnx synthetic_v5.pt synthetic_v5_metrics.json synthetic_wav_smoke_metrics.json > SHA256SUMS
+          sha256sum synthetic_v2.onnx synthetic_v2.pt synthetic_v2_metrics.json synthetic_v2_stress_metrics.json synthetic_v3.onnx synthetic_v3.pt synthetic_v3_metrics.json synthetic_v3_stress_metrics.json synthetic_v3_comparison.json synthetic_v3_ood_metrics.json synthetic_v3_ood_altseed_metrics.json synthetic_v4.onnx synthetic_v4.pt synthetic_v4_metrics.json synthetic_v5.onnx synthetic_v5.pt synthetic_v5_metrics.json synthetic_wav_smoke_metrics.json > SHA256SUMS
           sha256sum -c SHA256SUMS
       - name: Upload experimental model and metrics
         uses: actions/upload-artifact@v4
@@ -152,6 +175,7 @@ jobs:
             models/iq/synthetic_v3_stress_metrics.json
             models/iq/synthetic_v3_comparison.json
             models/iq/synthetic_v3_ood_metrics.json
+            models/iq/synthetic_v3_ood_altseed_metrics.json
             models/iq/synthetic_v4.onnx
             models/iq/synthetic_v4.pt
             models/iq/synthetic_v4_metrics.json
