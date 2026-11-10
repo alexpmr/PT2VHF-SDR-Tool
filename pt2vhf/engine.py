@@ -508,15 +508,25 @@ class Engine:
             self.audio_tap(audio, raw)
 
     def _loop(self):
+        unexpected_stop = None
         while self._running:
-            pop = getattr(self.source, "pop_messages", None)
-            if pop is not None:
-                for msg in pop():
-                    self.events.put(("source_msg", msg, time.time()))
-            blk = self.source.read(timeout=0.5) if self.source else None
+            try:
+                pop = getattr(self.source, "pop_messages", None)
+                if pop is not None:
+                    for msg in pop():
+                        self.events.put(("source_msg", msg, time.time()))
+                blk = self.source.read(timeout=0.5) if self.source else None
+            except Exception as exc:  # noqa: BLE001
+                if self._running:
+                    unexpected_stop = "source_read_failed"
+                    log.exception("Falha ao ler fonte IQ")
+                    self.events.put(("error", f"Fonte IQ interrompida: {exc}", time.time()))
+                break
             if blk is None:
                 if self.source and not self.source._running:
-                    self.events.put(("error", "A fonte de sinal parou.", time.time()))
+                    if self._running:
+                        unexpected_stop = "source_stopped_unexpectedly"
+                        self.events.put(("error", "A fonte de sinal parou.", time.time()))
                     break
                 continue
             t0 = time.perf_counter()
@@ -529,3 +539,9 @@ class Engine:
             self.status["dropped"] = self.source.dropped
         self._running = False
         self.status["running"] = False
+        if unexpected_stop:
+            with self._lock:
+                if self._iq_provenance is not None:
+                    self._iq_provenance.interrupt(unexpected_stop)
+            # Called from the DSP thread: do not join it or stop the entire engine.
+            self.stop_iq_recording()
