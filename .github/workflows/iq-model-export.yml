@@ -1,9 +1,12 @@
 name: Experimental IQ model training and ONNX export
 on:
   workflow_dispatch:
-  pull_request:
-    # Treinamento completo apenas quando arquitetura/treino/benchmark neural mudar.
-    # Captura IQ, metadados, WAV e qualidade dos dados são cobertos pela CI geral.
+  # Em pull_request, o filtro paths considera TODO o diff acumulado do PR;
+  # assim, qualquer ajuste de captura retrainaria os quatro modelos.
+  # Em push, o filtro considera somente as alterações deste commit.
+  push:
+    branches:
+      - feature/iq-signal-classifier
     paths:
       - 'scripts/train_iq_synthetic_ci.py'
       - 'scripts/train_iq_augmented_v3.py'
