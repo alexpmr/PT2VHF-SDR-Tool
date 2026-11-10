@@ -91,7 +91,9 @@ def test_am_carrier_at_dc_is_not_rejected(tmp_path):
     z = .4 + .09*np.sin(2*np.pi*1900*t)
     _wav(tmp_path/"am.wav", z)
     report = audit_dataset(_manifest(tmp_path, [_row("am.wav", "s1", "AM")]), tmp_path)
-    assert report["status"] == "PASS"
+    assert report["status"] == "REVIEW"
+    assert report["blocked_recordings"] == 0
+    assert "REVIEW: centered_carrier_or_hardware_dc_spur" in report["entries"][0]["flags"]
 
 
 def test_short_recording_reviewed(tmp_path):
@@ -109,3 +111,27 @@ def test_invalid_sample_rate_and_empty_rejected(tmp_path):
         inspect_recording(tmp_path/"short.wav")
     with pytest.raises(ValueError, match="max_windows"):
         inspect_recording(tmp_path/"short.wav", max_windows=0)
+
+
+
+def test_pure_zero_beat_cw_needs_human_review_not_false_block(tmp_path):
+    # A hardware DC spur has the same mathematical IQ samples.
+    raw = np.full(2048*15, .28 + .17j, dtype=np.complex64)
+    _wav(tmp_path/"cw.wav", raw)
+    report = audit_dataset(_manifest(tmp_path, [_row("cw.wav", "s1", "CW")]), tmp_path)
+    assert report["status"] == "REVIEW"
+    assert report["blocked_recordings"] == 0
+    flags = report["entries"][0]["flags"]
+    assert "REVIEW: constant_cw_am_or_hardware_dc" in flags
+    assert "REVIEW: centered_carrier_or_hardware_dc_spur" in flags
+    assert not report["rf_validated"]
+    assert not report["operator_labels_verified"]
+
+
+def test_constant_unknown_remains_blocked_as_invalid_classification_sample(tmp_path):
+    raw = np.full(2048*15, .28 + .17j, dtype=np.complex64)
+    _wav(tmp_path/"unknown.wav", raw)
+    report = audit_dataset(
+        _manifest(tmp_path, [_row("unknown.wav", "s1", "UNKNOWN")]), tmp_path)
+    assert report["status"] == "BLOCK"
+    assert "BLOCK: nearly_constant_iq_samples" in report["entries"][0]["flags"]

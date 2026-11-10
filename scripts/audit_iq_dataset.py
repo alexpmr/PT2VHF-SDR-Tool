@@ -85,11 +85,19 @@ def _assess(metrics: dict, mode: str) -> list[str]:
     elif metrics["clipping_sample_rate"] > .005:
         flags.append("REVIEW: clipped_samples")
     if metrics["flat_pair_rate"] >= .95:
-        flags.append("BLOCK: nearly_constant_iq_samples")
+        if mode in ("CW", "AM") and metrics["quiet_window_rate"] < .99:
+            # A real zero-beat carrier is locally identical to hardware DC.
+            # Require independent RF confirmation, never auto-approve/reject.
+            flags.append("REVIEW: constant_cw_am_or_hardware_dc")
+        else:
+            flags.append("BLOCK: nearly_constant_iq_samples")
     if metrics["windows_inspected"] < 10:
         flags.append("REVIEW: short_recording")
-    # Carrier at DC can be legitimate in AM/CW: never automatically flag it.
-    if mode not in ("AM", "CW") and metrics["mean_dc_to_rms"] > .55:
+    # Do not silently label a high coherent-DC component as known RF.
+    # In CW/AM it may be a legitimate centered carrier OR receiver DC spur.
+    if mode in ("AM", "CW") and metrics["mean_dc_to_rms"] > .85:
+        flags.append("REVIEW: centered_carrier_or_hardware_dc_spur")
+    elif mode not in ("AM", "CW") and metrics["mean_dc_to_rms"] > .55:
         flags.append("REVIEW: high_dc_component_check_centering")
     if mode in ("NFM", "USB", "LSB") and metrics["mean_abs_iq_correlation"] > .995:
         flags.append("REVIEW: suspicious_stereo_channel_correlation")

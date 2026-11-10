@@ -26,3 +26,21 @@ Repetições após deslocamento, reamostragem ou outra edição podem não ser
 detectadas: esta auditoria é complementar à segregação por sessão do holdout.
 
 Em qualquer resultado, rf_validated e operator_labels_verified continuam false.
+
+
+## CW/AM no centro: sinal legítimo ou espúrio DC?
+
+Um IQ com componente quase constante em 0 Hz pode conter uma portadora
+CW ou AM real, mas também pode representar o desvio DC gerado pelo próprio
+hardware zero-IF. Não há forma confiável de distinguir os dois usando
+somente o vetor IQ dessa gravação. Por isso, nos rótulos **CW** e **AM**, a
+auditoria passa a marcar `REVIEW: centered_carrier_or_hardware_dc_spur` ou
+`REVIEW: constant_cw_am_or_hardware_dc`, em vez de assumir que se trata
+de um sinal válido ou de rejeitá-lo apenas por ser constante. O operador
+deve confirmar a transmissão com referência independente ou deslocamento
+de sintonia. Para `UNKNOWN`, um arquivo quase constante continua bloqueado
+como dado inadequado para aferir reconhecimento de sinais desconhecidos.
+
+Uma classificação `REVIEW` não atende por si só à homologação operacional.
+O classificador v2–v5 ainda remove a média IQ como parte de seu contrato;
+preservar a portadora nos WAV brutos não corrige os pesos dos modelos.
