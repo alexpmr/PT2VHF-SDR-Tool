@@ -107,11 +107,15 @@ def run_probe(steps=4):
         activations = batch_x
         layer_hashes = {}
         for layer_index, layer in enumerate(model.net):
+            layer_input = activations
             activations = layer(activations)
             layer_hashes[f"{layer_index:02d}_{type(layer).__name__}"] = sha_tensors([activations])
             if i == 0 and layer_index == 0:
                 item["first_conv_scalar_samples"] = conv1d_scalar_samples(
-                    batch_x, layer, activations)
+                    layer_input, layer, activations)
+            if i == 0 and layer_index == 2:
+                item["second_conv_scalar_samples"] = conv1d_scalar_samples(
+                    layer_input, layer, activations)
         item["layer_forward_sha256"] = layer_hashes
         logits = activations
         item["forward_logits_sha256"] = sha_tensors([logits])

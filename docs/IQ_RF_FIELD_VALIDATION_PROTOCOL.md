@@ -203,3 +203,22 @@ ou o runtime do SDR. Os hashes exatos por camada continuam
 obrigatórios; amostras esparsas não provam equivalência do tensor
 completo nem reprodutibilidade de 22 épocas. Testes exclusivamente
 sintéticos, sem homologação RF.
+
+
+### Primeira camada divergente localizada — probe #6 (10/11/2026)
+
+A [execução #6](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42924675133)
+comparou AMD EPYC 9V45 com AMD EPYC 9V74. As saídas da
+**primeira Conv1d e ReLU foram idênticas**; a primeira divergência
+SHA-256 ocorreu em **`steps[0].layers.02_Conv1d`**, isto é,
+a segunda convolução, antes do backward/Adam. As 32 amostras da
+primeira Conv1d coincidiram exatamente e tiveram erro máximo
+de 1,4948656712476804e-7 frente à referência escalar float64.
+Isso localiza a primeira divergência nesse par de CPUs, mas
+não prova qual instrução ou backend a provoca. O job falhou
+deliberadamente com código 2; não é uma falha de empacotamento.
+
+O probe seguinte mede também 32 saídas da segunda Conv1d contra
+referência escalar, sem alterar o modelo nem executar 22 épocas.
+A medição é **esparsa**, e os hashes integrais continuam sendo
+o critério de identidade; os resultados não homologam RF.

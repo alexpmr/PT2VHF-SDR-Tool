@@ -17,6 +17,7 @@ def compare_reports(a, b):
         raise ValueError("Probe step counts differ or are empty")
     matches = {key: a[key] == b[key] for key in GLOBAL}
     first_conv_comparison = None
+    second_conv_comparison = None
     for i, (left, right) in enumerate(zip(a["steps"], b["steps"])):
         if left["step"] != i or right["step"] != i:
             raise ValueError("Probe step numbering differs")
@@ -48,6 +49,27 @@ def compare_reports(a, b):
                 "independent_runner_max_abs_error_vs_scalar": rs["max_abs_error"],
                 "scope": "Sparse first-minibatch samples; exact layer hashes still gate",
             }
+            sl, sr = left["second_conv_scalar_samples"], right["second_conv_scalar_samples"]
+            scount = sl["sample_count"]
+            if scount < 1 or scount != sr["sample_count"]:
+                raise ValueError("Second Conv1d scalar sample counts differ")
+            for label in ("observed", "reference"):
+                if len(sl[label]) != scount or len(sr[label]) != scount:
+                    raise ValueError("Second Conv1d scalar sample lengths differ")
+                if not all(math.isfinite(float(v)) for v in sl[label] + sr[label]):
+                    raise ValueError("Non-finite second Conv1d scalar sample")
+                matches[f"steps[0].second_conv_scalar_{label}"] = sl[label] == sr[label]
+            second_obs_diff = [abs(x - y) for x, y in zip(sl["observed"], sr["observed"])]
+            second_ref_diff = [abs(x - y) for x, y in zip(sl["reference"], sr["reference"])]
+            second_conv_comparison = {
+                "sample_count": scount,
+                "sampled_observed_max_abs_diff": max(second_obs_diff),
+                "sampled_observed_mean_abs_diff": sum(second_obs_diff) / scount,
+                "sampled_scalar_reference_max_abs_diff": max(second_ref_diff),
+                "reference_runner_max_abs_error_vs_scalar": sl["max_abs_error"],
+                "independent_runner_max_abs_error_vs_scalar": sr["max_abs_error"],
+                "scope": "Sparse first-minibatch samples; exact layer hashes still gate",
+            }
     first = next((key for key, ok in matches.items() if not ok), None)
     env_ok = all(a[key] == b[key] for key in ENV)
     cross_cpu = (a["cpu_model"] != b["cpu_model"]
@@ -62,6 +84,7 @@ def compare_reports(a, b):
         "cross_cpu_tested": cross_cpu, "environment_exact_match": env_ok,
         "steps_compared": len(a["steps"]), "first_divergent_stage": first,
         "stage_exact_match": matches, "first_conv_scalar_comparison": first_conv_comparison,
+        "second_conv_scalar_comparison": second_conv_comparison,
         "conclusion": conclusion,
         "limitations": "Matching early steps cannot prove 22-epoch reproducibility",
     }

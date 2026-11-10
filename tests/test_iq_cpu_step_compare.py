@@ -12,7 +12,11 @@ def probe(cpu="AMD"):
         "requested_steps": 2,
         "input_sha256": "x", "validation_input_sha256": "v",
         "initial_parameters_sha256": "p", "epoch0_permutation_sha256": "perm",
-        "steps": [{"step": i, "first_conv_scalar_samples": {
+        "steps": [{"step": i, "second_conv_scalar_samples": {
+                       "sample_count": 2, "observed": [3.0, 4.0],
+                       "reference": [3.0, 4.0],
+                       "max_abs_error": 0.0, "mean_abs_error": 0.0},
+                   "first_conv_scalar_samples": {
                        "sample_count": 2, "observed": [1.0, 2.0],
                        "reference": [1.0, 2.0],
                        "max_abs_error": 0.0, "mean_abs_error": 0.0},
@@ -91,3 +95,13 @@ def test_malformed_or_nonfinite_scalar_samples_fail_closed():
     b["steps"][0]["first_conv_scalar_samples"]["reference"][0] = float("nan")
     with pytest.raises(ValueError, match="Non-finite"):
         compare_reports(a, b)
+
+
+def test_second_conv_scalar_comparison_reports_drift():
+    a, b = probe(), probe("Intel")
+    b["steps"][0]["layer_forward_sha256"]["02_Conv1d"] = "different"
+    b["steps"][0]["second_conv_scalar_samples"]["observed"][0] += 0.00002
+    result = compare_reports(a, b)
+    assert result["first_divergent_stage"] == "steps[0].layers.02_Conv1d"
+    assert abs(result["second_conv_scalar_comparison"]["sampled_observed_max_abs_diff"] - 0.00002) < 1e-10
+    assert result["first_conv_scalar_comparison"]["sampled_observed_max_abs_diff"] == 0.0
