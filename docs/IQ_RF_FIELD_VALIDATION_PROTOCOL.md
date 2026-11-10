@@ -81,4 +81,14 @@ Revisar matriz de confusão, recall por classe (em especial CW/AM), erros de alt
 
 O script `evaluate_iq_recordings.py` inclui `session_macro_accuracy_ci95`, um intervalo exploratório de 95% por **bootstrap de sessões**, e `session_accuracy_summary` (mínimo, máximo e contagem, sem nomes/IDs de sessão). O cálculo exige **ao menos três sessões** e retorna `null` quando houver menos, evitando apresentar janelas altamente correlacionadas como observações independentes. A sequência aleatória é determinística para auditoria; 2.000 reamostragens por padrão.
 
-**Limitação essencial:** intervalo bootstrap não corrige rótulos errados, viés de seleção, dependência entre sessões, ausência de diversidade de SDR nem prova desempenho operacional. A versão experimental foi submetida ao [Actions #66](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42845233390) para testes; verificar o resultado antes de citar a implementação como aprovada.
+**Limitação essencial:** intervalo bootstrap não corrige rótulos errados, viés de seleção, dependência entre sessões, ausência de diversidade de SDR nem prova desempenho operacional.
+
+### Evidência do CI #66 — 10/11/2026
+
+- [GitHub Actions #66](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42845233390), commit [`bdcdc17`](https://github.com/alexpmr/PT2VHF-SDR-Tool/commit/bdcdc178ca8422571818ddd9280c6ad5e0eb6319): **SUCCESS** nos dois jobs `train-export-validate` e `verify-v4-across-runners`.
+- Suíte IQ: **151 testes aprovados**. Inclui os testes sintéticos de `session_macro_accuracy_ci95` e privacidade do relatório, sem WAV de RF real. Exportação ONNX v2–v5 e `sha256sum -c SHA256SUMS` aprovados no job principal.
+- Replay v4 em runner independente com Python 3.11.18, PyTorch 2.15.0+cpu, NumPy 2.4.6 e 2 threads: `parameter_exact_match=true`, `metrics_exact_match=true`, `max_parameter_absolute_difference=0.0`. Esta é reprodutibilidade de treinamento em ambientes Linux/CPU equivalentes, **não** validade em RF.
+- [Artefato de modelos #13779095475](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42845233390/artifacts/13779095475), 706.252 bytes, digest do ZIP `sha256:dcd68a72e9f24bc1a098c901a262cf29c8a655c23118769430af042fa91eafe0`; [relatório cross-runner #13777273055](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42845233390/artifacts/13777273055), 466 bytes, digest do ZIP `sha256:fab55c1b1c61dd6c7c18d56706bfe01735e49b295dcdfccede31f637bce7eefc`.
+- Avisos não bloqueantes de depreciação Node.js 20 nas actions; atualizar actions em manutenção separada, sem confundir com erro do classificador.
+
+**Próximo portão:** obter corpus IQ RF real independente, executar auditoria de qualidade e comparar v2–v5 por sessão/dispositivo e classe (CW, AM, UNKNOWN, portadora não modulada). CI verde e bootstrap sobre dados sintéticos **não** autorizam merge, modelo operacional nem release.
