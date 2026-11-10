@@ -2,6 +2,8 @@ name: Experimental IQ model training and ONNX export
 on:
   workflow_dispatch:
   pull_request:
+    # Treinamento completo apenas quando arquitetura/treino/benchmark neural mudar.
+    # Captura IQ, metadados, WAV e qualidade dos dados são cobertos pela CI geral.
     paths:
       - 'scripts/train_iq_synthetic_ci.py'
       - 'scripts/train_iq_augmented_v3.py'
@@ -11,11 +13,6 @@ on:
       - 'scripts/compare_iq_stress.py'
       - 'scripts/iq_out_of_family.py'
       - 'scripts/evaluate_iq_ood.py'
-      - 'scripts/evaluate_iq_recordings.py'
-      - 'scripts/iq_session_gate.py'
-      - 'scripts/prepare_iq_rf_capture.py'
-      - 'pt2vhf/iq_provenance.py'
-      - 'scripts/audit_iq_dataset.py'
       - 'scripts/smoke_iq_wav_onnx.py'
       - 'scripts/export_iq_synthetic_v2.py'
       - 'scripts/evaluate_iq_synthetic_stress.py'
@@ -26,11 +23,6 @@ on:
       - 'tests/test_iq_augmentation.py'
       - 'tests/test_iq_ood_signals.py'
       - 'tests/test_iq_unknown_curriculum.py'
-      - 'tests/test_iq_recordings.py'
-      - 'tests/test_iq_session_gate.py'
-      - 'tests/test_iq_capture_preparation.py'
-      - 'tests/test_iq_provenance.py'
-      - 'tests/test_iq_dataset_audit.py'
       - '.github/workflows/iq-model-export.yml'
 jobs:
   train-export-validate:
