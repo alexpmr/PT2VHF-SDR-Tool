@@ -441,7 +441,10 @@ class Engine:
             except Exception as e:  # noqa: BLE001
                 log.exception("Comando falhou: %s", e)
 
-        blk = blk - np.mean(blk)  # remove DC (pico central do RTL-SDR)
+        # Record the original complex IQ BEFORE DC correction. A genuine CW
+        # carrier or AM carrier at the SDR center is otherwise irreversibly
+        # lost from the WAV. Receiver/display retain their existing DC fix.
+        raw_iq_for_capture = blk
         close_invalid_iq = None
         with self._lock:
             if self._iq_rec is not None:
@@ -450,7 +453,7 @@ class Engine:
                 wrote = False
                 if should_write:
                     try:
-                        self._iq_rec.write(blk)
+                        self._iq_rec.write(raw_iq_for_capture)
                     except WavSizeLimitError:
                         close_invalid_iq = "wav_riff_limit"
                     except (OSError, ValueError):
@@ -472,6 +475,9 @@ class Engine:
                    else "Falha ao gravar IQ; arquivo não é válido para teste neural.")
             self.events.put(("iq_recording_warning", msg, time.time()))
 
+        # Apply legacy per-block DC correction only to downstream reception,
+        # spectrum, IF classifier and decoder paths, NEVER the saved raw IQ.
+        blk = blk - np.mean(blk)
         fs = src.sample_rate
         for listener in tuple(self.iq_listeners):
             try:

@@ -168,7 +168,12 @@ class IQCaptureProvenance:
             "vfo_hz_at_start": self.vfo_hz,
             "receiver_mode_at_start": self.mode,
             "iq_vox": self.vox,
-            "dc_removed_per_processing_block": True,
+            # Raw IQ is now recorded before the receiver's DC correction.
+            # Do not assert RF authenticity: RTL-SDR hardware DC spur may
+            # still be present and can resemble an on-center CW carrier.
+            "dc_removed_per_processing_block": False,
+            "iq_samples_kind": "raw_before_receiver_dc_correction",
+            "hardware_dc_spur_possible": True,
             "written_frames": self.frames,
             "blocks_observed": self.blocks,
             "blocks_skipped": self.skipped_blocks,

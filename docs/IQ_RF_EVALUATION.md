@@ -171,3 +171,26 @@ suportadas. Taxas quase coprimas com 48.000 Hz (por exemplo, 1.000.001 S/s)
 são bloqueadas antes da alocação do FIR, com uma mensagem orientando usar
 uma taxa de amostragem padrão do equipamento. Não há fallback de baixa
 qualidade nem reamostragem silenciosamente aproximada.
+
+
+## Portadoras CW/AM exatamente no centro do SDR (preservação IQ)
+
+Na revisão experimental, o WAV bruto agora é gravado **antes** da remoção
+por bloco da média complexa do IQ. A correção de DC continua em vigor para
+áudio, espectro e recepção, preservando o comportamento do aplicativo. O
+sidecar declara `dc_removed_per_processing_block: false` e
+`iq_samples_kind: raw_before_receiver_dc_correction` para gravações novas.
+
+**Por quê:** subtrair a média de cada bloco apaga irreversivelmente uma
+portadora complexa estável exatamente em 0 Hz (sinal sintonizado no centro),
+ainda que a transmissão seja legítima. O arquivo bruto preserva essa
+informação para análise posterior. **Arquivos anteriores que já sofreram
+essa subtração não podem ter a componente perdida restaurada.**
+
+**Limitação:** um pico DC também pode ser produzido pelo próprio SDR,
+principalmente em arquiteturas zero-IF. Nem o novo WAV nem o ONNX permitem,
+sozinhos, distinguir uma portadora CW/AM verdadeira do espúrio DC do receptor.
+O classificador v2–v5 continua usando pré-processamento com remoção da média,
+compatível com seu treinamento; **não foi retreinado nem homologado para
+identificar CW puro em zero beat**. Para ensaios, grave com o sinal deslocado
+do centro, documente o offset e confirme o modo por método independente.
