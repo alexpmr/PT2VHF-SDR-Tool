@@ -19,7 +19,7 @@ import tempfile
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qsl
 
 from . import __version__
 
@@ -48,6 +48,7 @@ class UpdateInfo:
     notes: str
     page: str
     file: dict | None
+    allow_test_host: bool = False
 
 
 def parse_version(v: str) -> tuple[int, ...]:
@@ -71,18 +72,55 @@ def install_kind(exe_path: Path | None = None, frozen: bool | None = None) -> st
 
 
 def is_official(url: str, name: str) -> bool:
+    """Accept canonical site files and the exact official download.php contract."""
     try:
+        if not isinstance(url, str) or not isinstance(name, str):
+            return False
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+\.exe", name, re.IGNORECASE):
+            return False
         u = urlsplit(url)
-        return (u.scheme == "https" and u.netloc == OFFICIAL_HOST and u.path == DOWNLOAD_PREFIX + name
-                and not u.query and not u.fragment and "%" not in u.path
-                and bool(re.fullmatch(r"[A-Za-z0-9_.-]+", name)) and name.casefold().endswith(".exe"))
+        if (u.scheme != "https" or u.netloc != OFFICIAL_HOST or u.fragment
+                or "%" in u.path or u.username or u.password):
+            return False
+        if u.path == DOWNLOAD_PREFIX + name and not u.query:
+            return True
+        if u.path == "/download.php":
+            return sorted(parse_qsl(u.query, keep_blank_values=True)) == sorted(
+                [("product", PRODUCT), ("file", name)])
+        return False
     except (TypeError, ValueError, AttributeError):
         return False
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *a, **k):
-        raise UpdateError("Redirecionamento bloqueado: atualizações só vêm de www.pt2vhf.com")
+        raise UpdateError("Redirecionamento bloqueado fora do fluxo oficial.")
+
+
+class _PackageRedirect(urllib.request.HTTPRedirectHandler):
+    """Allow only site -> matching GitHub release -> GitHub asset CDN."""
+    def __init__(self, name: str, version: str):
+        super().__init__()
+        self.name = name
+        self.version = version
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        old, target = urlsplit(req.full_url), urlsplit(newurl)
+        if target.scheme != "https" or target.username or target.password or target.fragment:
+            raise UpdateError("Destino de atualização inseguro ou não autorizado.")
+        expected = (f"/alexpmr/PT2VHF-SDR-Tool/releases/download/"
+                    f"v{self.version.lstrip('v')}/{self.name}")
+        from_site = (is_official(req.full_url, self.name)
+                     and target.netloc == "github.com"
+                     and target.path == expected and not target.query)
+        from_release = (old.scheme == "https" and old.netloc == "github.com"
+                        and old.path == expected and not old.query
+                        and target.netloc in ("release-assets.githubusercontent.com",
+                                              "objects.githubusercontent.com")
+                        and bool(target.path))
+        if not (from_site or from_release):
+            raise UpdateError("Redirecionamento fora da release oficial PT2VHF.")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 _opener = urllib.request.build_opener(_NoRedirect)
@@ -112,7 +150,7 @@ def select_update(manifest: dict, kind: str, current: str = __version__,
         chosen = f
         break
     return UpdateInfo(version, str(manifest.get("date") or ""), str(manifest.get("notes") or ""),
-                      str(manifest.get("page") or WEB_URL), chosen)
+                      str(manifest.get("page") or WEB_URL), chosen, allow_test_host)
 
 
 def check(kind: str | None = None, base_url: str = UPDATE_URL, timeout: float = 20.0,
@@ -144,10 +182,13 @@ def download(info: UpdateInfo, progress=None, dest_dir: str | None = None, timeo
     if not HASH_RE.fullmatch(sha) or size <= 0 or not re.fullmatch(r"[A-Za-z0-9_.-]+", name):
         raise UpdateError("Atualização sem tamanho e SHA-256 verificáveis; bloqueada.")
     target = Path(dest_dir or tempfile.mkdtemp(prefix="pt2vhf_sdr_update_")) / name
+    if not info.allow_test_host and not is_official(f["url"], name):
+        raise UpdateError("Pacote fora do site oficial PT2VHF.")
+    opener = _opener if info.allow_test_host else urllib.request.build_opener(_PackageRedirect(name, info.version))
     req = urllib.request.Request(f["url"], headers={"User-Agent": USER_AGENT})
     h, got = hashlib.sha256(), 0
     try:
-        with _opener.open(req, timeout=timeout) as r, open(target, "wb") as out:
+        with opener.open(req, timeout=timeout) as r, open(target, "wb") as out:
             declared = r.headers.get("Content-Length")
             if declared and int(declared) != size:
                 raise UpdateError("Tamanho do pacote diverge do manifesto do site.")
