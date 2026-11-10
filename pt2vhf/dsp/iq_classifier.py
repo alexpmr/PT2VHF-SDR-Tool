@@ -44,13 +44,17 @@ class IQClassifier:
             raise ValueError("Insufficient IQ samples")
         if not np.all(np.isfinite(samples)):
             raise ValueError("Non-finite IQ samples")
-        # Center crop, DC removal and RMS normalization.
+        # Center crop, DC removal and RMS normalization. A constant
+        # complex carrier can leave float32 roundoff after mean subtraction.
+        # That residual must NEVER be amplified into apparent RF content.
         start = (samples.size - SAMPLES) // 2
         samples = samples[start:start + SAMPLES].copy()
+        original_rms = float(np.sqrt(np.mean(
+            np.abs(samples.astype(np.complex128)) ** 2)))
         samples -= samples.mean()
         rms = float(np.sqrt(np.mean(np.abs(samples) ** 2)))
-        if rms < 1e-8:
-            raise ValueError("No usable RF signal")
+        if rms < max(1e-8, original_rms * 1e-5):
+            raise ValueError("No usable RF signal (DC-only or unresolved carrier)")
         samples /= rms
         return np.stack((samples.real, samples.imag), axis=0)[None].astype(np.float32)
 
