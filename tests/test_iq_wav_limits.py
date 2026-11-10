@@ -136,3 +136,54 @@ def test_engine_checksum_failure_keeps_pending_marker(tmp_path, monkeypatch):
     assert report["capture_state"] == "recording"
     assert not report["suitable_for_continuous_channelization"]
     assert any(event[0] == "iq_recording_warning" for event in list(eng.events.queue))
+
+
+
+@pytest.mark.parametrize("reason", ["large-file", "dsp-thread"])
+def test_async_finalization_keeps_sidecar_pending_until_checksum(tmp_path, monkeypatch, reason):
+    """Slow checksum must not stall the caller or accept a half-finalized WAV."""
+    import threading
+    from pt2vhf.engine import IQ_ASYNC_HASH_MIN_BYTES
+
+    eng = _engine()
+    path = eng.start_iq_recording(str(tmp_path))
+    with eng._lock:
+        eng._iq_rec.write(_iq(16384))
+        eng._iq_provenance.observe(145_500_000, 240_000, 16384, True)
+        meta = eng._iq_provenance
+    began = threading.Event()
+    release = threading.Event()
+    original = meta.final_report
+
+    def held_checksum(frames):
+        began.set()
+        if not release.wait(timeout=5):
+            raise TimeoutError("Checksum test release was not signaled")
+        return original(frames)
+
+    monkeypatch.setattr(meta, "final_report", held_checksum)
+    if reason == "large-file":
+        monkeypatch.setattr("pt2vhf.engine.IQ_ASYNC_HASH_MIN_BYTES", 1)
+    else:
+        monkeypatch.setattr("pt2vhf.engine.IQ_ASYNC_HASH_MIN_BYTES", 1_000_000_000)
+        eng._thread = threading.current_thread()
+
+    try:
+        eng.stop_iq_recording()
+        thread = eng._last_iq_finalize_thread
+        assert thread is not None and thread is not threading.current_thread()
+        assert began.wait(timeout=3)
+        pending = json.loads(sidecar_path(path).read_text(encoding="utf-8"))
+        assert pending["capture_state"] == "recording"
+        assert pending["suitable_for_continuous_channelization"] is False
+        assert not eng.recording_iq
+    finally:
+        release.set()
+        if eng._last_iq_finalize_thread is not None:
+            eng._last_iq_finalize_thread.join(timeout=4)
+    assert not eng._last_iq_finalize_thread.is_alive()
+    report = json.loads(sidecar_path(path).read_text(encoding="utf-8"))
+    assert report["capture_state"] == "complete"
+    assert report["suitable_for_continuous_channelization"]
+    assert report["written_frames"] == 16384
+    assert any(event[0] == "iq_recording_finalized" for event in list(eng.events.queue))
