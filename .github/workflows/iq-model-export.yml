@@ -64,6 +64,11 @@ jobs:
           from pathlib import Path
           import numpy as np
           import torch
+          cpu_model = next((line.partition(":")[2].strip() for line in
+              Path("/proc/cpuinfo").read_text().splitlines()
+              if line.startswith("model name")), "unknown")
+          print("Training runner CPU:", cpu_model, flush=True)
+          print("PyTorch build:", torch.__config__.show(), flush=True)
           original = torch.load("models/iq/synthetic_v4.pt", map_location="cpu", weights_only=True)
           repeated = torch.load("models/iq/replay/synthetic_v4.pt", map_location="cpu", weights_only=True)
           assert list(original) == list(repeated), "Replay model parameter names differ"
@@ -81,6 +86,7 @@ jobs:
               "numpy_version": np.__version__,
               "python_version": platform.python_version(),
               "threads": torch.get_num_threads(),
+              "cpu_model": cpu_model,
               "limitations": "One replay on one runner cannot establish reproducibility across machines, versions or sessions"
           }
           output = Path("models/iq/synthetic_v4_replay_metrics.json")
@@ -261,8 +267,14 @@ jobs:
               "python_version": platform.python_version(),
               "threads": torch.get_num_threads(),
           }
+          cpu_model = next((line.partition(":")[2].strip() for line in
+              Path("/proc/cpuinfo").read_text().splitlines()
+              if line.startswith("model name")), "unknown")
           print("Original runner:", {key: prior[key] for key in environment}, flush=True)
           print("Independent runner:", environment, flush=True)
+          print("Original CPU:", prior.get("cpu_model", "unknown"), flush=True)
+          print("Independent CPU:", cpu_model, flush=True)
+          print("PyTorch build:", torch.__config__.show(), flush=True)
           assert all(prior[key] == value for key, value in environment.items()), (
               "Different environments; compare only under matching versions and CPU thread count")
           orig = torch.load(root / "synthetic_v4.pt", map_location="cpu", weights_only=True)
@@ -273,11 +285,17 @@ jobs:
           orig_metrics = json.loads((root / "synthetic_v4_metrics.json").read_text())
           new_metrics = json.loads((root / "cross_runner/synthetic_v4_metrics.json").read_text())
           same_metrics = orig_metrics == new_metrics
+          same_input = orig_metrics.get("training_input_sha256") == new_metrics.get("training_input_sha256")
+          same_initial = orig_metrics.get("initial_parameters_sha256") == new_metrics.get("initial_parameters_sha256")
           report = {
               "scope": "Independent Linux GitHub-hosted CPU runner; synthetic v4 only; no RF validation",
               "parameter_exact_match": exact,
               "max_parameter_absolute_difference": max_difference,
               "metrics_exact_match": same_metrics,
+              "training_input_exact_match": same_input,
+              "initial_parameters_exact_match": same_initial,
+              "reference_cpu_model": prior.get("cpu_model", "unknown"),
+              "independent_cpu_model": cpu_model,
               "environment": environment,
               "limitations": "Two GitHub Ubuntu runners do not establish GPU, OS, or RF generalization",
           }

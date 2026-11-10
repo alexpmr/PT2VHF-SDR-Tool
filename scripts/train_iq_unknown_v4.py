@@ -1,5 +1,6 @@
 """Experimental v4 training with broader UNKNOWN examples; never auto-deploy."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import numpy as np
@@ -39,6 +40,14 @@ def main():
             replaced += 1
     validation_x, validation_y = dataset(1400, 991)
     model = Net()
+    # Diagnostics only: prove whether different runners generated identical
+    # training tensors and identical initial weights BEFORE optimizer updates.
+    data_digest = hashlib.sha256()
+    data_digest.update(x.contiguous().numpy().tobytes())
+    data_digest.update(y.contiguous().numpy().tobytes())
+    initial_digest = hashlib.sha256()
+    for parameter in model.parameters():
+        initial_digest.update(parameter.detach().contiguous().numpy().tobytes())
     optimizer = torch.optim.Adam(model.parameters(), lr=.003)
     for epoch in range(args.epochs):
         model.train()
@@ -60,6 +69,8 @@ def main():
         "unknown_examples_replaced": replaced,
         "unknown_fraction": args.unknown_fraction,
         "unknown_families": FAMILIES,
+        "training_input_sha256": data_digest.hexdigest(),
+        "initial_parameters_sha256": initial_digest.hexdigest(),
         "validation_samples": len(validation_y),
         "validation_accuracy": float(np.mean(pred==truth)),
         "per_class_recall": {name:float(confusion[i,i]/max(confusion[i].sum(),1))
