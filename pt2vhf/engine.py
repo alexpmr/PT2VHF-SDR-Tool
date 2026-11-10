@@ -423,10 +423,7 @@ class Engine:
             if self._iq_rec is not None:
                 should_write = (not self.iq_vox or rx.squelch.is_open
                                 or time.monotonic() < self._iq_open_until)
-                if self._iq_provenance is not None:
-                    self._iq_provenance.observe(src.center_freq, src.sample_rate,
-                                                len(blk), should_write,
-                                                getattr(src, "dropped", 0))
+                wrote = False
                 if should_write:
                     try:
                         self._iq_rec.write(blk)
@@ -434,7 +431,15 @@ class Engine:
                         close_invalid_iq = "wav_riff_limit"
                     except (OSError, ValueError):
                         close_invalid_iq = "wav_write_failed"
-                    if close_invalid_iq and self._iq_provenance is not None:
+                    else:
+                        wrote = True
+                if self._iq_provenance is not None:
+                    # Record only successfully written frames. A rejected
+                    # block must not inflate the WAV/sidecar sample count.
+                    self._iq_provenance.observe(src.center_freq, src.sample_rate,
+                                                len(blk), wrote,
+                                                getattr(src, "dropped", 0))
+                    if close_invalid_iq:
                         self._iq_provenance.interrupt(close_invalid_iq)
         if close_invalid_iq:
             self.stop_iq_recording()
