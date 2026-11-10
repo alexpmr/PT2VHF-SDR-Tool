@@ -76,3 +76,9 @@ Revisar matriz de confusão, recall por classe (em especial CW/AM), erros de alt
 - Sinalizar explicitamente **WFM não validado** no contrato atual: 48 kS/s/2.048 amostras não é evidência para broadcast FM convencional.
 - Bloquear decisão automática de VFO/modo até teste operacional supervisionado.
 - **Sem gravações RF reais disponíveis, o status da IA permanece EXPERIMENTAL**, mesmo com todos os workflows verdes.
+
+## Intervalo de confiança por sessão (atualização de 10/11/2026)
+
+O script `evaluate_iq_recordings.py` inclui `session_macro_accuracy_ci95`, um intervalo exploratório de 95% por **bootstrap de sessões**, e `session_accuracy_summary` (mínimo, máximo e contagem, sem nomes/IDs de sessão). O cálculo exige **ao menos três sessões** e retorna `null` quando houver menos, evitando apresentar janelas altamente correlacionadas como observações independentes. A sequência aleatória é determinística para auditoria; 2.000 reamostragens por padrão.
+
+**Limitação essencial:** intervalo bootstrap não corrige rótulos errados, viés de seleção, dependência entre sessões, ausência de diversidade de SDR nem prova desempenho operacional. A versão experimental foi submetida ao [Actions #66](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42845233390) para testes; verificar o resultado antes de citar a implementação como aprovada.
