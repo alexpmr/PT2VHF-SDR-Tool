@@ -97,3 +97,25 @@ deliberadamente WAV e JSON. O cálculo integral ocorre no encerramento do
 arquivo, podendo introduzir atraso ao finalizar gravações muito extensas.
 Evite usar essa funcionalidade em gravações prolongadas sem monitorar espaço
 em disco e os limites do formato WAV RIFF.
+
+
+## Interrupções de fonte e perda de blocos IQ
+
+Na branch experimental, a gravação passa a registrar o contador de blocos
+`dropped` da fonte SDR desde o início da captura, sem contar perdas anteriores.
+**Qualquer incremento durante a gravação** é marcado como
+`dropped_iq_blocks` e torna o WAV inadequado à validação de sinal contínuo.
+Uma reinicialização inesperada do contador também invalida a sessão.
+
+Se a fonte SDR parar inesperadamente ou lançar erro durante a leitura, o
+motor finaliza a gravação IQ e identifica no sidecar o motivo
+`source_stopped_unexpectedly` ou `source_read_failed`. O WAV é fechado e
+recebe checksum, mas permanece `suitable_for_continuous_channelization: false`;
+o conversor o recusa. Uma parada normal pelo botão não recebe esse motivo.
+
+**Limitação de observabilidade:** `dropped` reflete perdas na fila de blocos
+que a fonte informa. Não garante detectar todas as perdas internas do dongle,
+interferência USB ou falhas de sincronismo não expostas pelo driver. O SHA-256
+protege a integridade após a captura, mas não detecta amostras ausentes que já
+chegaram faltando. Para validação conclusiva, comparar também sinais reais
+com referência independente.
