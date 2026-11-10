@@ -97,3 +97,11 @@ O script `evaluate_iq_recordings.py` inclui `session_macro_accuracy_ci95`, um in
 
 - [Actions #65](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42845185047), commit `3afa297`: falhou na etapa antecipada de teste RF porque `python -m pytest` foi executado **antes** da instalação de `pytest` (`No module named pytest`). Não foi falha de treinamento nem de ONNX. O commit `bdcdc17` removeu essa etapa duplicada e manteve os testes na etapa existente, após instalar as dependências; [#66](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42845233390) passou com 151 testes.
 - Auditoria adicional do avaliador offline: `IQClassifier.predict` aplica `min_confidence` e pode retornar `mode="UNKNOWN"` mesmo quando a maior probabilidade bruta pertence a AM/CW/etc. A matriz de confusão e a acurácia por sessão devem usar **`result.mode`**, enquanto a curva de limiares deve usar o argmax bruto sob cada limiar. Misturar os dois inflava erros de UNKNOWN e distorcia recall. Regressão coberta por stubs sintéticos, **sem RF real**.
+
+### Experimento cross-CPU após a falha #68 (10/11/2026)
+
+A [execução #68](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42858152704) falhou no replay independente v4; o job principal passou 153 testes IQ, ONNX v2–v5 e SHA-256. Dados e parâmetros iniciais idênticos, mas pesos finais diferentes (diferença máxima 1,4822826385) entre AMD EPYC 9V45 e EPYC 7763. A divergência surge durante a otimização; a operação exata ainda é desconhecida.
+
+**Hipótese a testar:** diferenças no despacho de kernels vetorizados/oneDNN/MKL e no paralelismo. O modo experimental `--portable-cpu` da v4 desativa oneDNN, usa uma thread e algoritmos determinísticos; os jobs definem `ATEN_CPU_CAPABILITY=default` e `MKL_CBWR=COMPATIBLE` antes da importação do PyTorch. A política é registrada nas métricas. Os pesos v4 serão diferentes dos anteriores e exigirão nova comparação de desempenho. **Não presumir sucesso antes de um replay independente concluído.** Se falhar, registrar hashes de gradientes e parâmetros após o primeiro passo do Adam.
+
+Os novos testes unitários verificam a ativação e os pré-requisitos da política, **não** a identidade entre CPUs. Nenhum resultado homologa RF real nem resolve falsos positivos OOD.
