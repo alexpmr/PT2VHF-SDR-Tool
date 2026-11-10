@@ -53,6 +53,40 @@ jobs:
         run: python scripts/train_iq_unknown_v4.py
       - name: Export and verify v4 candidate ONNX
         run: python scripts/export_iq_synthetic_v2.py --checkpoint models/iq/synthetic_v4.pt --output models/iq/synthetic_v4.onnx
+      - name: Check v4 training reproducibility with a second isolated run
+        run: |
+          python scripts/train_iq_unknown_v4.py --output-dir models/iq/replay
+          python - <<'PY'
+          import json
+          import platform
+          from pathlib import Path
+          import numpy as np
+          import torch
+          original = torch.load("models/iq/synthetic_v4.pt", map_location="cpu", weights_only=True)
+          repeated = torch.load("models/iq/replay/synthetic_v4.pt", map_location="cpu", weights_only=True)
+          assert list(original) == list(repeated), "Replay model parameter names differ"
+          diffs = {key: float((original[key] - repeated[key]).abs().max()) for key in original}
+          all_equal = all(torch.equal(original[key], repeated[key]) for key in original)
+          a = json.loads(Path("models/iq/synthetic_v4_metrics.json").read_text())
+          b = json.loads(Path("models/iq/replay/synthetic_v4_metrics.json").read_text())
+          report = {
+              "scope": "CPU synthetic v4 exact replay within one GitHub Actions job; not RF validation",
+              "model": "synthetic_v4",
+              "parameter_exact_match": all_equal,
+              "max_parameter_absolute_difference": max(diffs.values()),
+              "metrics_exact_match": a == b,
+              "torch_version": torch.__version__,
+              "numpy_version": np.__version__,
+              "python_version": platform.python_version(),
+              "threads": torch.get_num_threads(),
+              "limitations": "One replay on one runner cannot establish reproducibility across machines, versions or sessions"
+          }
+          output = Path("models/iq/synthetic_v4_replay_metrics.json")
+          output.write_text(json.dumps(report, indent=2) + "\n")
+          print(json.dumps(report, indent=2), flush=True)
+          assert report["parameter_exact_match"] and report["metrics_exact_match"], (
+              "v4 training is not exactly reproducible on the same CPU runner")
+          PY
       - name: Train intermediate UNKNOWN v5 candidate (45%, diagnostic only)
         run: python scripts/train_iq_unknown_v4.py --unknown-fraction 0.45 --model-stem synthetic_v5
       - name: Export and verify v5 ONNX
@@ -158,7 +192,7 @@ jobs:
           assert set(wav_smoke["result"]["models"]) == {"v2","v3","v4","v5"}
           PY
           cd models/iq
-          sha256sum synthetic_v2.onnx synthetic_v2.pt synthetic_v2_metrics.json synthetic_v2_stress_metrics.json synthetic_v3.onnx synthetic_v3.pt synthetic_v3_metrics.json synthetic_v3_stress_metrics.json synthetic_v3_comparison.json synthetic_v3_ood_metrics.json synthetic_v3_ood_altseed_metrics.json synthetic_v4.onnx synthetic_v4.pt synthetic_v4_metrics.json synthetic_v5.onnx synthetic_v5.pt synthetic_v5_metrics.json synthetic_wav_smoke_metrics.json > SHA256SUMS
+          sha256sum synthetic_v2.onnx synthetic_v2.pt synthetic_v2_metrics.json synthetic_v2_stress_metrics.json synthetic_v3.onnx synthetic_v3.pt synthetic_v3_metrics.json synthetic_v3_stress_metrics.json synthetic_v3_comparison.json synthetic_v3_ood_metrics.json synthetic_v3_ood_altseed_metrics.json synthetic_v4.onnx synthetic_v4.pt synthetic_v4_metrics.json synthetic_v4_replay_metrics.json synthetic_v5.onnx synthetic_v5.pt synthetic_v5_metrics.json synthetic_wav_smoke_metrics.json > SHA256SUMS
           sha256sum -c SHA256SUMS
       - name: Upload experimental model and metrics
         uses: actions/upload-artifact@v4
@@ -179,6 +213,7 @@ jobs:
             models/iq/synthetic_v4.onnx
             models/iq/synthetic_v4.pt
             models/iq/synthetic_v4_metrics.json
+            models/iq/synthetic_v4_replay_metrics.json
             models/iq/synthetic_v5.onnx
             models/iq/synthetic_v5.pt
             models/iq/synthetic_v5_metrics.json
