@@ -154,3 +154,20 @@ checksum em um encerramento normal. Finalizar arquivos extensos pode manter
 o processo Python ativo mesmo após o fechamento da janela, enquanto conclui
 a verificação. Encerramento forçado ou falta de energia ainda pode deixar
 o marcador pendente; nesse caso, não utilizar o WAV como conjunto validado.
+
+
+## Referência matemática e controle de memória
+
+A conversão em blocos é comparada em testes com uma referência independente
+que lê o WAV inteiro, mistura o canal para a banda-base e executa
+`scipy.signal.resample_poly` de uma vez, incluindo amostras das extremidades
+e trechos com ruído. Esse teste verifica a **implementação DSP**, não a
+acurácia de identificação de modulação em RF real.
+
+Para evitar consumo descontrolado de memória, o conversor recusa razões
+racionais de reamostragem cujo numerador ou denominador reduzido exceda
+**4.096**. Taxas SDR comuns como 1,024, 2,048, 2,4 e 2,4576 MS/s continuam
+suportadas. Taxas quase coprimas com 48.000 Hz (por exemplo, 1.000.001 S/s)
+são bloqueadas antes da alocação do FIR, com uma mensagem orientando usar
+uma taxa de amostragem padrão do equipamento. Não há fallback de baixa
+qualidade nem reamostragem silenciosamente aproximada.

@@ -170,3 +170,74 @@ def test_source_below_48k_still_rejected(tmp_path):
     with pytest.raises(ValueError, match="48 kS/s"):
         convert(src, dest, 146_000_000, 146_004_000)
     assert not dest.exists()
+
+
+
+@pytest.mark.parametrize("rate", [48_000, 192_000, 1_024_000, 2_457_600])
+@pytest.mark.parametrize("chunk", [1_003, 27_001])
+def test_streaming_converter_matches_independent_full_file_polyphase_oracle(
+    tmp_path, rate, chunk
+):
+    """Full-file SciPy oracle, independent from the converter's halo logic.
+
+    The PCM16 source is decoded first; all output samples, including start,
+    final partial block, NCO residual and boundary phase, are compared.
+    """
+    from math import gcd
+    from scipy.signal import firwin, resample_poly
+
+    src, dst = tmp_path / "radio_iq.wav", tmp_path / "channel.wav"
+    n = 132_013
+    rng = np.random.default_rng(25)
+    t = np.arange(n, dtype=np.float64) / rate
+    samples = (
+        0.24 * np.exp(2j * np.pi * 8_400 * t)
+        + 0.10 * np.exp(2j * np.pi * 9_750 * t)
+        + 0.015 * (rng.normal(size=n) + 1j * rng.normal(size=n))
+    )
+    iq_pcm = np.empty((n, 2), dtype="<i2")
+    iq_pcm[:, 0] = np.round(samples.real * 32767).astype("<i2")
+    iq_pcm[:, 1] = np.round(samples.imag * 32767).astype("<i2")
+    with wave.open(str(src), "wb") as wav:
+        wav.setnchannels(2)
+        wav.setsampwidth(2)
+        wav.setframerate(rate)
+        wav.writeframes(iq_pcm.tobytes())
+
+    center, target = 145_000_000, 145_008_000
+    result = convert(src, dst, center, target, chunk=chunk)
+    _, actual = read_complex(dst)
+    g = gcd(rate, 48_000)
+    up, down = 48_000 // g, rate // g
+    taps = firwin(20 * max(up, down) + 1, 0.90 / max(up, down),
+                  window=("kaiser", 8.6))
+    decoded = ((iq_pcm[:, 0].astype(np.float64)
+                + 1j * iq_pcm[:, 1].astype(np.float64)) / 32768)
+    mixed = decoded * np.exp(-2j * np.pi * 8_000 * np.arange(n) / rate)
+    expected = resample_poly(mixed, up, down, window=taps)
+
+    assert result["frames"] == len(expected) == len(actual)
+    # Both WAV channels are rounded to PCM16: error bound one output LSB.
+    assert np.max(np.abs(actual - expected)) < 2.5 / 32768
+
+
+@pytest.mark.parametrize("rate", [1_000_001, 2_000_003])
+def test_rate_with_extreme_rational_factor_fails_before_fir_allocation(
+    tmp_path, rate, monkeypatch
+):
+    import scripts.prepare_iq_rf_capture as prepare
+
+    src, dst = tmp_path / "input.wav", tmp_path / "out.wav"
+    make_iq(src, rate=rate, n=rate//4)
+    called = False
+
+    def forbidden_fir(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("Unsafe FIR allocation")
+
+    monkeypatch.setattr(prepare, "firwin", forbidden_fir)
+    with pytest.raises(ValueError, match="high-complexity IQ resampling ratio"):
+        convert(src, dst, 145_500_000, 145_504_000)
+    assert not called
+    assert not dst.exists()

@@ -19,6 +19,9 @@ from scipy.signal import firwin, resample_poly
 from pt2vhf.iq_provenance import sha256_file, sidecar_path
 
 RATE = 48000
+# Keep very uncommon, near-coprime device rates from allocating millions of
+# FIR coefficients. Use a supported hardware rate or rational resampling stage.
+MAX_RESAMPLE_FACTOR = 4096
 LABELS = ("CW", "AM", "NFM", "USB", "LSB", "UNKNOWN")
 
 
@@ -112,6 +115,11 @@ def convert(source: Path, dest: Path, center_hz: float | None, target_hz: float,
 
     divisor = math.gcd(fs, RATE)
     up, down = RATE // divisor, fs // divisor
+    if max(up, down) > MAX_RESAMPLE_FACTOR:
+        raise ValueError(
+            "Unsupported high-complexity IQ resampling ratio; configure a "
+            "standard SDR sample rate (e.g. 1.024, 2.048 or 2.4 MS/s)"
+        )
     # Kaiser FIR: passband up to ~21.6 kHz and stopband before output Nyquist.
     # Filter taps are defined at the upsampled rate used by resample_poly.
     taps = firwin(20 * max(up, down) + 1, 0.90 / max(up, down),
