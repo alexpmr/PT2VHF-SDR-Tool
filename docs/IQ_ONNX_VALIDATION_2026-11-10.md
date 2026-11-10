@@ -39,3 +39,12 @@ Amostras **sintéticas** com SNR 0/6/12/20 dB, sinais conhecidos e negativos OOD
 6. Manter PR #2 experimental: inferência não altera VFO/modo automaticamente; não empacotar/publicar modelo como pronto antes da homologação RF.
 
 **Próximo passo recomendado:** preparar protocolo de coleta RF e registrar evidências externas, antes de iniciar outra rodada de treinamento sintético.
+
+## Rodada posterior: execução #59 — 10/11/2026
+
+- [Workflow #59](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42834956654): **SUCCESS**, commit `f8557cd3517099a3544984ed45746fa84e21d752`.
+- `148 passed in 2.66s`: teste adicional de consistência de denominadores e curvas de aceitação OOD aprovado; modelos sintéticos v2–v5 exportados e paridade ONNX confirmada (31 casos por exportação).
+- [Artefato #13773641510](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42834956654/artifacts/13773641510), 702.569 bytes, ZIP SHA-256 `95ad810ebb1cc1860abec670ed29e11df5d61acdc3017779fdf67e46bfbf268f`.
+- **Métricas independentes inalteradas** em relação à #58: v2 0,699 top-1 / 0,491 OOD; v3 0,697 / 0,906; v4 0,768 / 0,197; v5 0,637 / 0,212, com limiar 0,80. Portadora não modulada na v4 ainda tem falsa aceitação de **0,775**.
+- A melhoria desta rodada é na **confiabilidade dos testes**, não na generalização do modelo. Não confundir pipeline verde com release ou homologação RF.
+- **Decisão:** manter bloqueio de implantação; não iniciar sucessivos treinamentos sintéticos sem novo desenho de experimento e conjunto de RF real independente. Prioridade é o protocolo de captura/etiquetagem e erro por classe CW/AM/UNKNOWN.
