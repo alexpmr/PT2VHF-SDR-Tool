@@ -247,3 +247,130 @@ def test_engine_collision_does_not_overwrite_iq(tmp_path):
     assert second != first
     engine.stop_iq_recording()
     assert first.read_bytes() == original_content
+
+def test_existing_source_drops_before_recording_not_counted(tmp_path):
+    """Drops prior to recording belong to the SDR, not this WAV session."""
+    from pt2vhf.engine import Engine
+    from pt2vhf.dsp.receiver import Receiver
+
+    class Source:
+        center_freq = 145500000
+        sample_rate = 240000
+        name = "SIMULATED"
+        dropped = 8
+
+    engine = Engine()
+    engine.source = Source()
+    engine.rx = Receiver(240000)
+    path = engine.start_iq_recording(str(tmp_path))
+    with engine._lock:
+        engine._iq_rec.write(np.full(4096, .1+0j, dtype=np.complex64))
+        engine._iq_provenance.observe(145500000, 240000, 4096, True, 8)
+    engine.stop_iq_recording()
+    saved = json.loads(sidecar_path(path).read_text(encoding="utf-8"))
+    assert saved["source_dropped_at_start"] == 8
+    assert saved["dropped_iq_blocks_during_capture"] == 0
+    assert saved["suitable_for_continuous_channelization"]
+
+
+def test_drops_during_capture_invalidate_final_sidecar_and_converter(tmp_path):
+    from pt2vhf.engine import Engine
+    from pt2vhf.dsp.receiver import Receiver
+
+    class Source:
+        center_freq = 145500000
+        sample_rate = 240000
+        name = "SIMULATED"
+        dropped = 7
+
+    source = Source()
+    engine = Engine()
+    engine.source = source
+    engine.rx = Receiver(240000)
+    path = engine.start_iq_recording(str(tmp_path))
+    with engine._lock:
+        engine._iq_rec.write(np.full(4096, .1+0j, dtype=np.complex64))
+        engine._iq_provenance.observe(145500000, 240000, 4096, True, 7)
+    source.dropped = 9
+    engine.stop_iq_recording()
+    saved = json.loads(sidecar_path(path).read_text(encoding="utf-8"))
+    assert saved["source_dropped_at_start"] == 7
+    assert saved["dropped_iq_blocks_during_capture"] == 2
+    assert not saved["suitable_for_continuous_channelization"]
+    assert "dropped_iq_blocks" in saved["invalid_reasons"]
+    with pytest.raises(ValueError, match="dropped blocks"):
+        convert(path, tmp_path/"channel.wav", None, 145501000)
+
+
+def test_source_drop_counter_reset_is_not_assumed_continuous(tmp_path):
+    m = metadata(tmp_path/"raw.wav", count=4096)
+    m.set_source_dropped_baseline(20)
+    m.observe(145500000, 240000, 4096, True, 1)
+    r = m.report(8192)
+    assert r["source_drop_counter_resets"] == 1
+    assert not r["suitable_for_continuous_channelization"]
+    assert "source_drop_counter_reset" in r["invalid_reasons"]
+
+
+def test_source_unexpected_stop_finalizes_invalid_wav(tmp_path):
+    from pt2vhf.engine import Engine
+    from pt2vhf.dsp.receiver import Receiver
+
+    class DeadSource:
+        center_freq = 145500000
+        sample_rate = 240000
+        name = "DEAD_TEST_SOURCE"
+        dropped = 0
+        _running = False
+
+        def read(self, timeout=.5):
+            return None
+
+    engine = Engine()
+    engine.source = DeadSource()
+    engine.rx = Receiver(240000)
+    path = engine.start_iq_recording(str(tmp_path))
+    with engine._lock:
+        engine._iq_rec.write(np.full(4096, .1+0j, dtype=np.complex64))
+        engine._iq_provenance.observe(145500000, 240000, 4096, True)
+    engine._running = True
+    engine._loop()
+    assert engine.running is False
+    assert engine.recording_iq is False
+    saved = json.loads(sidecar_path(path).read_text(encoding="utf-8"))
+    assert saved["capture_state"] == "complete"
+    assert saved["interruption_reason"] == "source_stopped_unexpectedly"
+    assert not saved["suitable_for_continuous_channelization"]
+    assert "source_stopped_unexpectedly" in saved["invalid_reasons"]
+
+
+def test_source_read_failure_preserves_invalid_marker(tmp_path):
+    from pt2vhf.engine import Engine
+    from pt2vhf.dsp.receiver import Receiver
+
+    class FailedSource:
+        center_freq = 145500000
+        sample_rate = 240000
+        name = "FAILING_TEST_SOURCE"
+        dropped = 0
+        _running = True
+
+        def read(self, timeout=.5):
+            raise OSError("synthetic SDR disconnect")
+
+    engine = Engine()
+    engine.source = FailedSource()
+    engine.rx = Receiver(240000)
+    path = engine.start_iq_recording(str(tmp_path))
+    with engine._lock:
+        engine._iq_rec.write(np.full(4096, .1+0j, dtype=np.complex64))
+        engine._iq_provenance.observe(145500000, 240000, 4096, True)
+    engine._running = True
+    engine._loop()
+    assert not engine.recording_iq
+    assert not engine.running
+    saved = json.loads(sidecar_path(path).read_text(encoding="utf-8"))
+    assert saved["capture_state"] == "complete"
+    assert saved["interruption_reason"] == "source_read_failed"
+    assert not saved["suitable_for_continuous_channelization"]
+    assert any(ev[0] == "error" for ev in list(engine.events.queue))
