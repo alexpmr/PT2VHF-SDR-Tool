@@ -54,8 +54,11 @@ def check_recording_metadata(source: Path, sample_rate: int, frames: int,
     if (meta.get("suitable_for_continuous_channelization") is not True or
         meta.get("invalid_reasons") or meta.get("iq_vox") is not False or
         meta.get("center_change_count") != 0 or
-        meta.get("sample_rate_change_count") != 0):
-        raise ValueError("IQ recording changed frequency/rate or used VOX; cannot channelize safely")
+        meta.get("sample_rate_change_count") != 0 or
+        meta.get("dropped_iq_blocks_during_capture", 0) != 0 or
+        meta.get("source_drop_counter_resets", 0) != 0 or
+        meta.get("interruption_reason") is not None):
+        raise ValueError("IQ recording has interruptions, dropped blocks, frequency/rate changes or VOX")
     if (meta.get("sample_rate_hz") != sample_rate or
         meta.get("written_frames") != frames):
         raise ValueError("IQ sidecar sample rate/frame count mismatch")

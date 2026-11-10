@@ -169,6 +169,10 @@ class Engine:
             self._thread.join(timeout=3)
             self._thread = None
         if self.source:
+            with self._lock:
+                if self._iq_provenance is not None:
+                    self._iq_provenance.observe_source_dropped(
+                        getattr(self.source, "dropped", 0))
             try:
                 self.source.close()
             except Exception as e:  # noqa: BLE001
@@ -342,6 +346,7 @@ class Engine:
                 mode=self.rx.mode if self.rx is not None else "",
                 vox=self.iq_vox,
             )
+            metadata.set_source_dropped_baseline(getattr(source, "dropped", 0))
             rec = WavRecorder(p, source.sample_rate, 2)
             try:
                 write_sidecar(p, metadata.pending_report())
@@ -364,6 +369,8 @@ class Engine:
                 wav_path = rec.path
                 frames = rec.samples
                 metadata = self._iq_provenance
+                if metadata is not None and self.source is not None:
+                    metadata.observe_source_dropped(getattr(self.source, "dropped", 0))
                 self._iq_rec = None
                 self._iq_provenance = None
         if metadata is not None and wav_path is not None:
@@ -402,7 +409,8 @@ class Engine:
                                 or time.monotonic() < self._iq_open_until)
                 if self._iq_provenance is not None:
                     self._iq_provenance.observe(src.center_freq, src.sample_rate,
-                                                len(blk), should_write)
+                                                len(blk), should_write,
+                                                getattr(src, "dropped", 0))
                 if should_write:
                     self._iq_rec.write(blk)
 

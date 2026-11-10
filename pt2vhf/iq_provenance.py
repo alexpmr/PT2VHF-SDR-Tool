@@ -55,10 +55,38 @@ class IQCaptureProvenance:
         self.rate_changes = 0
         self.center_events: list[dict] = []
         self.skipped_blocks = 0
+        self.source_dropped_at_start = 0
+        self.source_dropped_last = 0
+        self.dropped_iq_blocks_during_capture = 0
+        self.drop_counter_resets = 0
+        self.interrupt_reason: str | None = None
 
-    def observe(self, center_hz: float, sample_rate: int, count: int, wrote: bool):
+    def set_source_dropped_baseline(self, count: int):
+        if int(count) < 0:
+            raise ValueError("Negative dropped IQ block counter")
+        self.source_dropped_at_start = int(count)
+        self.source_dropped_last = int(count)
+
+    def observe_source_dropped(self, count: int):
+        count = int(count)
+        if count < 0:
+            raise ValueError("Negative dropped IQ block counter")
+        if count > self.source_dropped_last:
+            self.dropped_iq_blocks_during_capture += count - self.source_dropped_last
+        elif count < self.source_dropped_last:
+            self.drop_counter_resets += 1
+        self.source_dropped_last = count
+
+    def interrupt(self, reason: str):
+        """Mark a receiver failure without disguising it as an ordinary stop."""
+        self.interrupt_reason = reason or "unknown_interruption"
+
+    def observe(self, center_hz: float, sample_rate: int, count: int, wrote: bool,
+                source_dropped: int | None = None):
         if count < 0:
             raise ValueError("IQ block size cannot be negative")
+        if source_dropped is not None:
+            self.observe_source_dropped(source_dropped)
         center_hz = float(center_hz)
         sample_rate = int(sample_rate)
         if abs(center_hz - self.last_center) > 0.5:
@@ -113,6 +141,12 @@ class IQCaptureProvenance:
         reasons = []
         if self.vox:
             reasons.append("vox_gated_iq")
+        if self.dropped_iq_blocks_during_capture:
+            reasons.append("dropped_iq_blocks")
+        if self.drop_counter_resets:
+            reasons.append("source_drop_counter_reset")
+        if self.interrupt_reason:
+            reasons.append(self.interrupt_reason)
         if self.center_changes:
             reasons.append("center_frequency_changed")
         if self.rate_changes:
@@ -138,6 +172,10 @@ class IQCaptureProvenance:
             "written_frames": self.frames,
             "blocks_observed": self.blocks,
             "blocks_skipped": self.skipped_blocks,
+            "source_dropped_at_start": self.source_dropped_at_start,
+            "dropped_iq_blocks_during_capture": self.dropped_iq_blocks_during_capture,
+            "source_drop_counter_resets": self.drop_counter_resets,
+            "interruption_reason": self.interrupt_reason,
             "center_change_count": self.center_changes,
             "sample_rate_change_count": self.rate_changes,
             "center_change_events": self.center_events,
