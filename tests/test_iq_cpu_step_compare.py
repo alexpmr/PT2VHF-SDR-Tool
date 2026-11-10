@@ -99,6 +99,7 @@ def test_malformed_or_nonfinite_scalar_samples_fail_closed():
 
 def test_second_conv_scalar_comparison_reports_drift():
     a, b = probe(), probe("Intel")
+    a["steps"][0]["layer_forward_sha256"]["02_Conv1d"] = "original"
     b["steps"][0]["layer_forward_sha256"]["02_Conv1d"] = "different"
     b["steps"][0]["second_conv_scalar_samples"]["observed"][0] += 0.00002
     result = compare_reports(a, b)
