@@ -173,3 +173,38 @@ def test_offline_report_session_ci_is_private_and_session_based(tmp_path):
     assert report["session_accuracy_summary"]["session_ids_excluded"] is True
     assert "sensitive-B" not in json.dumps(report)
     assert "sensitive-C" not in json.dumps(report)
+
+
+@pytest.mark.parametrize("confidence,accepted_at_08", [(0.7, 0.0), (0.9, 1.0)])
+def test_unknown_confidence_gate_is_respected_without_biasing_threshold_curve(
+        tmp_path, confidence, accepted_at_08):
+    """Synthetic stub: effective UNKNOWN and raw top-1 are different decisions."""
+    for name in ("a.wav", "b.wav"):
+        make_wav(tmp_path / name)
+    m = manifest(tmp_path)
+    doc = json.loads(m.read_text())
+    doc["recordings"].append({
+        "path": "b.wav", "mode": "UNKNOWN", "session_id": "independent-unknown",
+        "device": "fake SDR", "frequency_hz": 145650000,
+    })
+    m.write_text(json.dumps(doc))
+
+    class Gated:
+        def predict(self, iq):
+            probs = {name: 0.0 for name in CLASSES}
+            probs["AM"] = confidence
+            probs["UNKNOWN"] = 1.0 - confidence
+            # Simulate min_confidence > confidence, as in IQClassifier.predict.
+            return Classification("UNKNOWN", confidence, probs)
+
+    report = evaluate(m, tmp_path, Gated())
+    # The classifier returns UNKNOWN for both classes, not raw top-1 AM.
+    assert report["accuracy_top1"] == 0.5
+    assert report["per_class_recall"]["UNKNOWN"] == 1.0
+    assert report["per_class_recall"]["AM"] == 0.0
+    assert report["session_macro_accuracy"] == 0.5
+    # Threshold sweeps evaluate the raw top class at each independent gate.
+    assert report["acceptance_curve"]["0.8"]["unknown_false_accept_rate"] == accepted_at_08
+    assert report["acceptance_curve"]["0.8"]["known_coverage"] == accepted_at_08
+    assert report["acceptance_curve"]["0.95"]["unknown_false_accept_rate"] == 0.0
+    assert report["acceptance_curve"]["0.95"]["known_coverage"] == 0.0

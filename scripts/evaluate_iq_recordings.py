@@ -109,7 +109,13 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100):
         got = 0
         for iq in read_windows(path, max_windows):
             result = model.predict(iq)
-            predicted = max(result.probabilities, key=result.probabilities.get)
+            # The classifier's mode includes its configured UNKNOWN confidence
+            # gate. The raw top class does not, and must not be substituted in
+            # the confusion matrix or session accuracy.
+            top_label = max(result.probabilities, key=result.probabilities.get)
+            predicted = result.mode
+            if predicted not in CLASSES:
+                raise ValueError("Invalid classifier mode")
             confusion[CLASSES.index(label), CLASSES.index(predicted)] += 1
             sessions[session][0] += 1
             sessions[session][1] += int(predicted == label)
@@ -119,13 +125,15 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100):
             else:
                 known_total += 1
             for threshold, counts in acceptance.items():
-                accepted = predicted != "UNKNOWN" and result.confidence >= float(threshold)
+                # Sweep the raw top class independently of the model's default
+                # confidence gate: each threshold represents a distinct policy.
+                accepted = top_label != "UNKNOWN" and result.confidence >= float(threshold)
                 if label == "UNKNOWN":
                     counts["unknown_misaccepted"] += int(accepted)
                 else:
                     counts["known_accepted"] += int(accepted)
-                    counts["known_correct"] += int(accepted and predicted == label)
-                    counts["known_wrong"] += int(accepted and predicted != label)
+                    counts["known_correct"] += int(accepted and top_label == label)
+                    counts["known_wrong"] += int(accepted and top_label != label)
             got += 1
         if not got:
             raise ValueError(f"No usable IQ samples: {path.name}")

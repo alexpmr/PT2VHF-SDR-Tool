@@ -67,7 +67,7 @@ python scripts/evaluate_iq_recordings.py \
   --out "/dados/iq_relatorios/comparativo.json"
 ```
 
-Revisar matriz de confusão, recall por classe (em especial CW/AM), erros de alta confiança, curva de aceitação de UNKNOWN, cobertura de sinais conhecidos, acurácia média por sessão e latência/uso de CPU medidos separadamente. O script atual **não** calcula todos esses indicadores de implantação (por exemplo, latência ou intervalo de confiança): não inferir os ausentes.
+Revisar matriz de confusão, recall por classe (em especial CW/AM), erros de alta confiança, curva de aceitação de UNKNOWN, cobertura de sinais conhecidos, acurácia média por sessão e latência/uso de CPU medidos separadamente. O script calcula um intervalo exploratório de confiança por bootstrap de sessões (descrito abaixo), mas **não** calcula latência nem uso de CPU operacional: medir esses indicadores separadamente. A matriz de confusão e o recall utilizam a decisão efetiva do classificador, inclusive o limiar configurado para UNKNOWN; a curva de aceitação aplica cada limiar de forma independente sobre as probabilidades brutas. Não confundir as duas políticas.
 
 ## Portões para revisão do PR
 
@@ -92,3 +92,8 @@ O script `evaluate_iq_recordings.py` inclui `session_macro_accuracy_ci95`, um in
 - Avisos não bloqueantes de depreciação Node.js 20 nas actions; atualizar actions em manutenção separada, sem confundir com erro do classificador.
 
 **Próximo portão:** obter corpus IQ RF real independente, executar auditoria de qualidade e comparar v2–v5 por sessão/dispositivo e classe (CW, AM, UNKNOWN, portadora não modulada). CI verde e bootstrap sobre dados sintéticos **não** autorizam merge, modelo operacional nem release.
+
+### Diagnóstico de CI #65 e contrato de rejeição UNKNOWN (10/11/2026)
+
+- [Actions #65](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42845185047), commit `3afa297`: falhou na etapa antecipada de teste RF porque `python -m pytest` foi executado **antes** da instalação de `pytest` (`No module named pytest`). Não foi falha de treinamento nem de ONNX. O commit `bdcdc17` removeu essa etapa duplicada e manteve os testes na etapa existente, após instalar as dependências; [#66](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42845233390) passou com 151 testes.
+- Auditoria adicional do avaliador offline: `IQClassifier.predict` aplica `min_confidence` e pode retornar `mode="UNKNOWN"` mesmo quando a maior probabilidade bruta pertence a AM/CW/etc. A matriz de confusão e a acurácia por sessão devem usar **`result.mode`**, enquanto a curva de limiares deve usar o argmax bruto sob cada limiar. Misturar os dois inflava erros de UNKNOWN e distorcia recall. Regressão coberta por stubs sintéticos, **sem RF real**.
