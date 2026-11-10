@@ -138,3 +138,19 @@ O mesmo mecanismo identifica falha de escrita (`wav_write_failed`).
 Para sessões longas, prefira diversas capturas curtas e independentes; não
 interprete recortes automáticos como gravação contínua. Suporte a RF64/W64 ou
 segmentação contínua exige projeto específico e ainda não foi implementado.
+
+
+## Hash SHA-256 de gravações extensas sem bloquear a recepção
+
+A partir desta revisão experimental, quando o arquivo WAV excede 64 MiB
+ou quando sua finalização ocorre na thread de DSP, o cálculo SHA-256 é
+executado em uma thread separada, após o WAV ser fechado. O sidecar fica
+marcado como **`recording` / incompleto** até o cálculo e a escrita atômica
+dos metadados terminarem. O conversor não aceita esse arquivo enquanto
+estiver pendente.
+
+O processo de finalização usa uma thread não daemon, para não descartar o
+checksum em um encerramento normal. Finalizar arquivos extensos pode manter
+o processo Python ativo mesmo após o fechamento da janela, enquanto conclui
+a verificação. Encerramento forçado ou falta de energia ainda pode deixar
+o marcador pendente; nesse caso, não utilizar o WAV como conjunto validado.

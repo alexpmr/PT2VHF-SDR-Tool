@@ -30,6 +30,10 @@ from .timeshift import TimeShiftBuffer
 log = logging.getLogger(__name__)
 
 
+# Closing/hash of a long IQ capture must not stall live DSP or the Qt GUI.
+IQ_ASYNC_HASH_MIN_BYTES = 64 * 1024 * 1024
+
+
 class ExtraReceiver:
     """Receptor adicional dentro da mesma faixa (ouvido junto com o principal)."""
 
@@ -80,6 +84,7 @@ class Engine:
         self._audio_rec: WavRecorder | None = None
         self._iq_rec: WavRecorder | None = None
         self._iq_provenance: IQCaptureProvenance | None = None
+        self._last_iq_finalize_thread: threading.Thread | None = None
         self._lock = threading.Lock()
         self.audio_tap = None  # callback opcional (testes)
         self._make_decoders()
@@ -358,6 +363,20 @@ class Engine:
             self._iq_provenance = metadata
         return p
 
+    def _finalize_iq_sidecar(self, metadata: IQCaptureProvenance,
+                             wav_path: Path, frames: int):
+        """Hash an already-closed WAV; keep pending marker until verified."""
+        try:
+            write_sidecar(wav_path, metadata.final_report(frames))
+        except Exception:  # noqa: BLE001
+            log.exception("Falha ao finalizar integridade IQ de %s; sidecar pendente", wav_path)
+            self.events.put(("iq_recording_warning",
+                             "Falha ao verificar integridade do WAV IQ; gravação incompleta.",
+                             time.time()))
+        else:
+            self.events.put(("iq_recording_finalized",
+                             str(wav_path), time.time()))
+
     def stop_iq_recording(self):
         metadata = None
         wav_path = None
@@ -386,14 +405,19 @@ class Engine:
                                  "Falha ao fechar WAV IQ; gravação marcada incompleta.",
                                  time.time()))
                 return
-            try:
-                # Keep the incomplete marker until WAV is closed and hashed.
-                write_sidecar(wav_path, metadata.final_report(frames))
-            except Exception:  # noqa: BLE001
-                log.exception("Falha ao finalizar integridade IQ de %s; sidecar pendente", wav_path)
-                self.events.put(("iq_recording_warning",
-                                 "Falha ao verificar integridade do WAV IQ; gravação incompleta.",
-                                 time.time()))
+            # The checksum can read 4 GiB. On a live DSP thread or when a
+            # large file is closed from Qt, perform that I/O on a separate
+            # non-daemon thread. The pending sidecar stays invalid until done.
+            if (threading.current_thread() is self._thread or
+                    wav_path.stat().st_size >= IQ_ASYNC_HASH_MIN_BYTES):
+                worker = threading.Thread(
+                    target=self._finalize_iq_sidecar,
+                    args=(metadata, wav_path, frames),
+                    daemon=False, name="iq-wav-checksum")
+                self._last_iq_finalize_thread = worker
+                worker.start()
+            else:
+                self._finalize_iq_sidecar(metadata, wav_path, frames)
 
     @property
     def recording_audio(self):
