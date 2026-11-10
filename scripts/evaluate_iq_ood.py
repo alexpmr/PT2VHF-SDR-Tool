@@ -32,10 +32,10 @@ def ece(confidences: np.ndarray, hits: np.ndarray, bins=10) -> float:
     return error
 
 
-def run(reference_path: Path, candidate_path: Path, count_per_class_snr: int = 40, negatives_per_kind: int = 80, third_model_path: Path | None = None, fourth_model_path: Path | None = None) -> dict:
+def run(reference_path: Path, candidate_path: Path, count_per_class_snr: int = 40, negatives_per_kind: int = 80, third_model_path: Path | None = None, fourth_model_path: Path | None = None, seed: int = SEED) -> dict:
     if min(count_per_class_snr, negatives_per_kind) < 1:
         raise ValueError("Sample counts must be positive")
-    rng = np.random.default_rng(SEED)
+    rng = np.random.default_rng(seed)
     labeled = [(mode, snr, sample(mode, rng, snr))
                for snr in SNR_LEVELS_DB for mode in SUPPORTED for _ in range(count_per_class_snr)]
     unknown = [(kind, negative(kind, rng))
@@ -154,7 +154,7 @@ def run(reference_path: Path, candidate_path: Path, count_per_class_snr: int = 4
                   f"OOD misaccepted={vals['ood_negative_misaccepted']:.3f}", flush=True)
     return {
         "scope": "Out-of-family narrowband synthetic generation; no real IQ and no valid WFM evaluation",
-        "seed": SEED,
+        "seed": seed,
         "snr_levels_db": list(SNR_LEVELS_DB),
         "count_per_class_snr": count_per_class_snr,
         "negative_per_kind": negatives_per_kind,
@@ -177,8 +177,11 @@ def main():
     parser.add_argument("--fourth-model", type=Path)
     parser.add_argument("--per-class-snr", type=int, default=40)
     parser.add_argument("--per-negative", type=int, default=80)
+    parser.add_argument("--seed", type=int, default=SEED,
+                        help="Synthetic holdout RNG seed; default preserves historical benchmark")
     args = parser.parse_args()
-    result = run(args.reference, args.candidate, args.per_class_snr, args.per_negative, args.third_model, args.fourth_model)
+    result = run(args.reference, args.candidate, args.per_class_snr, args.per_negative, args.third_model, args.fourth_model,
+                 seed=args.seed)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n",
                            encoding="utf-8")
