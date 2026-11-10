@@ -204,7 +204,10 @@ def test_streaming_converter_matches_independent_full_file_polyphase_oracle(
         wav.setframerate(rate)
         wav.writeframes(iq_pcm.tobytes())
 
-    center, target = 145_000_000, 145_008_000
+    center = 145_000_000
+    # An already channelized 48 kS/s WAV cannot be shifted without guard band.
+    offset = 0 if rate == 48_000 else 8_000
+    target = center + offset
     result = convert(src, dst, center, target, chunk=chunk)
     _, actual = read_complex(dst)
     g = gcd(rate, 48_000)
@@ -213,7 +216,7 @@ def test_streaming_converter_matches_independent_full_file_polyphase_oracle(
                   window=("kaiser", 8.6))
     decoded = ((iq_pcm[:, 0].astype(np.float64)
                 + 1j * iq_pcm[:, 1].astype(np.float64)) / 32768)
-    mixed = decoded * np.exp(-2j * np.pi * 8_000 * np.arange(n) / rate)
+    mixed = decoded * np.exp(-2j * np.pi * offset * np.arange(n) / rate)
     expected = resample_poly(mixed, up, down, window=taps)
 
     assert result["frames"] == len(expected) == len(actual)
