@@ -244,3 +244,21 @@ def test_rate_with_extreme_rational_factor_fails_before_fir_allocation(
         convert(src, dst, 145_500_000, 145_504_000)
     assert not called
     assert not dst.exists()
+
+
+
+def test_48k_baseband_accepts_center_but_rejects_retargeting(tmp_path):
+    source, out, other = (
+        tmp_path / "already_centered.wav",
+        tmp_path / "baseband.wav",
+        tmp_path / "retune.wav",
+    )
+    make_iq(source, rate=48_000, n=8192, tone=1200)
+    result = convert(source, out, 145_000_000, 145_000_000, chunk=1300)
+    assert result["resample_up"] == result["resample_down"] == 1
+    assert result["frames"] == 8192
+    _, converted = read_complex(out)
+    assert np.max(np.abs(converted)) > .2
+    with pytest.raises(ValueError, match="Nyquist edge"):
+        convert(source, other, 145_000_000, 145_000_100)
+    assert not other.exists()
