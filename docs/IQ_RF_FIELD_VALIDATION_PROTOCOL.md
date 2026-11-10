@@ -105,3 +105,11 @@ A [execução #68](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42858
 **Hipótese a testar:** diferenças no despacho de kernels vetorizados/oneDNN/MKL e no paralelismo. O modo experimental `--portable-cpu` da v4 desativa oneDNN, usa uma thread e algoritmos determinísticos; os jobs definem `ATEN_CPU_CAPABILITY=default` e `MKL_CBWR=COMPATIBLE` antes da importação do PyTorch. A política é registrada nas métricas. Os pesos v4 serão diferentes dos anteriores e exigirão nova comparação de desempenho. **Não presumir sucesso antes de um replay independente concluído.** Se falhar, registrar hashes de gradientes e parâmetros após o primeiro passo do Adam.
 
 Os novos testes unitários verificam a ativação e os pré-requisitos da política, **não** a identidade entre CPUs. Nenhum resultado homologa RF real nem resolve falsos positivos OOD.
+
+### Resultado do experimento portable CPU — #69 (10/11/2026)
+
+[Actions #69](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42866405772): **FAILURE** no replay independente, embora o job principal tenha passado **155 testes IQ**, exportação ONNX v2–v5 (opset 18, 31 verificações de paridade/modelo), SHA-256 e replay no mesmo runner. `training_input_exact_match=true`, `initial_parameters_exact_match=true`, mas `parameter_exact_match=false`, `metrics_exact_match=false`, diferença máxima **1,1162637472**. CPUs: referência AMD EPYC 7763, independente Intel Xeon Platinum 8573C; versões Python 3.11.18, PyTorch 2.15.0+cpu, NumPy 2.4.6 e 1 thread coincidem.
+
+**Conclusão:** a política portable CPU não garantiu identidade dos pesos entre arquiteturas. A hipótese de que desligar oneDNN, fixar uma thread e limitar despacho ATen/MKL seria suficiente foi refutada nesse par. Não relaxar a comparação nem publicar v4.
+
+**Próxima investigação econômica:** workflow de diagnóstico independente com um único passo Adam sobre 128 amostras sintéticas; registrar hashes de entrada, pesos iniciais, logits, loss, gradientes e pesos atualizados, identificando a primeira etapa divergente. Esse probe é intencionalmente distinto do treinamento completo v4: se passar, **não** demonstra reprodutibilidade de 22 épocas. O workflow é separado para não repetir o treinamento dos quatro modelos a cada instrumentação.

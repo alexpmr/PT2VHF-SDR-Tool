@@ -1,0 +1,99 @@
+name: Experimental IQ CPU first-step diagnosis (synthetic)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/iq-signal-classifier
+    paths:
+      - 'scripts/diagnose_iq_cpu_step.py'
+      - '.github/workflows/iq-cpu-step-diagnostic.yml'
+jobs:
+  reference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU torch and numpy
+        run: |
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install numpy
+      - name: Compute one synthetic optimizer step
+        env:
+          ATEN_CPU_CAPABILITY: default
+          MKL_CBWR: COMPATIBLE
+          OMP_NUM_THREADS: '1'
+          MKL_NUM_THREADS: '1'
+        run: |
+          python -m py_compile scripts/diagnose_iq_cpu_step.py
+          python scripts/diagnose_iq_cpu_step.py --output diagnostics/reference.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pt2vhf-iq-cpu-step-reference
+          path: diagnostics/reference.json
+          retention-days: 30
+  independent:
+    needs: reference
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU torch and numpy
+        run: |
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install numpy
+      - uses: actions/download-artifact@v4
+        with:
+          name: pt2vhf-iq-cpu-step-reference
+          path: diagnostics
+      - name: Compute independent synthetic optimizer step
+        env:
+          ATEN_CPU_CAPABILITY: default
+          MKL_CBWR: COMPATIBLE
+          OMP_NUM_THREADS: '1'
+          MKL_NUM_THREADS: '1'
+        run: python scripts/diagnose_iq_cpu_step.py --output diagnostics/independent.json
+      - name: Locate first divergent numerical stage
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          a = json.loads(Path("diagnostics/reference.json").read_text())
+          b = json.loads(Path("diagnostics/independent.json").read_text())
+          stages = [
+              "input_sha256", "initial_parameters_sha256",
+              "forward_logits_sha256", "loss_sha256",
+              "gradients_sha256", "updated_parameters_sha256",
+          ]
+          first = next((key for key in stages if a[key] != b[key]), None)
+          report = {
+              "scope": "Single synthetic optimizer step; not full training, no RF",
+              "reference_cpu": a["cpu_model"],
+              "independent_cpu": b["cpu_model"],
+              "reference_cpu_capability": a["cpu_capability"],
+              "independent_cpu_capability": b["cpu_capability"],
+              "cross_cpu_tested": a["cpu_model"] != b["cpu_model"],
+              "environment_exact_match": all(a[k] == b[k] for k in
+                  ("python_version", "torch_version", "numpy_version", "policy")),
+              "first_divergent_stage": first,
+              "stage_exact_match": {key: a[key] == b[key] for key in stages},
+              "limitations": "A matching single step cannot establish full-run reproducibility",
+          }
+          Path("diagnostics/comparison.json").write_text(
+              json.dumps(report, indent=2) + "\n")
+          print(json.dumps(report, indent=2), flush=True)
+          assert report["environment_exact_match"], "CPU probe environment mismatch"
+          assert first is None, f"First divergent CPU numerical stage: {first}"
+          PY
+      - name: Upload numerical comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pt2vhf-iq-cpu-step-comparison
+          path: diagnostics/
+          retention-days: 30
