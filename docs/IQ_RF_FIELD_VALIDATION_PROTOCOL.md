@@ -180,3 +180,26 @@ exclusivamente ao otimizador. O diagnóstico seguinte registra a saída de
 cada camada Conv1d/ReLU/AdaptiveAvgPool/Linear sem alterar a arquitetura,
 para isolar o primeiro operador divergente. A instrumentação é sintética e
 não constitui homologação de RF real.
+
+
+### Probe escalar da primeira Conv1d — 10/11/2026
+
+Reanálise dos logs históricos, sem treinamento: no
+[probe #3](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42917860408),
+Intel Xeon Platinum 8573C divergiu de AMD EPYC 7763 no primeiro forward.
+Os hashes dos quatro passos AMD EPYC 7763 (#3) e AMD EPYC 9V74
+([probe #4](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42918360685))
+foram idênticos, incluindo logits, gradientes e pesos, com os mesmos
+dados, pesos iniciais, versão PyTorch e política de CPU. O #4, sozinho,
+comparou duas CPUs 9V74 e não validou heterogeneidade.
+
+A hipótese é diferença numérica dependente do backend Intel/AMD;
+a primeira camada responsável ainda não foi comprovada, pois o
+probe Intel #3 não continha hashes por camada. O novo diagnóstico
+compara 32 amostras da primeira Conv1d a uma referência escalar
+float64 e mede erros absolutos entre runners. A referência é
+**somente diagnóstica**: não muda treinamento, pesos, arquitetura
+ou o runtime do SDR. Os hashes exatos por camada continuam
+obrigatórios; amostras esparsas não provam equivalência do tensor
+completo nem reprodutibilidade de 22 épocas. Testes exclusivamente
+sintéticos, sem homologação RF.

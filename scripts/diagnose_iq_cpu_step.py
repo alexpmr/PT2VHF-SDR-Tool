@@ -23,6 +23,40 @@ def sha_tensors(tensors):
     return h.hexdigest()
 
 
+def conv1d_scalar_samples(inputs, layer, outputs, sample_count=32):
+    """Sample native Conv1d versus a scalar float64 reference (diagnostic only)."""
+    if not isinstance(layer, nn.Conv1d) or layer.groups != 1 or layer.padding_mode != "zeros":
+        raise ValueError("Only zero-padded, ungrouped Conv1d is supported")
+    if inputs.ndim != 3 or outputs.ndim != 3:
+        raise ValueError("Conv1d expects [batch, channels, time]")
+    total = outputs.numel()
+    count = min(sample_count, total)
+    if count < 1:
+        raise ValueError("Cannot sample an empty convolution output")
+    positions = [0] if count == 1 else [j * (total - 1) // (count - 1) for j in range(count)]
+    x = inputs.detach().cpu()
+    w = layer.weight.detach().cpu()
+    bias = layer.bias.detach().cpu() if layer.bias is not None else None
+    y = outputs.detach().cpu()
+    stride, padding, dilation = layer.stride[0], layer.padding[0], layer.dilation[0]
+    observed, reference = [], []
+    for pos in positions:
+        t = pos % y.shape[2]
+        channel = (pos // y.shape[2]) % y.shape[1]
+        batch = pos // (y.shape[1] * y.shape[2])
+        acc = float(bias[channel]) if bias is not None else 0.0
+        for ic in range(x.shape[1]):
+            for k in range(w.shape[2]):
+                ix = t * stride - padding + k * dilation
+                if 0 <= ix < x.shape[2]:
+                    acc += float(x[batch, ic, ix]) * float(w[channel, ic, k])
+        observed.append(float(y[batch, channel, t]))
+        reference.append(acc)
+    errors = [abs(a - b) for a, b in zip(observed, reference)]
+    return {"sample_count": count, "observed": observed, "reference": reference,
+            "max_abs_error": max(errors), "mean_abs_error": sum(errors) / count}
+
+
 def run_probe(steps=4):
     if not 1 <= steps <= 66:
         raise ValueError("steps must be between 1 and 66")
@@ -75,6 +109,9 @@ def run_probe(steps=4):
         for layer_index, layer in enumerate(model.net):
             activations = layer(activations)
             layer_hashes[f"{layer_index:02d}_{type(layer).__name__}"] = sha_tensors([activations])
+            if i == 0 and layer_index == 0:
+                item["first_conv_scalar_samples"] = conv1d_scalar_samples(
+                    batch_x, layer, activations)
         item["layer_forward_sha256"] = layer_hashes
         logits = activations
         item["forward_logits_sha256"] = sha_tensors([logits])
