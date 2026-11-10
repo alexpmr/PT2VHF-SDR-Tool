@@ -152,3 +152,19 @@ ONNX pesado: o CI geral de pull request executa `scripts/run_tests.py`.
 O treinamento continua disponível por acionamento manual, exclusivamente
 quando houver hipótese nova a investigar. **Todos os testes aqui são
 sintéticos; não houve homologação RF real.**
+
+### Diagnóstico v4 representativo de quatro passos (instrumentação 10/11/2026)
+
+O probe anterior de um único passo usava 126 amostras sem substituir os
+exemplos UNKNOWN da v4. Assim, não reproduzia os minibatches do treinamento
+que falhou nas execuções #69/#70. A instrumentação agora usa os mesmos
+8.400 exemplos sintéticos, a substituição UNKNOWN de 90%, o conjunto de
+validação, os pesos iniciais e a permutação da primeira época da v4.
+Registra hashes de índices, lotes, logits, perda, gradientes e pesos após
+cada um dos quatro primeiros passos Adam, em dois jobs independentes.
+
+O comparador sinaliza a primeira etapa divergente e separa explicitamente
+`SAME_CPU_ONLY_INCONCLUSIVE` de comparação entre CPUs diferentes. Não
+relaxa tolerâncias nem executa 22 épocas. Mesmo uma comparação bem-sucedida
+não comprova reprodutibilidade do treinamento completo nem validação RF.
+Os resultados só serão considerados após conclusão verificável do CI.
