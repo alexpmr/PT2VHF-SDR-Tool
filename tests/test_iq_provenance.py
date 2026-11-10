@@ -289,8 +289,9 @@ def test_drops_during_capture_invalidate_final_sidecar_and_converter(tmp_path):
     engine.rx = Receiver(240000)
     path = engine.start_iq_recording(str(tmp_path))
     with engine._lock:
-        engine._iq_rec.write(np.full(4096, .1+0j, dtype=np.complex64))
-        engine._iq_provenance.observe(145500000, 240000, 4096, True, 7)
+        # 16,384 complex frames at 240 kS/s produce >2,048 at 48 kS/s.
+        engine._iq_rec.write(np.full(16384, .1+0j, dtype=np.complex64))
+        engine._iq_provenance.observe(145500000, 240000, 16384, True, 7)
     source.dropped = 9
     engine.stop_iq_recording()
     saved = json.loads(sidecar_path(path).read_text(encoding="utf-8"))
