@@ -48,3 +48,21 @@ Amostras **sintéticas** com SNR 0/6/12/20 dB, sinais conhecidos e negativos OOD
 - **Métricas independentes inalteradas** em relação à #58: v2 0,699 top-1 / 0,491 OOD; v3 0,697 / 0,906; v4 0,768 / 0,197; v5 0,637 / 0,212, com limiar 0,80. Portadora não modulada na v4 ainda tem falsa aceitação de **0,775**.
 - A melhoria desta rodada é na **confiabilidade dos testes**, não na generalização do modelo. Não confundir pipeline verde com release ou homologação RF.
 - **Decisão:** manter bloqueio de implantação; não iniciar sucessivos treinamentos sintéticos sem novo desenho de experimento e conjunto de RF real independente. Prioridade é o protocolo de captura/etiquetagem e erro por classe CW/AM/UNKNOWN.
+
+## Rodada #62 — duas sementes independentes (10/11/2026)
+
+- [GitHub Actions #62](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42835992077): **SUCCESS**, commit `6a0dc320260cc16da0f530db68feaba97317f71c`; **149 testes aprovados**; arquivo de métricas da segunda semente incluído no artefato [#13774915706](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42835992077/artifacts/13774915706).
+- Seeds: `20261112` (referência reproduzida na #62) e `20261113` (nova avaliação). Gerador sintético `scripts/iq_out_of_family.py`; sem WFM, sem IQ RF real.
+- **Importante:** as métricas de referência da execução #62 não são idênticas às anteriormente relatadas para #58/#59. Comparar as duas sementes **dentro da mesma execução #62**, com os mesmos pesos, em vez de tratar resultados de execuções diferentes como mera variação da semente.
+
+| Modelo | Top-1 seed 20261112 | Top-1 seed 20261113 | Delta (p.p.) | Portadora OOD seed 1 | Portadora OOD seed 2 |
+|---|---:|---:|---:|---:|---:|
+| v2 | 68,3% | 69,7% | +1,4 | 97,5% | 100,0% |
+| v3 | 69,9% | 69,9% | 0,0 | 85,0% | 88,7% |
+| v4 | **76,4%** | **75,0%** | **−1,4** | **75,0%** | **83,8%** |
+| v5 | 71,3% | 69,9% | −1,4 | 75,0% | 85,0% |
+
+- A v4 preserva o melhor top-1, mas classifica erroneamente **60/80 e 67/80** portadoras não moduladas como classes conhecidas com confiança ≥ 0,80 nos dois conjuntos; diferença de 7 casos (8,75 p.p., arredondado 8,8). **Bloqueio para integração operacional permanece**.
+- Amostra de negativos por família é pequena (80 por seed) e deriva do mesmo desenho de gerador. **Duas sementes não fornecem intervalo de confiança amplo nem garantia de generalização**. Repetir seeds sem novos perfis físicos não substitui avaliação RF.
+- Diferenças entre execuções do treinamento precisam de investigação de determinismo dos pesos, versionamento e ambiente; comparação de seeds é válida quando mantém fixos pesos e parâmetros. Não promover modelo baseado apenas no ranking deste teste.
+- **Próxima decisão:** antes de treinar outra versão, coletar IQ RF real rotulado por operador, particionado por sessões/dispositivos, e medir CW, AM, UNKNOWN e portadoras OOD com taxas e intervalos de confiança; relatório experimental deve guardar hashes dos pesos e origem do dataset.
