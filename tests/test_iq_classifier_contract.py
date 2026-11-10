@@ -72,3 +72,23 @@ def test_too_short_and_nonfinite_iq_are_rejected():
     samples[-1] = np.inf
     with pytest.raises(ValueError, match="Non-finite"):
         IQClassifier.features(samples)
+
+
+@pytest.mark.parametrize("constant", [
+    0j,
+    1 + 0j,
+    0 + 1j,
+    3.25 - 7.125j,
+])
+def test_constant_iq_is_rejected_as_unusable_rf(constant):
+    """DC-only / unresolved constant carriers must not be normalized into RF."""
+    iq = np.full(SAMPLES, constant, dtype=np.complex64)
+    with pytest.raises(ValueError, match="No usable RF signal"):
+        IQClassifier.features(iq)
+
+
+def test_constant_iq_rejected_even_with_larger_center_crop():
+    """Longer DC-only recordings must not synthesize activity after cropping."""
+    iq = np.full(SAMPLES + 512, 1.25 - 0.75j, dtype=np.complex64)
+    with pytest.raises(ValueError, match="No usable RF signal"):
+        IQClassifier.features(iq)
