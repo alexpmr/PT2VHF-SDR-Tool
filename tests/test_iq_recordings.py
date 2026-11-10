@@ -132,3 +132,44 @@ def test_acceptance_metrics_when_all_known_or_unknown(tmp_path):
     unknown=evaluate(manifest(tmp_path,label="UNKNOWN"),tmp_path,Stub())
     assert unknown["acceptance_curve"]["0.8"]["known_coverage"] is None
     assert unknown["acceptance_curve"]["0.8"]["unknown_false_accept_rate"]==1
+
+
+def test_session_bootstrap_interval_is_deterministic_and_withheld_when_sparse():
+    from scripts.evaluate_iq_recordings import session_bootstrap_accuracy
+    assert session_bootstrap_accuracy([[8, 8], [8, 0]]) is None
+    counts = [[20, 20], [20, 10], [20, 0], [20, 15]]
+    one = session_bootstrap_accuracy(counts, resamples=500, seed=77)
+    two = session_bootstrap_accuracy(counts, resamples=500, seed=77)
+    assert one == two
+    assert one["independent_sessions"] == 4
+    assert 0 <= one["lower"] <= .5625 <= one["upper"] <= 1
+    with pytest.raises(ValueError, match="resamples"):
+        session_bootstrap_accuracy(counts, resamples=0)
+
+
+def test_offline_report_session_ci_is_private_and_session_based(tmp_path):
+    for n in ("a.wav", "b.wav", "c.wav"):
+        make_wav(tmp_path / n)
+    m = manifest(tmp_path)
+    doc = json.loads(m.read_text())
+    doc["recordings"].extend([
+        {"path": "b.wav", "mode": "UNKNOWN", "session_id": "sensitive-B",
+         "device": "fake SDR", "frequency_hz": 145650000},
+        {"path": "c.wav", "mode": "AM", "session_id": "sensitive-C",
+         "device": "fake SDR", "frequency_hz": 145650000},
+    ])
+    m.write_text(json.dumps(doc))
+    class AlwaysAM:
+        def predict(self, iq):
+            return Classification("AM", .99,
+                                  {k: (1 if k == "AM" else 0) for k in CLASSES})
+    report = evaluate(m, tmp_path, AlwaysAM())
+    assert report["session_macro_accuracy"] == pytest.approx(2 / 3)
+    ci = report["session_macro_accuracy_ci95"]
+    assert ci["independent_sessions"] == 3
+    assert 0 <= ci["lower"] <= (2 / 3) <= ci["upper"] <= 1
+    assert report["session_accuracy_summary"]["min"] == 0
+    assert report["session_accuracy_summary"]["max"] == 1
+    assert report["session_accuracy_summary"]["session_ids_excluded"] is True
+    assert "sensitive-B" not in json.dumps(report)
+    assert "sensitive-C" not in json.dumps(report)
