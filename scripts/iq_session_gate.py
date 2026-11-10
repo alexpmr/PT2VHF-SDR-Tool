@@ -151,6 +151,11 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
         max_far=.10, min_coverage=.50):
     cal, hold = audit(cal_manifest, hold_manifest, root)
     best, curve = select(observations(cal, model, max_windows), max_far, min_coverage)
+    holdout_sessions = len({r[2] for r in hold})
+    holdout_devices = len({r[3] for r in hold})
+    # An empirical pass on one device or too few sessions is not an
+    # independent-device holdout, even when its observed rates look perfect.
+    diversity_ok = holdout_sessions >= 3 and holdout_devices >= 2
     result = {
         "scope": "Offline split-session diagnostic; RF authenticity not established",
         "decision": "NO_ACCEPTABLE_THRESHOLD" if best is None else "HOLDOUT_EVALUATED",
@@ -158,8 +163,11 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
         "calibration_curve": curve,
         "holdout_result": None,
         "calibration_sessions": len({r[2] for r in cal}),
-        "holdout_sessions": len({r[2] for r in hold}),
-        "distinct_holdout_devices": len({r[3] for r in hold}),
+        "holdout_sessions": holdout_sessions,
+        "distinct_holdout_devices": holdout_devices,
+        "min_holdout_sessions": 3,
+        "min_distinct_holdout_devices": 2,
+        "holdout_diversity_gate_passed": diversity_ok,
         "max_unknown_false_accept": max_far,
         "min_known_correct_coverage": min_coverage,
         "operationally_validated": False,
@@ -172,6 +180,8 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
         result["holdout_result"] = holdout
         if not acceptable(holdout, max_far, min_coverage):
             result["decision"] = "HOLDOUT_FAILED"
+        elif not diversity_ok:
+            result["decision"] = "HOLDOUT_INSUFFICIENT_DIVERSITY"
     return result
 
 

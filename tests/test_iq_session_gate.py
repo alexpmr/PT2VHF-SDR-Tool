@@ -142,3 +142,39 @@ def test_sampled_window_hashes_reproducible_and_bounded(tmp_path):
     assert b.issubset(a)
     with pytest.raises(ValueError, match="positive"):
         sampled_iq_window_hashes(path, edge_windows=0)
+
+
+def test_holdout_gate_requires_three_sessions_and_two_devices(tmp_path, monkeypatch):
+    """Synthetic labels: strong window scores cannot replace SDR/session diversity."""
+    import scripts.iq_session_gate as gate
+    cal = manifest(tmp_path, "cal.json", "cal", 1200)
+    hold = manifest(tmp_path, "hold.json", "hold", 1700)
+
+    def perfect_observations(rows, model, max_windows):
+        return [(label, label, .99, session) for _, label, session, _ in rows]
+
+    monkeypatch.setattr(gate, "observations", perfect_observations)
+    two_sessions = gate.run(cal, hold, tmp_path, object())
+    assert two_sessions["decision"] == "HOLDOUT_INSUFFICIENT_DIVERSITY"
+    assert two_sessions["holdout_diversity_gate_passed"] is False
+    assert two_sessions["holdout_result"]["unknown_false_accept_rate"] == 0
+    assert two_sessions["operationally_validated"] is False
+
+    wav(tmp_path / "hold-2.wav", 2500)
+    doc = json.loads(hold.read_text())
+    doc["recordings"].append({
+        "path": "hold-2.wav", "mode": "AM", "session_id": "hold-2",
+        "device": "synthetic device", "frequency_hz": 145500000,
+    })
+    hold.write_text(json.dumps(doc))
+    one_device = gate.run(cal, hold, tmp_path, object())
+    assert one_device["holdout_sessions"] == 3
+    assert one_device["decision"] == "HOLDOUT_INSUFFICIENT_DIVERSITY"
+
+    doc["recordings"][-1]["device"] = "independent synthetic SDR"
+    hold.write_text(json.dumps(doc))
+    diverse = gate.run(cal, hold, tmp_path, object())
+    assert diverse["decision"] == "HOLDOUT_EVALUATED"
+    assert diverse["holdout_diversity_gate_passed"] is True
+    assert diverse["distinct_holdout_devices"] == 2
+    assert diverse["operationally_validated"] is False
