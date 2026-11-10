@@ -168,3 +168,15 @@ O comparador sinaliza a primeira etapa divergente e separa explicitamente
 relaxa tolerâncias nem executa 22 épocas. Mesmo uma comparação bem-sucedida
 não comprova reprodutibilidade do treinamento completo nem validação RF.
 Os resultados só serão considerados após conclusão verificável do CI.
+
+### Segunda etapa do probe: localizar a primeira camada (10/11/2026)
+
+A [execução #3](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42917860408)
+comparou Intel Xeon Platinum 8573C e AMD EPYC 7763. Entradas, pesos iniciais,
+permutação e primeiro lote idênticos; a **primeira diferença foi no forward
+da primeira minibatch**, antes do backward/Adam. O hash da perda do primeiro
+passo coincidiu, mas gradientes e pesos divergiram. Não atribuir a causa
+exclusivamente ao otimizador. O diagnóstico seguinte registra a saída de
+cada camada Conv1d/ReLU/AdaptiveAvgPool/Linear sem alterar a arquitetura,
+para isolar o primeiro operador divergente. A instrumentação é sintética e
+não constitui homologação de RF real.

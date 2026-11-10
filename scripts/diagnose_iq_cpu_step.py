@@ -68,7 +68,15 @@ def run_probe(steps=4):
         item = {"step": i, "indices_sha256": sha_tensors([indices]),
                 "batch_sha256": sha_tensors([batch_x, batch_y])}
         optimizer.zero_grad()
-        logits = model(batch_x)
+        # Forward through the same nn.Sequential, hashing each intermediate
+        # tensor before any backward/Adam operation. No model semantics change.
+        activations = batch_x
+        layer_hashes = {}
+        for layer_index, layer in enumerate(model.net):
+            activations = layer(activations)
+            layer_hashes[f"{layer_index:02d}_{type(layer).__name__}"] = sha_tensors([activations])
+        item["layer_forward_sha256"] = layer_hashes
+        logits = activations
         item["forward_logits_sha256"] = sha_tensors([logits])
         loss = nn.functional.cross_entropy(logits, batch_y)
         item["loss_sha256"] = sha_tensors([loss])

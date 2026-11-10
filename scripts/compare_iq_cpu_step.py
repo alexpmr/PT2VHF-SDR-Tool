@@ -18,6 +18,11 @@ def compare_reports(a, b):
     for i, (left, right) in enumerate(zip(a["steps"], b["steps"])):
         if left["step"] != i or right["step"] != i:
             raise ValueError("Probe step numbering differs")
+        left_layers, right_layers = left["layer_forward_sha256"], right["layer_forward_sha256"]
+        if list(left_layers) != list(right_layers):
+            raise ValueError("Probe layer ordering differs")
+        matches.update({f"steps[{i}].layers.{key}": left_layers[key] == right_layers[key]
+                        for key in left_layers})
         matches.update({f"steps[{i}].{key}": left[key] == right[key] for key in STEP})
     first = next((key for key, ok in matches.items() if not ok), None)
     env_ok = all(a[key] == b[key] for key in ENV)

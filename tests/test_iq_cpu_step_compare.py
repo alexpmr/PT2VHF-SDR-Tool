@@ -12,7 +12,9 @@ def probe(cpu="AMD"):
         "requested_steps": 2,
         "input_sha256": "x", "validation_input_sha256": "v",
         "initial_parameters_sha256": "p", "epoch0_permutation_sha256": "perm",
-        "steps": [{"step": i, "indices_sha256": "idx",
+        "steps": [{"step": i, "layer_forward_sha256": {
+                       "00_Conv1d": "conv", "01_ReLU": "relu"},
+                   "indices_sha256": "idx",
                    "batch_sha256": "batch", "forward_logits_sha256": "logits",
                    "loss_sha256": "loss", "gradients_sha256": "grad",
                    "updated_parameters_sha256": "weights"} for i in range(2)],
@@ -49,4 +51,19 @@ def test_invalid_steps_fail_closed():
     b = probe()
     b["steps"][1]["step"] = 4
     with pytest.raises(ValueError, match="numbering"):
+        compare_reports(a, b)
+
+def test_first_divergent_layer_precedes_logits_and_gradients():
+    a, b = probe(), probe("Intel")
+    b["steps"][0]["layer_forward_sha256"]["00_Conv1d"] = "changed"
+    b["steps"][0]["forward_logits_sha256"] = "changed"
+    result = compare_reports(a, b)
+    assert result["first_divergent_stage"] == "steps[0].layers.00_Conv1d"
+    assert result["cross_cpu_tested"] is True
+
+
+def test_layer_order_mismatch_fails_closed():
+    a, b = probe(), probe("Intel")
+    b["steps"][0]["layer_forward_sha256"] = {"00_Conv1d": "conv"}
+    with pytest.raises(ValueError, match="layer ordering"):
         compare_reports(a, b)
