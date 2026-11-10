@@ -77,7 +77,7 @@ def read_manifest(path: Path, root: Path) -> list:
     return result
 
 
-def read_windows(path: Path, limit=100):
+def read_windows(path: Path, limit=100, stats=None):
     """Select non-overlapping IQ windows uniformly across the full WAV duration.
 
     Selecting only the first `limit` windows biases long RF sessions toward
@@ -91,6 +91,8 @@ def read_windows(path: Path, limit=100):
             raise ValueError("Expected stereo PCM16 48000 Hz IQ WAV")
         total = w.getnframes() // SAMPLES
         selected = np.linspace(0, total - 1, min(limit, total), dtype=np.int64)
+        if stats is not None:
+            stats["selected"] = stats.get("selected", 0) + len(selected)
         for index in selected:
             w.setpos(int(index) * SAMPLES)
             raw = np.frombuffer(w.readframes(SAMPLES), dtype="<i2")
@@ -99,12 +101,20 @@ def read_windows(path: Path, limit=100):
             iq = (raw[::2].astype(np.float32) + 1j*raw[1::2].astype(np.float32))/32768
             if float(np.sqrt(np.mean(np.abs(iq)**2))) >= 1e-6:
                 yield iq.astype(np.complex64)
+            elif stats is not None:
+                stats["skipped_silence"] = stats.get("skipped_silence", 0) + 1
 
 
 def evaluate(manifest: Path, root: Path, model, max_windows=100):
+    """Keep preprocessing exclusions separate from neural UNKNOWN decisions.
+
+    Model metrics are conditional on inference. Rejected/silent windows never
+    enter the neural confusion matrix or count as correct UNKNOWN predictions.
+    """
     rows = read_manifest(manifest, root)
     confusion = np.zeros((len(CLASSES), len(CLASSES)), dtype=int)
-    sessions = defaultdict(lambda: [0, 0])
+    sessions = defaultdict(lambda: [0, 0])  # inferred, correct
+    session_pipeline = defaultdict(lambda: [0, 0])  # selected, inferred
     devices = set()
     confidence_errors = 0
     acceptance = {str(t): {"known_correct": 0, "known_wrong": 0,
@@ -112,14 +122,31 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100):
                   for t in (0.8, 0.95, 0.99)}
     known_total = 0
     unknown_total = 0
+    selected_total = 0
+    silent_total = 0
+    rejected_total = 0
+    rejected_known = 0
+    rejected_unknown = 0
     for path, label, session, device in rows:
         devices.add(device)
-        got = 0
-        for iq in read_windows(path, max_windows):
-            result = model.predict(iq)
-            # The classifier's mode includes its configured UNKNOWN confidence
-            # gate. The raw top class does not, and must not be substituted in
-            # the confusion matrix or session accuracy.
+        session_pipeline[session]  # retain sessions without inferred windows
+        stats = {"selected": 0, "skipped_silence": 0}
+        for iq in read_windows(path, max_windows, stats=stats):
+            try:
+                result = model.predict(iq)
+            except ValueError as exc:
+                # Only the explicit DC/unresolved-carrier preprocessing guard
+                # is a counted rejection. Other model errors must surface.
+                if str(exc) != "No usable RF signal (DC-only or unresolved carrier)":
+                    raise
+                rejected_total += 1
+                if label == "UNKNOWN":
+                    rejected_unknown += 1
+                else:
+                    rejected_known += 1
+                continue
+            # The configured confidence gate determines the actual prediction;
+            # threshold sweeps below intentionally use raw probabilities.
             top_label = max(result.probabilities, key=result.probabilities.get)
             predicted = result.mode
             if predicted not in CLASSES:
@@ -127,14 +154,13 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100):
             confusion[CLASSES.index(label), CLASSES.index(predicted)] += 1
             sessions[session][0] += 1
             sessions[session][1] += int(predicted == label)
+            session_pipeline[session][1] += 1
             confidence_errors += int(predicted != label and result.confidence >= .80)
             if label == "UNKNOWN":
                 unknown_total += 1
             else:
                 known_total += 1
             for threshold, counts in acceptance.items():
-                # Sweep the raw top class independently of the model's default
-                # confidence gate: each threshold represents a distinct policy.
                 accepted = top_label != "UNKNOWN" and result.confidence >= float(threshold)
                 if label == "UNKNOWN":
                     counts["unknown_misaccepted"] += int(accepted)
@@ -142,44 +168,65 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100):
                     counts["known_accepted"] += int(accepted)
                     counts["known_correct"] += int(accepted and top_label == label)
                     counts["known_wrong"] += int(accepted and top_label != label)
-            got += 1
-        if not got:
-            raise ValueError(f"No usable IQ samples: {path.name}")
+        selected_total += stats["selected"]
+        silent_total += stats["skipped_silence"]
+        session_pipeline[session][0] += stats["selected"]
     total = int(confusion.sum())
+    if total + silent_total + rejected_total != selected_total:
+        raise AssertionError("IQ window accounting mismatch")
+    session_rates = [correct / count for count, correct in sessions.values()
+                     if count]
+    coverage_rates = [inferred / selected for selected, inferred in session_pipeline.values()
+                      if selected]
     return {
         "scope": "Offline operator-labeled WAV IQ; provenance must be verified",
-        "sample_windows": total, "sessions": len(sessions),
-        "devices": len(devices), "recordings": len(rows),
-        "accuracy_top1": float(np.trace(confusion)/total),
-        "high_confidence_error_rate": float(confidence_errors/total),
+        "metrics_population": "Neural metrics condition on inferred windows only; preprocessing rejections are not UNKNOWN predictions",
+        "sample_windows": total, "windows_selected": selected_total,
+        "windows_skipped_silence": silent_total,
+        "windows_rejected_preprocessing": rejected_total,
+        "windows_rejected_preprocessing_known": rejected_known,
+        "windows_rejected_preprocessing_unknown": rejected_unknown,
+        "windows_inferred": total,
+        "pipeline_coverage": (total / selected_total if selected_total else None),
+        "sessions": len(session_pipeline), "devices": len(devices),
+        "recordings": len(rows),
+        "accuracy_top1": (float(np.trace(confusion) / total) if total else None),
+        "high_confidence_error_rate": (float(confidence_errors / total) if total else None),
         "known_windows": known_total, "unknown_windows": unknown_total,
         "acceptance_curve": {
             threshold: {
-                "correct_known_accepted_rate": (v["known_correct"]/known_total
+                "correct_known_accepted_rate": (v["known_correct"] / known_total
                                                 if known_total else None),
-                "wrong_known_accepted_rate": (v["known_wrong"]/known_total
+                "wrong_known_accepted_rate": (v["known_wrong"] / known_total
                                               if known_total else None),
-                "known_coverage": (v["known_accepted"]/known_total
+                "known_coverage": (v["known_accepted"] / known_total
                                    if known_total else None),
-                "unknown_false_accept_rate": (v["unknown_misaccepted"]/unknown_total
+                "unknown_false_accept_rate": (v["unknown_misaccepted"] / unknown_total
                                               if unknown_total else None),
-            } for threshold,v in acceptance.items()
+            } for threshold, v in acceptance.items()
         },
-        "per_class_recall": {label:float(confusion[i,i]/confusion[i].sum())
+        "per_class_recall": {label: float(confusion[i, i] / confusion[i].sum())
                              if confusion[i].sum() else None
-                             for i,label in enumerate(CLASSES)},
-        "session_macro_accuracy": float(np.mean([correct/count for count,correct in sessions.values()])),
+                             for i, label in enumerate(CLASSES)},
+        "session_macro_accuracy": (float(np.mean(session_rates))
+                                   if session_rates else None),
         "session_macro_accuracy_ci95": session_bootstrap_accuracy(list(sessions.values())),
         "session_accuracy_summary": {
-            "min": float(min(correct / count for count, correct in sessions.values())),
-            "max": float(max(correct / count for count, correct in sessions.values())),
-            "sessions": len(sessions),
+            "min": (float(min(session_rates)) if session_rates else None),
+            "max": (float(max(session_rates)) if session_rates else None),
+            "sessions": len(session_rates),
+            "sessions_without_inference": len(session_pipeline) - len(session_rates),
+            "session_ids_excluded": True,
+        },
+        "session_pipeline_coverage_summary": {
+            "min": (float(min(coverage_rates)) if coverage_rates else None),
+            "max": (float(max(coverage_rates)) if coverage_rates else None),
+            "sessions_with_selected_windows": len(coverage_rates),
             "session_ids_excluded": True,
         },
         "confusion_matrix": confusion.tolist(),
-        "limitations": "WFM excluded; windows within a session correlated; cluster-bootstrap CI exploratory only; no automatic RF validation",
+        "limitations": "WFM excluded; model scores exclude silence/DC rejected before inference; windows within a session correlated; cluster-bootstrap CI exploratory only; no automatic RF validation",
     }
-
 
 
 def evaluate_multiple_models(manifest: Path, root: Path, models: dict[str, object],
@@ -192,7 +239,10 @@ def evaluate_multiple_models(manifest: Path, root: Path, models: dict[str, objec
     first = next(iter(reports.values()))
     for alias, report in reports.items():
         for key in ("sample_windows", "sessions", "devices", "recordings",
-                    "known_windows", "unknown_windows"):
+                    "known_windows", "unknown_windows", "windows_selected",
+                    "windows_skipped_silence", "windows_rejected_preprocessing",
+                    "windows_rejected_preprocessing_known",
+                    "windows_rejected_preprocessing_unknown"):
             if report[key] != first[key]:
                 raise ValueError(f"Model {alias} did not process the same dataset")
     return {

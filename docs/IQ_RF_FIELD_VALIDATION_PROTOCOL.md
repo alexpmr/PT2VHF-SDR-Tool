@@ -117,3 +117,38 @@ Os novos testes unitários verificam a ativação e os pré-requisitos da polít
 **Próxima investigação econômica:** workflow de diagnóstico independente com um único passo Adam sobre 126 amostras sintéticas; registrar hashes de entrada, pesos iniciais, logits, loss, gradientes e pesos atualizados, identificando a primeira etapa divergente. Esse probe é intencionalmente distinto do treinamento completo v4: se passar, **não** demonstra reprodutibilidade de 22 épocas. O workflow é separado para não repetir o treinamento dos quatro modelos a cada instrumentação.
  
 **Correção do probe:** a primeira execução do workflow diagnóstico falhou antes da inferência com `ValueError: Training sample count must be positive and class-balanced` porque 128 não é múltiplo das 7 classes. A amostra foi ajustada para 126 (18 exemplos por classe); não houve evidência numérica da execução falha.
+
+
+### Contabilização de silêncio e DC — revisão de 10/11/2026
+
+O avaliador offline registra `windows_selected`, `windows_skipped_silence`,
+`windows_rejected_preprocessing`, `windows_inferred` e
+`pipeline_coverage` (inferidas / selecionadas), além de separação de
+rejeições de pré-processamento entre rótulos conhecidos e UNKNOWN.
+Os resumos por sessão de cobertura e acurácia não expõem identificadores.
+As janelas silenciosas não são inferidas; janelas IQ com DC constante são
+rejeitadas pelo pré-processador, sem interromper todo o lote. **Nenhuma
+rejeição pré-neural é contada como acerto UNKNOWN da rede.**
+
+Matriz de confusão, recall, acurácia, taxas de aceitação e bootstrap são
+**condicionais às janelas efetivamente inferidas**. Quando não houver janelas
+inferidas, essas métricas são `null` (ou matriz de zeros), nunca 0%/100%
+inventados. Uma sessão sem inferência é contabilizada em
+`session_accuracy_summary.sessions_without_inference`; a cobertura
+min/max por sessão fica em `session_pipeline_coverage_summary`.
+Os relatórios não substituem a inspeção humana de silêncio, CW chaveado,
+portadora não modulada e espúrios DC.
+
+A execução [#70](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/42882889533)
+concluiu com **FAILURE** no replay exato entre CPUs AMD EPYC 9V45 e 9V74:
+entradas e pesos iniciais idênticos, pesos finais divergentes (diferença
+máxima 1.1864783763885498). O job principal aprovou 156 testes IQ e
+exportação/paridade ONNX, mas o workflow completo **não** passou.
+Este problema é independente da correção do avaliador; a causa numérica
+específica ainda precisa ser isolada.
+
+A alteração do avaliador e dos testes offline não dispara mais o treinamento
+ONNX pesado: o CI geral de pull request executa `scripts/run_tests.py`.
+O treinamento continua disponível por acionamento manual, exclusivamente
+quando houver hipótese nova a investigar. **Todos os testes aqui são
+sintéticos; não houve homologação RF real.**

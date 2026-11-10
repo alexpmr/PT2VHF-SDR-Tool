@@ -3,7 +3,7 @@ import json
 import wave
 import numpy as np
 import pytest
-from pt2vhf.dsp.iq_classifier import CLASSES, Classification
+from pt2vhf.dsp.iq_classifier import CLASSES, Classification, IQClassifier
 from scripts.evaluate_iq_recordings import read_manifest, read_windows, evaluate
 
 
@@ -227,3 +227,90 @@ def test_unknown_confidence_gate_is_respected_without_biasing_threshold_curve(
     assert report["acceptance_curve"]["0.8"]["known_coverage"] == accepted_at_08
     assert report["acceptance_curve"]["0.95"]["unknown_false_accept_rate"] == 0.0
     assert report["acceptance_curve"]["0.95"]["known_coverage"] == 0.0
+
+
+def make_flat_wav(path, amplitude):
+    """Synthetic IQ: zero RMS or nonzero DC, never a real RF recording."""
+    frames = np.zeros((8192, 2), dtype="<i2")
+    frames[:, 0] = amplitude
+    with wave.open(str(path), "wb") as out:
+        out.setnchannels(2)
+        out.setsampwidth(2)
+        out.setframerate(48000)
+        out.writeframes(frames.tobytes())
+
+
+def test_silent_and_dc_windows_are_accounted_without_neural_credit(tmp_path):
+    make_flat_wav(tmp_path / "silent.wav", 0)
+    make_flat_wav(tmp_path / "dc.wav", 1200)
+    m = manifest(tmp_path, filename="silent.wav", label="UNKNOWN")
+    doc = json.loads(m.read_text())
+    doc["recordings"].append({
+        "path": "dc.wav", "mode": "UNKNOWN", "session_id": "private-dc",
+        "device": "fake SDR", "frequency_hz": 145650000,
+    })
+    m.write_text(json.dumps(doc))
+
+    class Guarded:
+        def predict(self, iq):
+            IQClassifier.features(iq)
+            pytest.fail("DC-only input must not reach a neural prediction")
+
+    report = evaluate(m, tmp_path, Guarded())
+    assert report["windows_selected"] == 8
+    assert report["windows_skipped_silence"] == 4
+    assert report["windows_rejected_preprocessing"] == 4
+    assert report["windows_rejected_preprocessing_unknown"] == 4
+    assert report["windows_inferred"] == report["sample_windows"] == 0
+    assert report["pipeline_coverage"] == 0
+    assert report["accuracy_top1"] is None
+    assert report["session_macro_accuracy"] is None
+    assert report["session_accuracy_summary"]["sessions_without_inference"] == 2
+    assert report["acceptance_curve"]["0.8"]["unknown_false_accept_rate"] is None
+    assert report["per_class_recall"]["UNKNOWN"] is None
+    assert "private-dc" not in json.dumps(report)
+
+
+def test_mixed_signal_and_dc_coverage_does_not_inflate_unknown_recall(tmp_path):
+    make_wav(tmp_path / "a.wav")
+    make_flat_wav(tmp_path / "dc.wav", 1500)
+    m = manifest(tmp_path)
+    doc = json.loads(m.read_text())
+    doc["recordings"].append({
+        "path": "dc.wav", "mode": "UNKNOWN", "session_id": "private-unknown",
+        "device": "fake SDR", "frequency_hz": 145650000,
+    })
+    m.write_text(json.dumps(doc))
+
+    class Guarded:
+        def predict(self, iq):
+            IQClassifier.features(iq)
+            return Classification("AM", .99,
+                                  {k: (1 if k == "AM" else 0) for k in CLASSES})
+
+    report = evaluate(m, tmp_path, Guarded())
+    assert report["windows_selected"] == 8
+    assert report["windows_inferred"] == 4
+    assert report["windows_rejected_preprocessing"] == 4
+    assert report["pipeline_coverage"] == .5
+    assert report["accuracy_top1"] == 1
+    assert report["per_class_recall"]["UNKNOWN"] is None
+    assert report["session_pipeline_coverage_summary"]["min"] == 0
+    assert report["session_pipeline_coverage_summary"]["max"] == 1
+    assert report["session_accuracy_summary"]["sessions_without_inference"] == 1
+
+
+def test_unexpected_prediction_error_is_not_silently_swallowed(tmp_path):
+    make_wav(tmp_path / "a.wav")
+    class Broken:
+        def predict(self, iq):
+            raise ValueError("invalid model output")
+    with pytest.raises(ValueError, match="invalid model output"):
+        evaluate(manifest(tmp_path), tmp_path, Broken())
+
+
+def test_read_windows_exposes_silence_selection_counts(tmp_path):
+    make_flat_wav(tmp_path / "silent.wav", 0)
+    stats = {}
+    assert list(read_windows(tmp_path / "silent.wav", limit=3, stats=stats)) == []
+    assert stats == {"selected": 3, "skipped_silence": 3}

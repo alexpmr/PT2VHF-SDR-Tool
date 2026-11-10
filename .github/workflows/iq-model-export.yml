@@ -4,6 +4,9 @@ on:
   # Em pull_request, o filtro paths considera TODO o diff acumulado do PR;
   # assim, qualquer ajuste de captura retrainaria os quatro modelos.
   # Em push, o filtro considera somente as alterações deste commit.
+  # Avaliador RF offline e seus testes pertencem ao CI geral do PR;
+  # não reexecutar treinamento sintético v2-v5 sem hipótese neural nova.
+  # Para mudanças deste próprio workflow, usar workflow_dispatch após revisão.
   push:
     branches:
       - feature/iq-signal-classifier
@@ -16,8 +19,6 @@ on:
       - 'scripts/compare_iq_stress.py'
       - 'scripts/iq_out_of_family.py'
       - 'scripts/evaluate_iq_ood.py'
-      - 'scripts/evaluate_iq_recordings.py'
-      - 'tests/test_iq_recordings.py'
       - 'tests/test_iq_ood_signals.py'
       - 'scripts/smoke_iq_wav_onnx.py'
       - 'scripts/export_iq_synthetic_v2.py'
@@ -29,7 +30,6 @@ on:
       - 'tests/test_iq_augmentation.py'
       - 'tests/test_iq_ood_signals.py'
       - 'tests/test_iq_unknown_curriculum.py'
-      - '.github/workflows/iq-model-export.yml'
 jobs:
   train-export-validate:
     runs-on: ubuntu-latest
