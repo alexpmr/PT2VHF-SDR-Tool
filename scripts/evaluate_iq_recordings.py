@@ -14,6 +14,26 @@ from pt2vhf.dsp.iq_classifier import CLASSES, IQClassifier, SAMPLES
 
 SUPPORTED = tuple(c for c in CLASSES if c != "WFM")
 
+def session_bootstrap_accuracy(session_counts, *, resamples=2000, seed=20261110):
+    """Percentile CI from resampled *sessions*, never independent IQ windows.
+
+    Exploratory uncertainty only. An interval is withheld if fewer than
+    three independent sessions are available; label verification is external.
+    """
+    if resamples < 1:
+        raise ValueError("resamples must be positive")
+    rates = np.array([correct / count for count, correct in session_counts
+                      if count > 0], dtype=np.float64)
+    if len(rates) < 3:
+        return None
+    rng = np.random.default_rng(seed)
+    samples = rng.choice(rates, size=(resamples, len(rates)), replace=True).mean(axis=1)
+    low, high = np.quantile(samples, [0.025, 0.975])
+    return {"lower": float(low), "upper": float(high),
+            "resamples": resamples, "independent_sessions": len(rates),
+            "method": "percentile cluster bootstrap; session macro accuracy",
+            "caution": "Exploratory; small sessions or biased sessions cannot validate RF"}
+
 
 def read_manifest(path: Path, root: Path) -> list:
     doc = json.loads(path.read_text(encoding="utf-8"))
@@ -133,8 +153,15 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100):
                              if confusion[i].sum() else None
                              for i,label in enumerate(CLASSES)},
         "session_macro_accuracy": float(np.mean([correct/count for count,correct in sessions.values()])),
+        "session_macro_accuracy_ci95": session_bootstrap_accuracy(list(sessions.values())),
+        "session_accuracy_summary": {
+            "min": float(min(correct / count for count, correct in sessions.values())),
+            "max": float(max(correct / count for count, correct in sessions.values())),
+            "sessions": len(sessions),
+            "session_ids_excluded": True,
+        },
         "confusion_matrix": confusion.tolist(),
-        "limitations": "WFM excluded; windows within a session correlated; no automatic RF validation",
+        "limitations": "WFM excluded; windows within a session correlated; cluster-bootstrap CI exploratory only; no automatic RF validation",
     }
 
 
