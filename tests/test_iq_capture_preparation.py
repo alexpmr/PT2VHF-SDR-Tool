@@ -139,14 +139,16 @@ def test_polyphase_resampling_independent_of_disk_chunk_boundaries(
     tmp_path, rate, chunk
 ):
     src = tmp_path / "raw.wav"
-    make_iq(src, rate=rate, n=25_771, tone=12_500)
+    # Even at 2.048 MS/s, this produces >2048 output IQ samples.
+    input_frames = 110_007
+    make_iq(src, rate=rate, n=input_frames, tone=12_500)
     reference, candidate = tmp_path / "ref.wav", tmp_path / "out.wav"
     convert(src, reference, 145_500_000, 145_512_200, chunk=65_536)
     convert(src, candidate, 145_500_000, 145_512_200, chunk=chunk)
     _, first = read_complex(reference)
     _, second = read_complex(candidate)
     assert len(first) == len(second) == (
-        (25_771 * 48_000 + rate - 1) // rate
+        (input_frames * 48_000 + rate - 1) // rate
     )
     np.testing.assert_allclose(first, second, atol=3 / 32768)
 
