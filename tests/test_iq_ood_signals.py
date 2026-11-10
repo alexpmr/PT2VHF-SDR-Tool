@@ -83,3 +83,40 @@ def test_ood_metric_denominators_and_confidence_thresholds(monkeypatch, tmp_path
         assert lo["correct_known_accepted"] == pytest.approx(1 / (len(SUPPORTED) - 1))
         assert hi["ood_negative_misaccepted"] == 0.0
         assert hi["correct_known_accepted"] == 0.0
+
+
+def test_ood_report_seed_is_configurable_and_reproducible(monkeypatch, tmp_path):
+    """Independent holdout seeds must not silently change baseline results."""
+    from types import SimpleNamespace
+    from scripts import evaluate_iq_ood
+
+    fingerprints = []
+
+    class FingerprintModel:
+        def __init__(self, path, min_confidence=0.8):
+            pass
+
+        def predict(self, iq):
+            fingerprints.append(np.asarray(iq).tobytes())
+            probabilities = {mode: 0.1 / 6 for mode in
+                             ("CW", "AM", "NFM", "WFM", "USB", "LSB", "UNKNOWN")}
+            probabilities["AM"] = 0.9
+            return SimpleNamespace(mode="AM", confidence=0.9,
+                                   probabilities=probabilities)
+
+    monkeypatch.setattr(evaluate_iq_ood, "IQClassifier", FingerprintModel)
+    def capture(seed):
+        fingerprints.clear()
+        report = evaluate_iq_ood.run(tmp_path / "v2.onnx", tmp_path / "v3.onnx",
+                                     count_per_class_snr=1, negatives_per_kind=1,
+                                     seed=seed)
+        return report, fingerprints[:]
+
+    baseline, baseline_samples = capture(evaluate_iq_ood.SEED)
+    repeated, repeated_samples = capture(evaluate_iq_ood.SEED)
+    alternate, alternate_samples = capture(20261113)
+    assert baseline["seed"] == repeated["seed"] == evaluate_iq_ood.SEED
+    assert alternate["seed"] == 20261113
+    assert baseline_samples == repeated_samples
+    assert baseline_samples != alternate_samples
+    assert baseline["models"] == repeated["models"]
