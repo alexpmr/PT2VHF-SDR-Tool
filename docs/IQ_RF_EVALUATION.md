@@ -119,3 +119,22 @@ interferência USB ou falhas de sincronismo não expostas pelo driver. O SHA-256
 protege a integridade após a captura, mas não detecta amostras ausentes que já
 chegaram faltando. Para validação conclusiva, comparar também sinais reais
 com referência independente.
+
+
+## Limite de gravações WAV RIFF (4 GiB)
+
+WAV RIFF usa campos de 32 bits para os tamanhos dos dados. Capturas IQ
+PCM16 estéreo consomem **4 bytes por amostra complexa**: a 2,4 MS/s isso
+representa aproximadamente 9,6 MB/s, chegando perto de 4 GiB em pouco mais
+de 7 minutos. A taxa real do SDR pode variar.
+
+O gravador experimental interrompe automaticamente a captura **antes de
+ultrapassar o tamanho RIFF seguro**. O WAV pode ser fechado normalmente, mas
+o sidecar recebe `wav_riff_limit` e
+`suitable_for_continuous_channelization: false`, pois a sessão foi truncada.
+O aplicativo informa o motivo. Os arquivos originais não são sobrescritos.
+O mesmo mecanismo identifica falha de escrita (`wav_write_failed`).
+
+Para sessões longas, prefira diversas capturas curtas e independentes; não
+interprete recortes automáticos como gravação contínua. Suporte a RF64/W64 ou
+segmentação contínua exige projeto específico e ainda não foi implementado.

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .audio import ActivityRecorder, AudioOutput, WavRecorder
+from .audio import ActivityRecorder, AudioOutput, WavRecorder, WavSizeLimitError
 from .iq_provenance import IQCaptureProvenance, sidecar_path, write_sidecar
 from .neural_audio import NeuralAudioWorker
 from .dsp.iq_classifier_worker import IQClassificationWorker
@@ -403,6 +403,7 @@ class Engine:
                 log.exception("Comando falhou: %s", e)
 
         blk = blk - np.mean(blk)  # remove DC (pico central do RTL-SDR)
+        close_invalid_iq = None
         with self._lock:
             if self._iq_rec is not None:
                 should_write = (not self.iq_vox or rx.squelch.is_open
@@ -412,7 +413,20 @@ class Engine:
                                                 len(blk), should_write,
                                                 getattr(src, "dropped", 0))
                 if should_write:
-                    self._iq_rec.write(blk)
+                    try:
+                        self._iq_rec.write(blk)
+                    except WavSizeLimitError:
+                        close_invalid_iq = "wav_riff_limit"
+                    except (OSError, ValueError):
+                        close_invalid_iq = "wav_write_failed"
+                    if close_invalid_iq and self._iq_provenance is not None:
+                        self._iq_provenance.interrupt(close_invalid_iq)
+        if close_invalid_iq:
+            self.stop_iq_recording()
+            msg = ("Gravação IQ interrompida antes de ultrapassar 4 GiB (WAV RIFF)."
+                   if close_invalid_iq == "wav_riff_limit"
+                   else "Falha ao gravar IQ; arquivo não é válido para teste neural.")
+            self.events.put(("iq_recording_warning", msg, time.time()))
 
         fs = src.sample_rate
         for listener in tuple(self.iq_listeners):
