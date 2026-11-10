@@ -362,23 +362,38 @@ class Engine:
         metadata = None
         wav_path = None
         frames = 0
+        close_failed = False
         with self._lock:
             if self._iq_rec:
                 rec = self._iq_rec
-                rec.close()
                 wav_path = rec.path
                 frames = rec.samples
                 metadata = self._iq_provenance
                 if metadata is not None and self.source is not None:
                     metadata.observe_source_dropped(getattr(self.source, "dropped", 0))
-                self._iq_rec = None
-                self._iq_provenance = None
+                try:
+                    rec.close()
+                except Exception:  # noqa: BLE001
+                    close_failed = True
+                    log.exception("Falha ao fechar WAV IQ %s; sidecar ficará pendente", wav_path)
+                finally:
+                    # Never leave a failed recorder active on the DSP thread.
+                    self._iq_rec = None
+                    self._iq_provenance = None
         if metadata is not None and wav_path is not None:
+            if close_failed:
+                self.events.put(("iq_recording_warning",
+                                 "Falha ao fechar WAV IQ; gravação marcada incompleta.",
+                                 time.time()))
+                return
             try:
                 # Keep the incomplete marker until WAV is closed and hashed.
                 write_sidecar(wav_path, metadata.final_report(frames))
-            except Exception:
+            except Exception:  # noqa: BLE001
                 log.exception("Falha ao finalizar integridade IQ de %s; sidecar pendente", wav_path)
+                self.events.put(("iq_recording_warning",
+                                 "Falha ao verificar integridade do WAV IQ; gravação incompleta.",
+                                 time.time()))
 
     @property
     def recording_audio(self):
