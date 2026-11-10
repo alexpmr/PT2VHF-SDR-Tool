@@ -16,6 +16,8 @@ on:
       - 'scripts/compare_iq_stress.py'
       - 'scripts/iq_out_of_family.py'
       - 'scripts/evaluate_iq_ood.py'
+      - 'scripts/evaluate_iq_recordings.py'
+      - 'tests/test_iq_recordings.py'
       - 'tests/test_iq_ood_signals.py'
       - 'scripts/smoke_iq_wav_onnx.py'
       - 'scripts/export_iq_synthetic_v2.py'
@@ -139,6 +141,9 @@ jobs:
         run: PYTHONPATH=. python scripts/smoke_iq_wav_onnx.py
       - name: Install Qt Linux system libraries
         run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Validate RF evaluation report uncertainty contract with synthetic fixtures
+        run: |
+          python -m pytest -q tests/test_iq_recordings.py
       - name: Run IQ classifier unit tests
         env:
           QT_QPA_PLATFORM: offscreen
