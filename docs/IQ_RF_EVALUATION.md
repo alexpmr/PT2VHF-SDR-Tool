@@ -194,3 +194,24 @@ O classificador v2–v5 continua usando pré-processamento com remoção da méd
 compatível com seu treinamento; **não foi retreinado nem homologado para
 identificar CW puro em zero beat**. Para ensaios, grave com o sinal deslocado
 do centro, documente o offset e confirme o modo por método independente.
+
+
+## Resíduos numéricos na normalização IQ/ONNX
+
+O classificador experimental v2–v5 usa remoção da média antes de normalizar
+o IQ. Em `complex64`, uma portadora exatamente constante pode deixar
+resíduos da ordem do arredondamento de ponto flutuante. Sem proteção, esses
+valores ínfimos poderiam ser amplificados para amplitude normalizada e
+produzir predições aparentemente confiantes sobre algo que não contém
+informação modulada suficiente.
+
+O pré-processador agora exige que a energia **após** remover DC ultrapasse
+um limiar absoluto de `1e-8` e também um limiar relativo de `1e-5` da
+amplitude RMS original. Se não ultrapassar, gera erro explícito
+`No usable RF signal` e **não executa inferência ONNX**. Sinais AM com
+modulação mensurável continuam aceitos. Não altera os pesos dos modelos,
+mas impede a falsa normalização de portadoras estáticas/espúrios DC.
+
+Isso não resolve a identificação de CW/AM em zero beat, nem separa
+portadora RF verdadeira do desvio DC do receptor. Essa distinção continua
+a exigir sintonia deslocada e confirmação independente.
