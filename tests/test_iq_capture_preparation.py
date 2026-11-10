@@ -111,3 +111,60 @@ def test_refuse_overwrite_or_manifest_escape(tmp_path):
         append_manifest(tmp_path/"m.json",tmp_path/"different",dst,"AM","s","d",145e6)
     with pytest.raises(ValueError,match="unsupported"):
         append_manifest(tmp_path/"m.json",tmp_path,dst,"WFM","s","d",145e6)
+
+
+
+@pytest.mark.parametrize("rate", [1_024_000, 2_048_000, 2_400_000])
+def test_realistic_sdr_sample_rates_are_channelized(tmp_path, rate):
+    from math import gcd
+    src = tmp_path / "raw.wav"
+    dst = tmp_path / "iq48.wav"
+    # Simulated RF signal; no actual SDR input or performance claim.
+    count = rate // 4
+    make_iq(src, rate=rate, n=count, tone=13_400)
+    result = convert(src, dst, 145_000_000, 145_013_400, chunk=35007)
+    sr, data = read_complex(dst)
+    assert sr == 48_000
+    assert len(data) == 12_000
+    assert result["resample_up"] == 48_000 // gcd(rate, 48_000)
+    assert result["resample_down"] == rate // gcd(rate, 48_000)
+    steady = data[800:-800]
+    assert abs(np.mean(steady)) > .2
+    assert np.std(steady) / abs(np.mean(steady)) < .02
+
+
+@pytest.mark.parametrize("rate", [240_000, 1_024_000, 2_048_000])
+@pytest.mark.parametrize("chunk", [257, 10_003, 65_536])
+def test_polyphase_resampling_independent_of_disk_chunk_boundaries(
+    tmp_path, rate, chunk
+):
+    src = tmp_path / "raw.wav"
+    make_iq(src, rate=rate, n=25_771, tone=12_500)
+    reference, candidate = tmp_path / "ref.wav", tmp_path / "out.wav"
+    convert(src, reference, 145_500_000, 145_512_200, chunk=65_536)
+    convert(src, candidate, 145_500_000, 145_512_200, chunk=chunk)
+    _, first = read_complex(reference)
+    _, second = read_complex(candidate)
+    assert len(first) == len(second) == (
+        (25_771 * 48_000 + rate - 1) // rate
+    )
+    np.testing.assert_allclose(first, second, atol=3 / 32768)
+
+
+@pytest.mark.parametrize("rate", [1_024_000, 2_048_000])
+def test_rational_channel_filter_rejects_outside_48k_band(tmp_path, rate):
+    src, dest = tmp_path / "raw.wav", tmp_path / "centered.wav"
+    make_iq(src, rate=rate, n=rate // 4, tone=4_000, blocker=62_000)
+    convert(src, dest, 146_000_000, 146_004_000)
+    _, iq = read_complex(dest)
+    steady = iq[600:-600]
+    assert abs(np.mean(steady)) > .20
+    assert np.std(steady) / abs(np.mean(steady)) < .03
+
+
+def test_source_below_48k_still_rejected(tmp_path):
+    src, dest = tmp_path / "raw.wav", tmp_path / "iq.wav"
+    make_iq(src, rate=32_000, n=16_000)
+    with pytest.raises(ValueError, match="48 kS/s"):
+        convert(src, dest, 146_000_000, 146_004_000)
+    assert not dest.exists()

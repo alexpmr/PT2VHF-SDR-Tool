@@ -15,7 +15,7 @@ import wave
 from pathlib import Path
 
 import numpy as np
-from scipy.signal import firwin, lfilter
+from scipy.signal import firwin, resample_poly
 from pt2vhf.iq_provenance import sha256_file, sidecar_path
 
 RATE = 48000
@@ -27,9 +27,9 @@ def input_info(src: Path):
         if (w.getnchannels(), w.getsampwidth(), w.getcomptype()) != (2, 2, "NONE"):
             raise ValueError("Input must be stereo PCM16 IQ WAV, I=left Q=right")
         fs, frames = w.getframerate(), w.getnframes()
-    if not (RATE <= fs <= 3_072_000 and fs % RATE == 0):
-        raise ValueError("Source sample rate must be an integer multiple of 48k, up to 3.072MHz")
-    if frames // (fs // RATE) < 2048:
+    if not (RATE <= fs <= 3_072_000):
+        raise ValueError("Source sample rate must be from 48 kS/s to 3.072 MS/s")
+    if (frames * RATE + fs - 1) // fs < 2048:
         raise ValueError("Recording too short for 2048 IQ output samples")
     return fs, frames
 
@@ -83,7 +83,15 @@ def check_recording_metadata(source: Path, sample_rate: int, frames: int,
     return float(center), True, integrity_ok
 
 
-def convert(source: Path, dest: Path, center_hz: float | None, target_hz: float, chunk=65536):
+
+def convert(source: Path, dest: Path, center_hz: float | None, target_hz: float,
+            chunk=65536):
+    """Channelize IQ to 48 kS/s with state-equivalent polyphase resampling.
+
+    Read bounded chunks from disk. Choose an input block size divisible by the
+    rational resampling denominator, plus symmetric FIR guard samples. The
+    guard makes boundaries sample-identical to full-file resample_poly.
+    """
     if chunk < 1:
         raise ValueError("chunk must be positive")
     if not math.isfinite(float(target_hz)) or target_hz <= 0:
@@ -91,8 +99,9 @@ def convert(source: Path, dest: Path, center_hz: float | None, target_hz: float,
     if center_hz is not None and (not math.isfinite(float(center_hz)) or center_hz <= 0):
         raise ValueError("Frequencies must be positive and finite")
     fs, frames = input_info(source)
-    center_hz, metadata_checked, integrity_verified = check_recording_metadata(source, fs, frames, center_hz)
-    ratio = fs // RATE
+    center_hz, metadata_checked, integrity_verified = check_recording_metadata(
+        source, fs, frames, center_hz
+    )
     delta = float(target_hz) - float(center_hz)
     if abs(delta) >= fs / 2 - RATE / 2:
         raise ValueError("Target too close to Nyquist edge of recorded IQ")
@@ -100,16 +109,24 @@ def convert(source: Path, dest: Path, center_hz: float | None, target_hz: float,
         raise FileExistsError("Output exists; refusing to overwrite IQ")
     if source.resolve() == dest.resolve():
         raise ValueError("Input and output must be different files")
-    taps = firwin(24 * ratio + 1, RATE * .45, fs=fs, window=("kaiser", 8.6))
-    zi = np.zeros(len(taps)-1, np.complex128)
-    delay = (len(taps)-1) // (2*ratio)
-    phase = 0
-    skip = delay
-    consumed = 0
-    written = 0
-    expected = frames // ratio
+
+    divisor = math.gcd(fs, RATE)
+    up, down = RATE // divisor, fs // divisor
+    # Kaiser FIR: passband up to ~21.6 kHz and stopband before output Nyquist.
+    # Filter taps are defined at the upsampled rate used by resample_poly.
+    taps = firwin(20 * max(up, down) + 1, 0.90 / max(up, down),
+                  window=("kaiser", 8.6))
+    half_width = (len(taps) - 1) // 2
+    # Choose a guard that contains the entire half-width of the FIR and is
+    # divisible by down. That also makes output sampling phase consistent.
+    halo = ((math.ceil(half_width / up) + down - 1) // down) * down
+    block_size = ((max(chunk, 2 * halo) + down - 1) // down) * down
+    expected = (frames * up + down - 1) // down
+
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = None
+    input_index = 0
+    written = 0
     try:
         with tempfile.NamedTemporaryFile(prefix=".iq_", suffix=".wav",
                                          dir=dest.parent, delete=False) as handle:
@@ -118,44 +135,68 @@ def convert(source: Path, dest: Path, center_hz: float | None, target_hz: float,
             out.setnchannels(2)
             out.setsampwidth(2)
             out.setframerate(RATE)
-            def feed(samples):
-                nonlocal zi, phase, skip, written
-                filtered, zi = lfilter(taps, [1.0], samples, zi=zi)
-                down = filtered[phase::ratio]
-                phase = (phase - len(samples)) % ratio
-                if skip:
-                    skipped = min(skip, len(down))
-                    down = down[skipped:]
-                    skip -= skipped
-                down = down[:max(0, expected-written)]
-                if len(down):
-                    inter = np.empty(2 * len(down), dtype="<i2")
-                    inter[0::2] = np.clip(np.round(down.real * 32767),-32768,32767).astype("<i2")
-                    inter[1::2] = np.clip(np.round(down.imag * 32767),-32768,32767).astype("<i2")
-                    out.writeframesraw(inter.tobytes())
-                    written += len(down)
-            while consumed < frames:
-                raw = np.frombuffer(inp.readframes(min(chunk, frames-consumed)), dtype="<i2")
-                if len(raw) < 2 or len(raw) % 2:
+
+            def read_mixed_block():
+                nonlocal input_index
+                nmax = min(block_size, frames - input_index)
+                if not nmax:
+                    return np.empty(0, dtype=np.complex128)
+                raw = np.frombuffer(inp.readframes(nmax), dtype="<i2")
+                if len(raw) != 2 * nmax:
                     raise ValueError("Truncated WAV IQ samples")
-                n = len(raw)//2
-                iq = (raw[::2].astype(np.float64) + 1j*raw[1::2].astype(np.float64))/32768
-                angles = -2*np.pi*delta*(consumed + np.arange(n))/fs
-                feed(iq * np.exp(1j*angles))
-                consumed += n
-            feed(np.zeros((delay+1)*ratio, np.complex128))
+                i = raw[::2].astype(np.float64) / 32768
+                q = raw[1::2].astype(np.float64) / 32768
+                theta = -2 * np.pi * delta * (
+                    input_index + np.arange(nmax, dtype=np.float64)
+                ) / fs
+                input_index += nmax
+                return (i + 1j * q) * np.exp(1j * theta)
+
+            left = np.zeros(halo, dtype=np.complex128)
+            current = read_mixed_block()
+            following = read_mixed_block()
+            while len(current):
+                original_size = len(current)
+                # Only the final block may be shorter than one denominator.
+                pad = (-original_size) % down
+                centered = np.pad(current, (0, pad)) if pad else current
+                future = following[:halo]
+                right = np.pad(future, (0, halo-len(future)))
+                combined = np.concatenate((left, centered, right))
+                downsampled = resample_poly(combined, up, down, window=taps)
+                first = halo * up // down
+                last = (halo + len(centered)) * up // down
+                selected = downsampled[first:last]
+                # Last padded block may generate more than ceil(real length*up/down).
+                selected = selected[:max(0, expected - written)]
+                if len(selected):
+                    pcm = np.empty(len(selected) * 2, dtype="<i2")
+                    pcm[::2] = np.clip(np.round(selected.real * 32767),
+                                      -32768, 32767).astype("<i2")
+                    pcm[1::2] = np.clip(np.round(selected.imag * 32767),
+                                       -32768, 32767).astype("<i2")
+                    out.writeframesraw(pcm.tobytes())
+                    written += len(selected)
+                left = centered[-halo:]
+                current = following
+                following = read_mixed_block()
+
         if written != expected:
-            raise RuntimeError("Output IQ frame count did not match continuous decimator")
-        # Hard link to avoid accidentally overwriting a file created concurrently.
+            raise RuntimeError(f"Output IQ frame count {written} != {expected}")
+        # Atomic no-clobber publication: a concurrent writer cannot be replaced.
         os.link(tmp, dest)
-        return {"input_rate":fs, "output_rate":RATE, "frames":written,
-                "center_hz":center_hz, "target_hz":target_hz,
-                "capture_metadata_checked":metadata_checked,
-                "capture_integrity_verified":integrity_verified,
-                "provenance_verified":False}
+        return {
+            "input_rate": fs, "output_rate": RATE, "frames": written,
+            "resample_up": up, "resample_down": down,
+            "center_hz": center_hz, "target_hz": target_hz,
+            "capture_metadata_checked": metadata_checked,
+            "capture_integrity_verified": integrity_verified,
+            "provenance_verified": False,
+        }
     finally:
         if tmp is not None:
             tmp.unlink(missing_ok=True)
+
 
 
 def append_manifest(path: Path, root: Path, output: Path, mode: str,
