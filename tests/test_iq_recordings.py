@@ -36,6 +36,25 @@ def test_stereo_wav_windows_non_overlapping(tmp_path):
     assert all(c.shape==(2048,) and c.dtype==np.complex64 for c in chunks)
 
 
+def test_long_wav_samples_beginning_middle_and_end_without_overlap(tmp_path):
+    """Synthetic segments expose the previous first-N-window selection bias."""
+    wav = tmp_path / "long.wav"
+    with wave.open(str(wav), "wb") as out:
+        out.setnchannels(2)
+        out.setsampwidth(2)
+        out.setframerate(48000)
+        for i in range(12):
+            frames = np.zeros((2048, 2), dtype="<i2")
+            frames[:, 0] = 1000 * (i + 1)
+            out.writeframes(frames.tobytes())
+    selected = list(read_windows(wav, limit=3))
+    assert len(selected) == 3
+    assert [round(float(np.real(iq).mean() * 32768)) for iq in selected] == [
+        1000, 6000, 12000
+    ]
+    assert len(list(read_windows(wav, limit=20))) == 12
+
+
 def test_manifest_blocks_traversal_and_wfm(tmp_path):
     make_wav(tmp_path/"a.wav")
     with pytest.raises(ValueError,match="leaves recordings root"):

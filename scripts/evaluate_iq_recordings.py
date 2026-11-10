@@ -78,13 +78,21 @@ def read_manifest(path: Path, root: Path) -> list:
 
 
 def read_windows(path: Path, limit=100):
-    """Generate strictly non-overlapping 2048-sample windows."""
+    """Select non-overlapping IQ windows uniformly across the full WAV duration.
+
+    Selecting only the first `limit` windows biases long RF sessions toward
+    their startup conditions. The bounded, deterministic selection below
+    includes the beginning and end without reading the full file into RAM.
+    """
     if limit < 1:
         raise ValueError("limit must be >= 1")
     with wave.open(str(path), "rb") as w:
         if (w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getcomptype()) != (2, 2, 48000, "NONE"):
             raise ValueError("Expected stereo PCM16 48000 Hz IQ WAV")
-        for _ in range(min(limit, w.getnframes() // SAMPLES)):
+        total = w.getnframes() // SAMPLES
+        selected = np.linspace(0, total - 1, min(limit, total), dtype=np.int64)
+        for index in selected:
+            w.setpos(int(index) * SAMPLES)
             raw = np.frombuffer(w.readframes(SAMPLES), dtype="<i2")
             if raw.size != 2*SAMPLES:
                 break
