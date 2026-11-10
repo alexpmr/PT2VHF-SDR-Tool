@@ -30,11 +30,11 @@ def run_probe():
     torch.manual_seed(20261113)
     np.random.seed(20261113)
     # A small representative synthetic batch, NOT the full 8,400-sample v4 run.
-    x, y = augmented_dataset(128, 71023)
+    x, y = augmented_dataset(126, 71023)
     model = Net()
     optimizer = torch.optim.Adam(model.parameters(), lr=.003)
     record = {
-        "scope": "Synthetic 128-sample single Adam step; not full v4 replay or RF",
+        "scope": "Synthetic 126-sample single Adam step; not full v4 replay or RF",
         "cpu_model": next((line.partition(":")[2].strip() for line in
                            Path("/proc/cpuinfo").read_text().splitlines()
                            if line.startswith("model name")), "unknown"),
