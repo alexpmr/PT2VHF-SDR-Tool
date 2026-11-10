@@ -220,3 +220,74 @@ jobs:
             models/iq/synthetic_wav_smoke_metrics.json
             models/iq/SHA256SUMS
           if-no-files-found: error
+
+  verify-v4-across-runners:
+    name: Independent runner v4 exact replay (synthetic)
+    needs: train-export-validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU training dependencies
+        run: |
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install numpy
+      - name: Download reference v4 weights and provenance
+        uses: actions/download-artifact@v4
+        with:
+          name: pt2vhf-iq-synthetic-onnx-experimental
+          path: models/iq
+      - name: Independently retrain v4 on a separate runner
+        run: python scripts/train_iq_unknown_v4.py --output-dir models/iq/cross_runner
+      - name: Compare parameter tensors and training metrics exactly
+        run: |
+          python - <<'PY'
+          import json
+          import platform
+          from pathlib import Path
+          import numpy as np
+          import torch
+
+          root = Path("models/iq")
+          prior = json.loads((root / "synthetic_v4_replay_metrics.json").read_text())
+          environment = {
+              "torch_version": torch.__version__,
+              "numpy_version": np.__version__,
+              "python_version": platform.python_version(),
+              "threads": torch.get_num_threads(),
+          }
+          print("Original runner:", {key: prior[key] for key in environment}, flush=True)
+          print("Independent runner:", environment, flush=True)
+          assert all(prior[key] == value for key, value in environment.items()), (
+              "Different environments; compare only under matching versions and CPU thread count")
+          orig = torch.load(root / "synthetic_v4.pt", map_location="cpu", weights_only=True)
+          new = torch.load(root / "cross_runner/synthetic_v4.pt", map_location="cpu", weights_only=True)
+          assert list(orig) == list(new)
+          max_difference = max(float((orig[key] - new[key]).abs().max()) for key in orig)
+          exact = all(torch.equal(orig[key], new[key]) for key in orig)
+          orig_metrics = json.loads((root / "synthetic_v4_metrics.json").read_text())
+          new_metrics = json.loads((root / "cross_runner/synthetic_v4_metrics.json").read_text())
+          same_metrics = orig_metrics == new_metrics
+          report = {
+              "scope": "Independent Linux GitHub-hosted CPU runner; synthetic v4 only; no RF validation",
+              "parameter_exact_match": exact,
+              "max_parameter_absolute_difference": max_difference,
+              "metrics_exact_match": same_metrics,
+              "environment": environment,
+              "limitations": "Two GitHub Ubuntu runners do not establish GPU, OS, or RF generalization",
+          }
+          (root / "synthetic_v4_cross_runner_metrics.json").write_text(
+              json.dumps(report, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps(report, indent=2), flush=True)
+          assert exact and same_metrics, "v4 mismatch between independent CPU runners"
+          PY
+      - name: Upload independent-runner comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pt2vhf-iq-v4-cross-runner-report
+          path: models/iq/synthetic_v4_cross_runner_metrics.json
+          if-no-files-found: warn
