@@ -19,15 +19,24 @@ class IQClassificationWorker:
     def feed(self, iq, frequency_hz=None, sample_rate=48000):
         if self._stop.is_set():
             return False
-        chunk = np.asarray(iq, np.complex64)
-        if sample_rate != 48000:
-            from fractions import Fraction
-            from scipy.signal import resample_poly
-            ratio = Fraction(48000, int(sample_rate))
-            chunk = resample_poly(chunk, ratio.numerator, ratio.denominator).astype(np.complex64)
-        if chunk.size < 2048:
+        # Feed is called by the SDR/DSP path. Never run polyphase FIR
+        # resampling here: it can stall reception at high input rates.
+        try:
+            rate = float(sample_rate)
+        except (TypeError, ValueError, OverflowError):
             return False
-        item = (chunk.copy(), frequency_hz, time.time())
+        if not np.isfinite(rate) or rate <= 0 or not rate.is_integer():
+            return False
+        from fractions import Fraction
+        ratio = Fraction(48000, int(rate))
+        # Bound pathological ratios before enqueueing expensive FIR work.
+        if max(ratio.numerator, ratio.denominator) > 4096:
+            return False
+        chunk = np.asarray(iq, np.complex64).reshape(-1)
+        if (chunk.size * ratio.numerator + ratio.denominator - 1) // ratio.denominator < 2048:
+            return False
+        item = (chunk.copy(), frequency_hz, time.time(),
+                ratio.numerator, ratio.denominator)
         try:
             self._queue.put_nowait(item)
         except queue.Full:
@@ -53,8 +62,11 @@ class IQClassificationWorker:
                 continue
             if item is None:
                 break
-            iq, frequency, timestamp = item
+            iq, frequency, timestamp, up, down = item
             try:
+                if (up, down) != (1, 1):
+                    from scipy.signal import resample_poly
+                    iq = resample_poly(iq, up, down).astype(np.complex64)
                 result = classifier.predict(iq)
                 if not self._stop.is_set():
                     self.on_result(result, frequency, timestamp)
