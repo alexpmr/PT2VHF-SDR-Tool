@@ -346,3 +346,43 @@ def test_audit_rejects_quarter_position_iq_reuse(tmp_path, copied_index):
     assert digest(tmp_path / "cal-0.wav") != digest(tmp_path / "hold-0.wav")
     with pytest.raises(ValueError, match="Identical IQ window"):
         audit(cal, hold, tmp_path)
+
+
+@pytest.mark.parametrize("mass", [0.0, 0.5, 1.2])
+def test_observations_reject_unnormalized_model_probabilities(tmp_path, mass):
+    """Synthetic-only: UNKNOWN thresholds require a valid probability simplex."""
+    from pt2vhf.dsp.iq_classifier import Classification, CLASSES
+    from scripts.iq_session_gate import observations
+
+    source = tmp_path / "synthetic.wav"
+    wav(source, 1200)
+
+    class Malformed:
+        def predict(self, iq):
+            probabilities = {name: 0.0 for name in CLASSES}
+            probabilities["AM"] = mass
+            return Classification("AM", mass, probabilities)
+
+    with pytest.raises(ValueError, match="not normalized|Invalid model probability"):
+        observations([(source, "AM", "private-session", "synthetic SDR")],
+                     Malformed(), max_windows=2)
+
+
+def test_observations_accept_softmax_probability_roundoff(tmp_path):
+    """Small floating-point sum error must not reject valid softmax output."""
+    from pt2vhf.dsp.iq_classifier import Classification, CLASSES
+    from scripts.iq_session_gate import observations
+
+    source = tmp_path / "synthetic.wav"
+    wav(source, 1400)
+
+    class Rounded:
+        def predict(self, iq):
+            probabilities = {name: 0.0 for name in CLASSES}
+            probabilities["AM"] = 0.999999
+            return Classification("AM", 0.999999, probabilities)
+
+    observed = observations([(source, "AM", "private-session", "synthetic SDR")],
+                            Rounded(), max_windows=2)
+    assert len(observed) == 2
+    assert all(item[1] == "AM" for item in observed)
