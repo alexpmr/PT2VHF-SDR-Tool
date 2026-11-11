@@ -63,7 +63,11 @@ class IQClassificationWorker:
             # Do not keep accepting IQ when the inference thread cannot start.
             self._stop.set()
             if self.on_error:
-                self.on_error(str(exc))
+                try:
+                    self.on_error(str(exc))
+                except Exception:
+                    # A faulty UI/error callback must not escape this daemon thread.
+                    pass
             return
         while not self._stop.is_set():
             try:
@@ -82,7 +86,13 @@ class IQClassificationWorker:
                     self.on_result(result, frequency, timestamp)
             except Exception as exc:
                 if self.on_error and not self._stop.is_set():
-                    self.on_error(str(exc))
+                    try:
+                        self.on_error(str(exc))
+                    except Exception:
+                        # If the error handler itself is broken, fail closed:
+                        # never enqueue more IQ into a dead inference worker.
+                        self._stop.set()
+                        return
 
     def stop(self):
         self._stop.set()
