@@ -222,3 +222,15 @@ O probe seguinte mede também 32 saídas da segunda Conv1d contra
 referência escalar, sem alterar o modelo nem executar 22 épocas.
 A medição é **esparsa**, e os hashes integrais continuam sendo
 o critério de identidade; os resultados não homologam RF.
+
+
+### Comparabilidade por janela entre modelos (11/11/2026)
+
+A comparação entre v2–v5 exige inferência **nas mesmas janelas IQ de cada
+gravação**, não apenas contagens agregadas iguais. Dois modelos podem rejeitar
+janelas distintas no pré-processamento e ainda exibir totais idênticos,
+invalidando uma comparação direta de acurácia. O avaliador verifica os pares
+(índice da gravação, índice da janela) em memória e interrompe a comparação
+se os conjuntos diferirem. Os índices não aparecem no relatório público.
+Investigar modelos individualmente quando a comparabilidade falhar.
+Testes exclusivamente sintéticos; nenhuma homologação RF real.

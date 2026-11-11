@@ -77,7 +77,7 @@ def read_manifest(path: Path, root: Path) -> list:
     return result
 
 
-def read_windows(path: Path, limit=100, stats=None):
+def read_windows(path: Path, limit=100, stats=None, *, with_index=False):
     """Select non-overlapping IQ windows uniformly across the full WAV duration.
 
     Selecting only the first `limit` windows biases long RF sessions toward
@@ -100,12 +100,14 @@ def read_windows(path: Path, limit=100, stats=None):
                 break
             iq = (raw[::2].astype(np.float32) + 1j*raw[1::2].astype(np.float32))/32768
             if float(np.sqrt(np.mean(np.abs(iq)**2))) >= 1e-6:
-                yield iq.astype(np.complex64)
+                sample = iq.astype(np.complex64)
+                yield (int(index), sample) if with_index else sample
             elif stats is not None:
                 stats["skipped_silence"] = stats.get("skipped_silence", 0) + 1
 
 
-def evaluate(manifest: Path, root: Path, model, max_windows=100):
+def evaluate(manifest: Path, root: Path, model, max_windows=100,
+             *, _inferred_window_ids=None):
     """Keep preprocessing exclusions separate from neural UNKNOWN decisions.
 
     Model metrics are conditional on inference. Rejected/silent windows never
@@ -127,11 +129,12 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100):
     rejected_total = 0
     rejected_known = 0
     rejected_unknown = 0
-    for path, label, session, device in rows:
+    for recording_index, (path, label, session, device) in enumerate(rows):
         devices.add(device)
         session_pipeline[session]  # retain sessions without inferred windows
         stats = {"selected": 0, "skipped_silence": 0}
-        for iq in read_windows(path, max_windows, stats=stats):
+        for window_index, iq in read_windows(path, max_windows, stats=stats,
+                                             with_index=True):
             try:
                 result = model.predict(iq)
             except ValueError as exc:
@@ -145,6 +148,10 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100):
                 else:
                     rejected_known += 1
                 continue
+            # Exact inferred-window membership is private; equal aggregate counts
+            # can hide different model-specific preprocessing exclusions.
+            if _inferred_window_ids is not None:
+                _inferred_window_ids.add((recording_index, window_index))
             # The configured confidence gate determines the actual prediction;
             # threshold sweeps below intentionally use raw probabilities.
             top_label = max(result.probabilities, key=result.probabilities.get)
@@ -234,9 +241,15 @@ def evaluate_multiple_models(manifest: Path, root: Path, models: dict[str, objec
     """Compare models on the same local IQ WAV windows, sessions and metadata."""
     if not models:
         raise ValueError("At least one model is required")
-    reports = {alias: evaluate(manifest, root, model, max_windows)
-               for alias, model in models.items()}
-    first = next(iter(reports.values()))
+    reports = {}
+    inferred_membership = {}
+    for alias, model in models.items():
+        membership = set()
+        reports[alias] = evaluate(manifest, root, model, max_windows,
+                                  _inferred_window_ids=membership)
+        inferred_membership[alias] = membership
+    first_alias = next(iter(reports))
+    first = reports[first_alias]
     for alias, report in reports.items():
         for key in ("sample_windows", "sessions", "devices", "recordings",
                     "known_windows", "unknown_windows", "windows_selected",
@@ -245,6 +258,8 @@ def evaluate_multiple_models(manifest: Path, root: Path, models: dict[str, objec
                     "windows_rejected_preprocessing_unknown"):
             if report[key] != first[key]:
                 raise ValueError(f"Model {alias} did not process the same dataset")
+        if inferred_membership[alias] != inferred_membership[first_alias]:
+            raise ValueError(f"Model {alias} did not infer the same IQ windows")
     return {
         "scope": "Local offline comparison on identical operator-labeled IQ WAV windows",
         "models": reports,

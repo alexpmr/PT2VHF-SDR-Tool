@@ -314,3 +314,50 @@ def test_read_windows_exposes_silence_selection_counts(tmp_path):
     stats = {}
     assert list(read_windows(tmp_path / "silent.wav", limit=3, stats=stats)) == []
     assert stats == {"selected": 3, "skipped_silence": 3}
+
+
+def test_read_windows_optional_indices_preserve_default(tmp_path):
+    wav = tmp_path / "indexed.wav"
+    make_wav(wav)
+    plain = list(read_windows(wav, limit=3))
+    indexed = list(read_windows(wav, limit=3, with_index=True))
+    assert [i for i, _ in indexed] == [0, 1, 3]
+    for x, (_, y) in zip(plain, indexed):
+        np.testing.assert_array_equal(x, y)
+
+
+def test_multi_model_comparison_rejects_different_inferred_cohorts(tmp_path):
+    """Synthetic exclusions with equal totals must not masquerade as a fair comparison."""
+    from scripts.evaluate_iq_recordings import evaluate_multiple_models
+    wav = tmp_path / "varying.wav"
+    n = 2048
+    tone = np.sin(2 * np.pi * 1100 * np.arange(n) / 48000)
+    data = np.zeros((4 * n, 2), dtype="<i2")
+    for index, amplitude in enumerate((2000, 12000, 2000, 12000)):
+        samples = np.round(amplitude * tone).astype("<i2")
+        data[index * n:(index + 1) * n, 0] = samples
+        data[index * n:(index + 1) * n, 1] = samples // 2
+    with wave.open(str(wav), "wb") as out:
+        out.setnchannels(2)
+        out.setsampwidth(2)
+        out.setframerate(48000)
+        out.writeframes(data.tobytes())
+
+    class RejectByLevel:
+        def __init__(self, low):
+            self.low = low
+
+        def predict(self, iq):
+            is_low = float(np.sqrt(np.mean(np.abs(iq)**2))) < 0.15
+            if is_low == self.low:
+                raise ValueError("No usable RF signal (DC-only or unresolved carrier)")
+            return Classification("AM", 0.99,
+                                  {k: (1 if k == "AM" else 0) for k in CLASSES})
+
+    m = manifest(tmp_path, filename="varying.wav")
+    a, b = RejectByLevel(True), RejectByLevel(False)
+    left, right = evaluate(m, tmp_path, a), evaluate(m, tmp_path, b)
+    assert left["windows_inferred"] == right["windows_inferred"] == 2
+    assert left["windows_rejected_preprocessing"] == right["windows_rejected_preprocessing"] == 2
+    with pytest.raises(ValueError, match="did not infer the same IQ windows"):
+        evaluate_multiple_models(m, tmp_path, {"v2": a, "v3": b})
