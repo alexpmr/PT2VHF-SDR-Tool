@@ -13,8 +13,8 @@ on:
 
 jobs:
   tests:
-    # Pin runner: ubuntu-latest migrated to 26.04 with unreachable Azure apt mirrors.
-    runs-on: ubuntu-24.04
+    # Ubuntu 22.04 image may retain libEGL preinstalled; avoid network-blocked apt mirrors.
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
