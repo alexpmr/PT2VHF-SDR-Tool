@@ -132,6 +132,44 @@ def test_audit_rejects_partial_iq_window_reuse_in_modified_wav(tmp_path):
         audit(a, b, tmp_path)
 
 
+
+def test_audit_rejects_interior_window_reuse_with_distinct_edges(tmp_path):
+    """Synthetic long WAVs: copied middle IQ must not evade bounded split audit."""
+    a = manifest(tmp_path, "cal.json", "cal", 1200)
+    b = manifest(tmp_path, "hold.json", "hold", 1700)
+
+    def long_wav(path, base_frequency):
+        t = np.arange(2048) / 48000
+        with wave.open(str(path), "wb") as out:
+            out.setnchannels(2)
+            out.setsampwidth(2)
+            out.setframerate(48000)
+            for index in range(80):
+                tone = (12000 * np.sin(2 * np.pi *
+                                     (base_frequency + 11 * index) * t)).astype("<i2")
+                out.writeframes(np.stack((tone, tone // 2), axis=1).tobytes())
+
+    cal_wav = tmp_path / "cal-0.wav"
+    hold_wav = tmp_path / "hold-0.wav"
+    long_wav(cal_wav, 900)
+    long_wav(hold_wav, 2700)
+    # Distinct file hashes and edge windows; only window 40 is shared.
+    with wave.open(str(cal_wav), "rb") as source:
+        source.setpos(40 * 2048)
+        reused = source.readframes(2048)
+    with wave.open(str(hold_wav), "rb") as source:
+        original = source.readframes(80 * 2048)
+    start = 40 * 2048 * 4  # stereo PCM16 = 4 bytes per IQ sample
+    with wave.open(str(hold_wav), "wb") as target:
+        target.setnchannels(2)
+        target.setsampwidth(2)
+        target.setframerate(48000)
+        target.writeframes(original[:start] + reused + original[start + len(reused):])
+
+    assert digest(cal_wav) != digest(hold_wav)
+    with pytest.raises(ValueError, match="Identical IQ window"):
+        audit(a, b, tmp_path)
+
 def test_sampled_window_hashes_reproducible_and_bounded(tmp_path):
     from scripts.iq_session_gate import sampled_iq_window_hashes
     manifest(tmp_path, "cal.json", "cal", 1400)
