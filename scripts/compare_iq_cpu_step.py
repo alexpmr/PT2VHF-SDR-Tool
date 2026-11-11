@@ -12,7 +12,7 @@ DOUBLE_STEP = ("initial_parameters_sha256", "forward_logits_sha256",
                "loss_sha256", "gradients_sha256", "updated_parameters_sha256")
 ADAM_STAGES = ("first_moment", "second_moment", "sqrt_second_moment",
                "denominator", "normalized_update", "manual_updated_parameters")
-ADAM_KEYS = ("adam_manual_stage_sha256", "adam_manual_parameter_sha256",
+ADAM_KEYS = ("adam_manual_stage_sha256", "adam_sqrt_oracle", "adam_manual_parameter_sha256",
              "adam_native_parameter_sha256")
 ENV = ("python_version", "torch_version", "numpy_version", "policy",
        "train_samples", "unknown_examples_replaced", "requested_steps")
@@ -28,6 +28,7 @@ def compare_reports(a, b):
     float64_first_step_matches = None
     adam_stage_matches = None
     adam_parameter_matches = None
+    sqrt_oracle_comparison = None
     for i, (left, right) in enumerate(zip(a["steps"], b["steps"])):
         if left["step"] != i or right["step"] != i:
             raise ValueError("Probe step numbering differs")
@@ -122,6 +123,44 @@ def compare_reports(a, b):
             adam_stage_matches = {
                 key: stage_left[key] == stage_right[key] for key in ADAM_STAGES
             }
+            sqrt_left, sqrt_right = dl["adam_sqrt_oracle"], dr["adam_sqrt_oracle"]
+            sqrt_keys = {
+                "sample_count", "native_sha256", "oracle_sha256",
+                "mismatch_count", "max_ulp_error", "first_mismatch",
+            }
+            for item in (sqrt_left, sqrt_right):
+                if not isinstance(item, dict) or set(item) != sqrt_keys:
+                    raise ValueError("Invalid Adam sqrt oracle schema")
+                for key in ("native_sha256", "oracle_sha256"):
+                    value = item[key]
+                    if (not isinstance(value, str) or len(value) != 64
+                            or any(c not in "0123456789abcdef" for c in value)):
+                        raise ValueError("Invalid Adam sqrt oracle SHA-256")
+                if (type(item["sample_count"]) is not int or item["sample_count"] < 1
+                        or any(type(item[key]) is not int or item[key] < 0
+                               for key in ("mismatch_count", "max_ulp_error"))
+                        or item["mismatch_count"] > item["sample_count"]):
+                    raise ValueError("Invalid Adam sqrt oracle counts")
+                if item["first_mismatch"] is not None and (
+                        not isinstance(item["first_mismatch"], dict)
+                        or set(item["first_mismatch"]) != {
+                            "tensor_index", "flat_index", "native_hex", "oracle_hex", "ulp_error"
+                        }):
+                    raise ValueError("Invalid Adam sqrt oracle mismatch")
+            if sqrt_left["sample_count"] != sqrt_right["sample_count"]:
+                raise ValueError("Adam sqrt oracle sample counts differ")
+            sqrt_oracle_comparison = {
+                "sample_count": sqrt_left["sample_count"],
+                "oracle_exact_match": sqrt_left["oracle_sha256"] == sqrt_right["oracle_sha256"],
+                "native_exact_match": sqrt_left["native_sha256"] == sqrt_right["native_sha256"],
+                "reference_mismatch_count": sqrt_left["mismatch_count"],
+                "independent_mismatch_count": sqrt_right["mismatch_count"],
+                "reference_max_ulp_error": sqrt_left["max_ulp_error"],
+                "independent_max_ulp_error": sqrt_right["max_ulp_error"],
+                "reference_first_mismatch": sqrt_left["first_mismatch"],
+                "independent_first_mismatch": sqrt_right["first_mismatch"],
+                "scope": "Up to 256 positive second-moment elements per tensor; not full-tensor proof",
+            }
             adam_parameter_matches = {}
             for key in ("adam_manual_parameter_sha256", "adam_native_parameter_sha256"):
                 left_params, right_params = dl[key], dr[key]
@@ -144,7 +183,9 @@ def compare_reports(a, b):
         key: next((i for i, ok in enumerate(flags) if not ok), None)
         for key, flags in adam_parameter_matches.items()
     }
-    adam_mismatch = first_adam_stage is not None or any(
+    sqrt_mismatch = (not sqrt_oracle_comparison["oracle_exact_match"]
+                     or not sqrt_oracle_comparison["native_exact_match"])
+    adam_mismatch = sqrt_mismatch or first_adam_stage is not None or any(
         value is not None for value in first_adam_parameters.values())
     env_ok = all(a[key] == b[key] for key in ENV)
     cross_cpu = (a["cpu_model"] != b["cpu_model"]
@@ -164,6 +205,7 @@ def compare_reports(a, b):
         "float64_first_step_exact_match": all(float64_first_step_matches.values()),
         "float64_first_step_stage_exact_match": float64_first_step_matches,
         "first_divergent_float64_stage": float64_first,
+        "adam_sqrt_oracle_comparison": sqrt_oracle_comparison,
         "adam_manual_stage_exact_match": adam_stage_matches,
         "first_divergent_adam_stage": first_adam_stage,
         "adam_parameter_exact_match": adam_parameter_matches,

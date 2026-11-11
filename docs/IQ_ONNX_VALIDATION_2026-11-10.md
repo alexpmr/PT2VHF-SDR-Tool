@@ -81,3 +81,11 @@ O comparador retorna falha de diagnóstico também quando **apenas** o passo int
 ## Diagnóstico direcionado do Adam (instrumentação experimental)
 
 O probe de primeiro minibatch passa a registrar, **sem modificar o treinamento v4**, os hashes dos estágios de uma atualização Adam de referência escrita explicitamente em float64: primeiro e segundo momentos, raiz quadrada do segundo momento, denominador, atualização normalizada e pesos propostos. Também são registrados hashes por tensor dos pesos propostos e dos pesos efetivamente atualizados pelo Adam do PyTorch. A referência manual é **somente diagnóstica**: sua ordem de operações pode diferir do kernel nativo, mesmo no mesmo processador. O comparador mantém separadas as divergências do forward, do Adam manual e dos parâmetros nativos; falha se qualquer uma divergir entre CPUs. O índice do primeiro tensor divergente é relatado sem expor pesos. A instrumentação não equivale a reprodutibilidade de 22 épocas nem a RF real.
+
+
+
+## Hipótese seguinte: erro em ULP na raiz quadrada do Adam (instrumentação; resultado pendente)
+
+O diagnóstico do primeiro minibatch float64 agora compara **até 256 segundos momentos positivos por tensor** com um oráculo independente: raiz quadrada `Decimal` em 110 dígitos decimais, convertida para `float64`. Registra SHA-256 das amostras nativas e do oráculo, quantidade de amostras, divergências, erro máximo em ULP e a primeira posição divergente. O comparador exige a mesma quantidade de amostras e mantém o gate de identidade exata; não altera tolerâncias nem treinamento. Os hashes completos dos tensores continuam sendo verificados.
+
+**Hipótese:** se os hashes do oráculo coincidirem entre CPUs, mas os nativos divergirem, a diferença de `torch.sqrt` fica sustentada por referência independente, e o erro em ULP pode ser quantificado. Amostragem esparsa **não** demonstra identidade de todos os elementos nem determinismo em 22 épocas. Nenhuma captura RF ou homologação é inferida. Aguardar workflow heterogêneo antes de concluir.

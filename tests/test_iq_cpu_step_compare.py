@@ -18,6 +18,11 @@ def probe(cpu="AMD"):
                        "max_abs_error": 0.0, "mean_abs_error": 0.0},
                    "float64_first_step": {
                        **{key: "a" * 64 for key in DOUBLE_STEP},
+                       "adam_sqrt_oracle": {
+                           "sample_count": 32, "native_sha256": "a" * 64,
+                           "oracle_sha256": "a" * 64, "mismatch_count": 0,
+                           "max_ulp_error": 0, "first_mismatch": None,
+                       },
                        "adam_manual_stage_sha256": {
                            key: "a" * 64 for key in ADAM_STAGES},
                        "adam_manual_parameter_sha256": ["a" * 64, "a" * 64],
@@ -198,4 +203,28 @@ def test_malformed_adam_stage_and_parameter_hashes_fail_closed():
     b = probe("Intel")
     b["steps"][0]["float64_first_step"]["adam_native_parameter_sha256"][0] = "bad"
     with pytest.raises(ValueError, match="Adam parameter SHA-256"):
+        compare_reports(a, b)
+
+
+
+def test_sqrt_oracle_comparison_flags_native_drift_and_preserves_oracle():
+    a, b = probe(), probe("Intel")
+    b["steps"][0]["float64_first_step"]["adam_sqrt_oracle"]["native_sha256"] = "b" * 64
+    b["steps"][0]["float64_first_step"]["adam_sqrt_oracle"]["mismatch_count"] = 1
+    result = compare_reports(a, b)
+    comparison = result["adam_sqrt_oracle_comparison"]
+    assert comparison["oracle_exact_match"] is True
+    assert comparison["native_exact_match"] is False
+    assert comparison["independent_mismatch_count"] == 1
+    assert result["conclusion"] == "NUMERICAL_DIVERGENCE"
+
+
+def test_sqrt_oracle_malformed_samples_fail_closed():
+    a, b = probe(), probe("Intel")
+    b["steps"][0]["float64_first_step"]["adam_sqrt_oracle"]["sample_count"] = 0
+    with pytest.raises(ValueError, match="oracle counts"):
+        compare_reports(a, b)
+    b = probe("Intel")
+    b["steps"][0]["float64_first_step"]["adam_sqrt_oracle"]["oracle_sha256"] = "invalid"
+    with pytest.raises(ValueError, match="oracle SHA-256"):
         compare_reports(a, b)

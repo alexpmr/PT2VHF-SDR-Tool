@@ -5,6 +5,8 @@ import hashlib
 import json
 import math
 import platform
+import struct
+from decimal import Decimal, localcontext
 from pathlib import Path
 
 import numpy as np
@@ -87,6 +89,63 @@ def conv1d_float64_reference(inputs, layer, outputs):
         }
 
 
+
+def sqrt_ulp_reference(second_moments, roots, sample_count=256):
+    """Sparse float64 sqrt comparison against an independent decimal oracle.
+
+    The 110-digit Decimal sqrt is rounded to binary64; this is a diagnostic
+    reference, not a replacement for the native Adam optimizer. Sampling
+    positive moments avoids hiding discrepancies behind zero gradients.
+    """
+    if len(second_moments) != len(roots) or not second_moments or sample_count < 1:
+        raise ValueError("Adam sqrt diagnostic requires paired nonempty tensors")
+    reference_digest, native_digest = hashlib.sha256(), hashlib.sha256()
+    n = mismatches = max_ulp = 0
+    first_mismatch = None
+    with localcontext() as ctx:
+        ctx.prec = 110
+        for tensor_index, (moment, root) in enumerate(zip(second_moments, roots)):
+            if (moment.shape != root.shape or moment.dtype != torch.float64
+                    or root.dtype != torch.float64):
+                raise ValueError("Adam sqrt diagnostic requires matched float64 tensors")
+            values = moment.detach().cpu().reshape(-1)
+            observed = root.detach().cpu().reshape(-1)
+            if (not bool(torch.isfinite(values).all())
+                    or not bool(torch.isfinite(observed).all())
+                    or bool((values < 0).any())):
+                raise ValueError("Adam sqrt diagnostic requires finite nonnegative values")
+            positives = torch.nonzero(values > 0, as_tuple=True)[0]
+            count = min(sample_count, len(positives))
+            for j in range(count):
+                flat_index = int(positives[j * (len(positives) - 1) // max(count - 1, 1)])
+                val = float(values[flat_index])
+                native = float(observed[flat_index])
+                oracle = float(Decimal.from_float(val).sqrt())
+                native_bits = struct.unpack(">Q", struct.pack(">d", native))[0]
+                oracle_bits = struct.unpack(">Q", struct.pack(">d", oracle))[0]
+                ulp = abs(native_bits - oracle_bits)
+                reference_digest.update(struct.pack(">d", oracle))
+                native_digest.update(struct.pack(">d", native))
+                n += 1
+                max_ulp = max(max_ulp, ulp)
+                if ulp:
+                    mismatches += 1
+                    if first_mismatch is None:
+                        first_mismatch = {
+                            "tensor_index": tensor_index, "flat_index": flat_index,
+                            "native_hex": native.hex(), "oracle_hex": oracle.hex(),
+                            "ulp_error": ulp,
+                        }
+    if n == 0:
+        raise ValueError("Adam sqrt diagnostic found no positive moments")
+    return {
+        "sample_count": n, "native_sha256": native_digest.hexdigest(),
+        "oracle_sha256": reference_digest.hexdigest(),
+        "mismatch_count": mismatches, "max_ulp_error": max_ulp,
+        "first_mismatch": first_mismatch,
+    }
+
+
 def manual_adam_first_step(parameters, lr=.003, beta1=.9, beta2=.999, eps=1e-8):
     """Non-fused, explicit Adam step-1 arithmetic for diagnosis only.
 
@@ -113,6 +172,7 @@ def manual_adam_first_step(parameters, lr=.003, beta1=.9, beta2=.999, eps=1e-8):
     return {
         "stage_sha256": {name: sha_tensors(values) for name, values in stages},
         "parameter_sha256": [sha_tensors([value]) for value in proposed],
+        "sqrt_oracle": sqrt_ulp_reference(second, roots),
     }
 
 
@@ -130,6 +190,7 @@ def float64_first_optimizer_step(model, batch_x, batch_y):
     result["gradients_sha256"] = sha_tensors([weight.grad for weight in replica.parameters()])
     manual = manual_adam_first_step(replica.parameters())
     result["adam_manual_stage_sha256"] = manual["stage_sha256"]
+    result["adam_sqrt_oracle"] = manual["sqrt_oracle"]
     result["adam_manual_parameter_sha256"] = manual["parameter_sha256"]
     optimizer.step()
     result["updated_parameters_sha256"] = sha_tensors(replica.parameters())
