@@ -60,7 +60,7 @@ try {
     }
     if ($Mode -eq 'Setup') {
         if (-not (Test-Path -LiteralPath $Package -PathType Leaf)) { throw 'Instalador ausente.' }
-        $setupArgs = @('/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/CLOSEAPPLICATIONS', "/LOG=`"$setupLog`"")
+        $setupArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/CLOSEAPPLICATIONS', "/LOG=`"$setupLog`"")
         if ($Destination) { $setupArgs += "/DIR=`"$Destination`"" }
         $p = Start-Process -FilePath $Package -ArgumentList $setupArgs -Wait -PassThru
         if ($p.ExitCode -ne 0) { throw "Instalador terminou com codigo $($p.ExitCode) (log: $setupLog)" }
