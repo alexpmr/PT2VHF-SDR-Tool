@@ -2,7 +2,7 @@ name: Testes (build Windows sob demanda)
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/iq-signal-classifier]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -45,7 +45,7 @@ jobs:
   windows-tests:
     # Independent Windows/Qt test lane for experimental PRs; no installer or release.
     # Does not depend on Ubuntu apt mirrors, which can fail DNS before pytest starts.
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/feature/iq-signal-classifier'
     runs-on: windows-2022
     timeout-minutes: 30
     permissions:
