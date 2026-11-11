@@ -1458,6 +1458,8 @@ class MainWindow(QMainWindow):
 
     def quit_for_update(self):
         """Fecha tudo para o auxiliar externo instalar a atualização (ele reabre o programa)."""
+        from ..crash_diagnostics import mark_update_exit
+        mark_update_exit()
         self._quitting_for_update = True
         self.close()
         from PySide6.QtWidgets import QApplication
