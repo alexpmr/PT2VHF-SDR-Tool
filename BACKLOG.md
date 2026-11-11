@@ -1,5 +1,12 @@
 # Backlog — PT2VHF SDR Tool
 
+## P1 — duplo clique no waterfall: sintonizar e centralizar (11/11/2026)
+- **Solicitação:** dois cliques sobre um ponto válido do waterfall devem **sintonizar o VFO naquela frequência e centralizar essa frequência na área visível**, mantendo o nível atual de zoom. Isso deve atualizar LCD, passband e marcadores sem mudar o modo nem alterar indevidamente a frequência central RF do dispositivo.
+- **Comportamento anterior:** `SpectrumWaterfall._clicked()` executava `reset_zoom()` para todo duplo clique, sem emitir sintonia. Por isso o comando não sintonizava nem centralizava a frequência selecionada.
+- **Implementado para revisão na branch `fix/waterfall-double-click-center`:** evento `centerTuneRequested` envia a frequência calculada da posição do cursor, ajustada ao passo do canal; `MainWindow.select_transmission_centered()` primeiro valida/sintoniza, depois chama `center_on_vfo()`, preservando zoom. O duplo clique no **espectro superior** continua restaurando o zoom total, comportamento preexistente. Cliques simples e arraste do passband continuam inalterados.
+- **Restrições:** não executar se o ponto estiver fora do IQ efetivamente recebido, nem centralizar se a sintonia for rejeitada pela fonte SDR. Sem IQ adquirido, não alterar VFO.
+- **Aceite:** testes Qt em monitor pequeno, com pan/zoom e RF válido/inválido, incluindo recepção real; conferir que VFO/LCD e visualização estão sincronizados. **Estado:** código e testes enviados ao PR experimental de UI; aguardar CI e homologação visual/SDR antes de liberar como concluído.
+
 ## Release estável v0.13.2 — progresso no waterfall (11/11/2026)
 - **Branch candidata:** `release/stable-v0.13.2`, derivada da v0.13.1 na `main`; **não mesclar o PR neural experimental #2**.
 - **Waterfall, clique e arraste:** reforçado o filtro de eventos de mouse para permitir sintonia somente na faixa IQ adquirida. Cliques no espaço vazio por pan/zoom não mudam o VFO; passband arrastado para fora da faixa é restaurado. Implementado em código, **aguardando testes CI Linux/Windows e conferência em SDR real**.
