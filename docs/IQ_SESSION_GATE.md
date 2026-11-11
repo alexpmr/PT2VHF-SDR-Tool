@@ -15,3 +15,11 @@ As taxas são apresentadas tanto por janela quanto como média entre sessões. O
 HOLDOUT_EVALUATED indica apenas que o limite empírico foi observado. **Não comprova acurácia operacional**, pois as janelas de uma sessão são correlacionadas, os rótulos dependem de verificação externa e as gravações podem não representar equipamentos, interferências e modos reais. A variável operationally_validated é sempre false.
 
 Os arquivos IQ e seus identificadores permanecem locais. Não publicar manifestos privados nem gravações no GitHub.
+
+## Cobertura de inferência e rejeições de pré-processamento (11/11/2026)
+
+A avaliação de calibração e holdout agora registra separadamente `windows_selected`, `windows_skipped_silence`, `windows_rejected_preprocessing`, `windows_inferred`, `pipeline_coverage` e `minimum_session_pipeline_coverage`. As métricas de acurácia/FAR são **condicionais às janelas inferidas**: silêncio e portadoras DC rejeitadas não podem virar acertos UNKNOWN. Os relatórios de cobertura não expõem identificadores de sessões.
+
+O novo limite `--min-pipeline-coverage 0.80` (padrão conservador, **não calibrado em RF real**) exige inferência em pelo menos 80% das janelas selecionadas **em cada sessão**, tanto na calibração quanto no holdout. Mesmo com acurácia/FAR aparentemente favoráveis e diversidade de SDRs suficiente, a decisão passa a `HOLDOUT_INSUFFICIENT_PIPELINE_COVERAGE` (exit 2) se qualquer sessão não cumprir o limite. O valor pode ser ajustado para pesquisa, mas **reduzi-lo não constitui homologação**. Gravação sem nenhuma janela inferível continua falhando explicitamente; erros inesperados do modelo não são mascarados como rejeição DC.
+
+Os totais são amostrais (até `--max-windows` por WAV); a cobertura de janelas não equivale a tempo de transmissão detectado nem substitui revisão de RF real e rótulos independentes. Testes automatizados usam exclusivamente WAV sintético.
