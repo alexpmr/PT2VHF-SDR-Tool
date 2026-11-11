@@ -120,4 +120,44 @@ def test_windows_isolation_runs_only_after_failure_on_experimental_branch():
     assert 'selection: "not iq_"' in diagnostic
     assert "selection: iq_" in diagnostic
     assert "ci_windows_pytest.py -k" in diagnostic
+    assert "partition: baseline-normal-exit" in diagnostic
+    assert "partition: baseline-hard-exit" in diagnostic
+    assert "partition: iq-hard-exit" in diagnostic
+    assert "PT2VHF_TEST_EXIT_MODE: ${{ matrix.exit_mode }}" in diagnostic
     assert "gh release create" not in diagnostic
+
+
+
+def test_normal_shutdown_probe_returns_pytest_status_without_hard_exit(monkeypatch):
+    """Opt-in shutdown mode is diagnostic only; never silently hard-exit."""
+    import sys
+    import types
+    import scripts.run_tests as runner
+
+    seen = []
+    monkeypatch.setenv("PT2VHF_TEST_EXIT_MODE", "normal")
+    monkeypatch.setitem(sys.modules, "pytest", types.SimpleNamespace(
+        main=lambda args: seen.append(args) or 5
+    ))
+    monkeypatch.setattr(sys, "argv", ["run_tests.py", "-k", "not iq_"])
+
+    def forbidden_exit(code):
+        raise AssertionError("normal shutdown must not call os._exit")
+
+    monkeypatch.setattr(runner.os, "_exit", forbidden_exit)
+    assert runner.main() == 5
+    assert seen == [["-q", "-k", "not iq_"]]
+
+
+def test_invalid_shutdown_probe_mode_fails_closed(monkeypatch):
+    import sys
+    import types
+    import pytest
+    import scripts.run_tests as runner
+
+    monkeypatch.setenv("PT2VHF_TEST_EXIT_MODE", "unexpected")
+    monkeypatch.setitem(sys.modules, "pytest", types.SimpleNamespace(main=lambda args: 0))
+    monkeypatch.setattr(sys, "argv", ["run_tests.py"])
+    monkeypatch.setattr(runner.os, "_exit", lambda code: None)
+    with pytest.raises(ValueError, match="PT2VHF_TEST_EXIT_MODE"):
+        runner.main()
