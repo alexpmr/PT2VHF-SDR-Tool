@@ -18,6 +18,7 @@ def compare_reports(a, b):
     matches = {key: a[key] == b[key] for key in GLOBAL}
     first_conv_comparison = None
     second_conv_comparison = None
+    second_conv_float64_comparison = None
     for i, (left, right) in enumerate(zip(a["steps"], b["steps"])):
         if left["step"] != i or right["step"] != i:
             raise ValueError("Probe step numbering differs")
@@ -70,6 +71,22 @@ def compare_reports(a, b):
                 "independent_runner_max_abs_error_vs_scalar": sr["max_abs_error"],
                 "scope": "Sparse first-minibatch samples; exact layer hashes still gate",
             }
+            lf = left["second_conv_float64_reference"]
+            rf = right["second_conv_float64_reference"]
+            for report in (lf, rf):
+                if not isinstance(report["reference_sha256"], str) or len(report["reference_sha256"]) != 64:
+                    raise ValueError("Invalid second Conv1d float64 reference hash")
+                if not all(math.isfinite(float(report[key])) and float(report[key]) >= 0
+                           for key in ("max_abs_error", "mean_abs_error")):
+                    raise ValueError("Invalid second Conv1d float64 error")
+            exact64 = lf["reference_sha256"] == rf["reference_sha256"]
+            matches["steps[0].second_conv_float64_reference_sha256"] = exact64
+            second_conv_float64_comparison = {
+                "reference_exact_match": exact64,
+                "reference_runner_max_abs_error_vs_native": lf["max_abs_error"],
+                "independent_runner_max_abs_error_vs_native": rf["max_abs_error"],
+                "scope": "Full second Conv1d first-minibatch float64 diagnostic; no training changes",
+            }
     first = next((key for key, ok in matches.items() if not ok), None)
     env_ok = all(a[key] == b[key] for key in ENV)
     cross_cpu = (a["cpu_model"] != b["cpu_model"]
@@ -85,6 +102,7 @@ def compare_reports(a, b):
         "steps_compared": len(a["steps"]), "first_divergent_stage": first,
         "stage_exact_match": matches, "first_conv_scalar_comparison": first_conv_comparison,
         "second_conv_scalar_comparison": second_conv_comparison,
+        "second_conv_float64_comparison": second_conv_float64_comparison,
         "conclusion": conclusion,
         "limitations": "Matching early steps cannot prove 22-epoch reproducibility",
     }

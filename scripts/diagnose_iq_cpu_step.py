@@ -57,6 +57,34 @@ def conv1d_scalar_samples(inputs, layer, outputs, sample_count=32):
             "max_abs_error": max(errors), "mean_abs_error": sum(errors) / count}
 
 
+def conv1d_float64_reference(inputs, layer, outputs):
+    """Full-tensor float64 Conv1d control for the first synthetic minibatch.
+
+    This is diagnostic only: it does not change model training or inference.
+    A matching hash across CPUs tests the precision hypothesis; it does not
+    prove the float32 training is reproducible.
+    """
+    if not isinstance(layer, nn.Conv1d) or layer.groups != 1 or layer.padding_mode != "zeros":
+        raise ValueError("Only zero-padded, ungrouped Conv1d is supported")
+    with torch.no_grad():
+        x = inputs.detach().cpu().to(dtype=torch.float64)
+        w = layer.weight.detach().cpu().to(dtype=torch.float64)
+        bias = (layer.bias.detach().cpu().to(dtype=torch.float64)
+                if layer.bias is not None else None)
+        reference = nn.functional.conv1d(
+            x, w, bias, stride=layer.stride, padding=layer.padding,
+            dilation=layer.dilation, groups=layer.groups)
+        observed = outputs.detach().cpu().to(dtype=torch.float64)
+        if reference.shape != observed.shape or not reference.numel():
+            raise ValueError("Invalid Conv1d output shape")
+        error = (reference - observed).abs()
+        return {
+            "reference_sha256": sha_tensors([reference]),
+            "max_abs_error": float(error.max().item()),
+            "mean_abs_error": float(error.mean().item()),
+        }
+
+
 def run_probe(steps=4):
     if not 1 <= steps <= 66:
         raise ValueError("steps must be between 1 and 66")
@@ -115,6 +143,8 @@ def run_probe(steps=4):
                     layer_input, layer, activations)
             if i == 0 and layer_index == 2:
                 item["second_conv_scalar_samples"] = conv1d_scalar_samples(
+                    layer_input, layer, activations)
+                item["second_conv_float64_reference"] = conv1d_float64_reference(
                     layer_input, layer, activations)
         item["layer_forward_sha256"] = layer_hashes
         logits = activations

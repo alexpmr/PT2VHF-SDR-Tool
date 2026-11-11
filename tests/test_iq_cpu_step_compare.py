@@ -16,6 +16,10 @@ def probe(cpu="AMD"):
                        "sample_count": 2, "observed": [3.0, 4.0],
                        "reference": [3.0, 4.0],
                        "max_abs_error": 0.0, "mean_abs_error": 0.0},
+                   "second_conv_float64_reference": {
+                       "reference_sha256": "a" * 64,
+                       "max_abs_error": 0.00001,
+                       "mean_abs_error": 0.000001},
                    "first_conv_scalar_samples": {
                        "sample_count": 2, "observed": [1.0, 2.0],
                        "reference": [1.0, 2.0],
@@ -106,3 +110,23 @@ def test_second_conv_scalar_comparison_reports_drift():
     assert result["first_divergent_stage"] == "steps[0].layers.02_Conv1d"
     assert abs(result["second_conv_scalar_comparison"]["sampled_observed_max_abs_diff"] - 0.00002) < 1e-10
     assert result["first_conv_scalar_comparison"]["sampled_observed_max_abs_diff"] == 0.0
+
+
+def test_float64_reference_exact_match_is_independent_of_float32_divergence():
+    a, b = probe(), probe("Intel")
+    b["steps"][0]["layer_forward_sha256"]["02_Conv1d"] = "changed"
+    result = compare_reports(a, b)
+    assert result["first_divergent_stage"] == "steps[0].layers.02_Conv1d"
+    assert result["second_conv_float64_comparison"]["reference_exact_match"] is True
+    assert result["conclusion"] == "NUMERICAL_DIVERGENCE"
+
+
+def test_float64_reference_mismatch_and_nonfinite_error_fail_closed():
+    a, b = probe(), probe("Intel")
+    b["steps"][0]["second_conv_float64_reference"]["reference_sha256"] = "b" * 64
+    result = compare_reports(a, b)
+    assert result["first_divergent_stage"] == "steps[0].second_conv_float64_reference_sha256"
+    assert result["second_conv_float64_comparison"]["reference_exact_match"] is False
+    b["steps"][0]["second_conv_float64_reference"]["max_abs_error"] = float("nan")
+    with pytest.raises(ValueError, match="float64 error"):
+        compare_reports(a, b)
