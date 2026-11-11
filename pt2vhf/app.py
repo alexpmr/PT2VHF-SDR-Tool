@@ -26,6 +26,11 @@ def main():
     if args.selftest:
         sys.exit(selftest())
 
+    # Start native/Python crash capture before loading Qt or DSP libraries.
+    # Logs are local-only at %APPDATA%/PT2VHF-SDR-Tool/crash-diagnostics.log.
+    from .crash_diagnostics import enable, mark_clean_exit
+    enable()
+
     if sys.platform == "win32":  # o instalador (AppMutex) detecta o programa aberto
         import ctypes
         ctypes.windll.kernel32.CreateMutexW(None, False, "PT2VHF_SDR_Tool_Running")
@@ -39,6 +44,7 @@ def main():
     from .ui.main_window import MainWindow
 
     app = QApplication(sys.argv)
+    app.aboutToQuit.connect(mark_clean_exit)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName("PT2VHF")
     w = MainWindow()
