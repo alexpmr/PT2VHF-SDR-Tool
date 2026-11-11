@@ -89,3 +89,10 @@ O probe de primeiro minibatch passa a registrar, **sem modificar o treinamento v
 O diagnóstico do primeiro minibatch float64 agora compara **até 256 segundos momentos positivos por tensor** com um oráculo independente: raiz quadrada `Decimal` em 110 dígitos decimais, convertida para `float64`. Registra SHA-256 das amostras nativas e do oráculo, quantidade de amostras, divergências, erro máximo em ULP e a primeira posição divergente. O comparador exige a mesma quantidade de amostras e mantém o gate de identidade exata; não altera tolerâncias nem treinamento. Os hashes completos dos tensores continuam sendo verificados.
 
 **Hipótese:** se os hashes do oráculo coincidirem entre CPUs, mas os nativos divergirem, a diferença de `torch.sqrt` fica sustentada por referência independente, e o erro em ULP pode ser quantificado. Amostragem esparsa **não** demonstra identidade de todos os elementos nem determinismo em 22 épocas. Nenhuma captura RF ou homologação é inferida. Aguardar workflow heterogêneo antes de concluir.
+
+
+## Gate de CPU heterogênea — correção fail-closed (11/11/2026)
+
+O comparador `scripts/compare_iq_cpu_step.py` já identificava `SAME_CPU_ONLY_INCONCLUSIVE` quando ambos os runners usavam o **mesmo modelo de CPU**, mas o CLI encerrava com código **0**, deixando o workflow diagnóstico verde apesar de não testar portabilidade entre CPUs. O CLI agora retorna **3** para esse caso, preservando `comparison.json` e os artefatos do workflow (`if: always()`). Retorna **2** para `NUMERICAL_DIVERGENCE` ou `ENVIRONMENT_MISMATCH`, e **0** somente quando os primeiros passos coincidem em modelos de CPU diferentes. Testes sintéticos exercitam o CLI e os três caminhos de decisão; o código 0 **não comprova** a reprodutibilidade do treinamento completo de 22 épocas.
+
+A atribuição de CPUs em runners hospedados pelo GitHub não é controlada pelo workflow: se os dois runners forem homogêneos, a falha é **inconclusiva**, não um defeito do modelo. Um diagnóstico heterogêneo com resultados iguais continua sendo apenas evidência limitada aos primeiros passos, não homologação de RF, OOD, Windows, latência ou implantação.

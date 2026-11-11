@@ -258,3 +258,34 @@ def test_cli_fails_closed_on_isolated_sqrt_oracle_hash_drift(tmp_path, digest_ke
     assert report["first_divergent_adam_stage"] is None
     assert all(value is None for value in report["first_divergent_adam_parameter"].values())
     assert result.returncode == 2
+
+
+@pytest.mark.parametrize(
+    "independent_cpu,expected_conclusion,expected_exit",
+    [("AMD", "SAME_CPU_ONLY_INCONCLUSIVE", 3),
+     ("Intel", "FIRST_STEPS_MATCH_CROSS_CPU_NOT_FULL_REPLAY", 0)],
+)
+def test_cli_distinguishes_same_cpu_inconclusive_from_cross_cpu_match(
+        tmp_path, independent_cpu, expected_conclusion, expected_exit):
+    """Matching synthetic hashes on one CPU model must not yield a green gate."""
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    reference = tmp_path / "reference.json"
+    independent = tmp_path / "independent.json"
+    output = tmp_path / "comparison.json"
+    reference.write_text(json.dumps(probe()), encoding="utf-8")
+    independent.write_text(json.dumps(probe(independent_cpu)), encoding="utf-8")
+    script = Path(__file__).resolve().parents[1] / "scripts" / "compare_iq_cpu_step.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--reference", str(reference),
+         "--independent", str(independent), "--out", str(output)],
+        capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == expected_exit
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["conclusion"] == expected_conclusion
+    assert report["cross_cpu_tested"] is (independent_cpu != "AMD")
+    assert report["first_divergent_stage"] is None

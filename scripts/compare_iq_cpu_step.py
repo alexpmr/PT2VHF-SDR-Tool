@@ -228,6 +228,10 @@ def main():
     print(json.dumps(report, indent=2), flush=True)
     # Use the single fail-closed conclusion as the CLI exit gate. Checking only
     # individual stages missed isolated native/oracle sqrt hash divergence.
+    # Two identical CPU models cannot establish cross-CPU reproducibility.
+    # Keep the JSON evidence, but do not mark this diagnostic as a green gate.
+    if report["conclusion"] == "SAME_CPU_ONLY_INCONCLUSIVE":
+        raise SystemExit(3)
     if report["conclusion"] in ("ENVIRONMENT_MISMATCH", "NUMERICAL_DIVERGENCE"):
         raise SystemExit(2)
 
