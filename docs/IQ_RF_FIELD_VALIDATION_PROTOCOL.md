@@ -49,7 +49,7 @@ python scripts/audit_iq_dataset.py \
 - `BLOCK`: corrigir antes de usar o arquivo; o comando retorna código 2.
 - `REVIEW`: avaliação humana obrigatória do problema sinalizado.
 - `PASS`: nenhum problema listado foi detectado; **não comprova origem RF, rotulagem ou desempenho do modelo**.
-- A auditoria detecta janelas idênticas entre sessões, mas não identifica todas as cópias modificadas, vazamentos ou rótulos incorretos.
+- A auditoria compara hashes de WAVs completos e amostras de janelas IQ **no início, meio e fim** das gravações para detectar reutilização exata entre calibração e holdout. Essa amostragem limitada não identifica todas as cópias modificadas, deslocadas, reamostradas ou vazamentos fora das posições inspecionadas; a proveniência e os rótulos continuam exigindo verificação independente.
 
 ## Avaliação comparativa dos modelos, sem alterar o SDR
 
