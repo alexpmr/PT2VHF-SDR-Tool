@@ -111,14 +111,18 @@ def observations(rows, model, max_windows, *, accounting=None):
                     raise
                 rejected_total += 1
                 continue
-            scores = result.probabilities
+            scores = {name: float(value) for name, value in result.probabilities.items()}
             if set(scores) != set(CLASSES):
                 raise ValueError("Model label mismatch")
-            if not all(math.isfinite(float(v)) and 0 <= float(v) <= 1
-                       for v in scores.values()):
+            if not all(math.isfinite(v) and 0 <= v <= 1 for v in scores.values()):
                 raise ValueError("Invalid model probability")
+            # UNKNOWN threshold selection assumes a normalized softmax.
+            # Reject malformed model outputs rather than calibrating on them.
+            if not math.isclose(sum(scores.values()), 1.0,
+                                rel_tol=0.0, abs_tol=1e-4):
+                raise ValueError("Model probabilities are not normalized")
             predicted = max(scores, key=scores.get)
-            data.append((label, predicted, float(scores[predicted]), session))
+            data.append((label, predicted, scores[predicted], session))
             found += 1
         selected_total += stats["selected"]
         silent_total += stats["skipped_silence"]
