@@ -111,8 +111,8 @@ def test_windows_isolation_runs_only_after_failure_on_experimental_branch():
 
     workflow = (Path(__file__).resolve().parents[1] /
                 ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
-    diagnostic = workflow.split("\\n  windows-crash-isolation:", 1)[1].split(
-        "\\n  windows-exe:", 1
+    diagnostic = workflow.split("\n  windows-crash-isolation:", 1)[1].split(
+        "\n  windows-exe:", 1
     )[0]
     assert "needs: windows-tests" in diagnostic
     assert "needs.windows-tests.result == 'failure'" in diagnostic
