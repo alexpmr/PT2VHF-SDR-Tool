@@ -40,6 +40,36 @@ def test_audit_disjoint(tmp_path):
     assert len(cal)==2 and len(hold)==2
 
 
+
+@pytest.mark.parametrize("mixed_split", ["calibration", "holdout"])
+def test_audit_rejects_known_unknown_from_same_session_with_other_sessions(
+        tmp_path, mixed_split):
+    """Synthetic regression: two session IDs can hide a mixed-label session.
+
+    Previously this passed the aggregate session-count gate even though
+    known/UNKNOWN rates shared a session and were not independent.
+    """
+    a = manifest(tmp_path, "cal.json", "cal", 1200)
+    b = manifest(tmp_path, "hold.json", "hold", 1700)
+    target = a if mixed_split == "calibration" else b
+    doc = json.loads(target.read_text())
+    # Make known and UNKNOWN observations share a session, while adding a
+    # second distinct known session so the old len(sessions)>=2 check passes.
+    doc["recordings"][1]["session_id"] = doc["recordings"][0]["session_id"]
+    prefix = "cal" if mixed_split == "calibration" else "hold"
+    extra_name = prefix + "-extra.wav"
+    wav(tmp_path / extra_name, 3171 if mixed_split == "calibration" else 3283)
+    doc["recordings"].append({
+        "path": extra_name, "mode": "AM",
+        "session_id": prefix + "-extra",
+        "device": "synthetic device", "frequency_hz": 145500000,
+    })
+    target.write_text(json.dumps(doc))
+    assert len({row["session_id"] for row in doc["recordings"]}) == 2
+    with pytest.raises(ValueError, match=mixed_split + " session mixes known and UNKNOWN"):
+        audit(a, b, tmp_path)
+
+
 def test_audit_rejects_overlapping_sessions(tmp_path):
     a = manifest(tmp_path,"cal.json","cal",1200)
     b = manifest(tmp_path,"hold.json","hold",1700)
