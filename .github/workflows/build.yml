@@ -20,9 +20,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Bibliotecas de sistema (Qt offscreen)
-        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
-      - run: pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
+      - name: Dependências Python dos testes
+        run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
+      - name: Verificar Qt offscreen antes de acessar mirrors apt
+        id: qt_probe
+        shell: bash
+        run: |
+          if QT_QPA_PLATFORM=offscreen python -c "from PySide6.QtWidgets import QApplication; app = QApplication([]); print('Qt offscreen disponível')"; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Bibliotecas de sistema (somente se Qt não inicializar)
+        if: steps.qt_probe.outputs.ready != 'true'
+        run: |
+          sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=15 update
+          sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=15 install -y libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
       - name: Testes Linux / Qt offscreen (diagnóstico independente)
         run: python -X faulthandler scripts/run_tests.py
         env:
