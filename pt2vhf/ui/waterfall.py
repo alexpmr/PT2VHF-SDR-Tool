@@ -342,7 +342,13 @@ class SpectrumWaterfall(QWidget):
         width_old = self.high - self.low
         if abs((b - a) - width_old) < 1.0:  # arrastou o passband inteiro -> sintonia
             delta = new_low - self.low
-            self.tuneRequested.emit(self._snap(self.vfo + delta))
+            target = self._pick_frequency((self.vfo + delta) / 1e6)
+            if target is not None:
+                self.tuneRequested.emit(target)
+            else:
+                # A drag beyond the IQ span must not leave the passband
+                # visually out of sync with the unchanged receiver VFO.
+                self.set_vfo(self.vfo, self.low, self.high)
         else:
             self.passbandChanged.emit(new_low, new_high)
 
