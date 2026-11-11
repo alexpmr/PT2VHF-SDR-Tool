@@ -39,3 +39,36 @@ def test_native_48khz_not_resampled(monkeypatch, tmp_path):
     iq = np.ones(4096, dtype=np.complex64)
     actual = _capture_input(monkeypatch, tmp_path, iq, 48000)
     np.testing.assert_array_equal(actual, iq)
+
+
+def test_resampling_is_offloaded_from_sdr_feed_thread(monkeypatch, tmp_path):
+    """Synthetic regression: polyphase FIR must run on the worker thread."""
+    from scipy import signal
+
+    calls = []
+    original = signal.resample_poly
+
+    def traced(*args, **kwargs):
+        calls.append(threading.current_thread().name)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(signal, "resample_poly", traced)
+    samples = np.ones(24000, dtype=np.complex64)
+    result = _capture_input(monkeypatch, tmp_path, samples, 240000)
+    assert result.size == 4800
+    assert calls == ["iq-classifier"]
+
+
+def test_feed_rejects_invalid_resampling_rates_and_short_output(tmp_path):
+    """Invalid/unsafe ratios and undersized output must not reach inference."""
+    worker = module.IQClassificationWorker(tmp_path / "unused.onnx",
+                                            lambda *_: None)
+    try:
+        samples = np.ones(4096, dtype=np.complex64)
+        for rate in (0, -1, float("nan"), float("inf"), 48000.5,
+                     None, "invalid", 1):
+            assert not worker.feed(samples, sample_rate=rate)
+        assert not worker.feed(samples[:2048], sample_rate=240000)
+        assert worker._queue.empty()
+    finally:
+        worker.stop()
