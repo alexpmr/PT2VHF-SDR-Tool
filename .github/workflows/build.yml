@@ -68,12 +68,23 @@ jobs:
           - partition: iq-hard-exit
             selection: iq_
             exit_mode: hard
+            shard: -1
           - partition: baseline-hard-exit
             selection: "not iq_"
             exit_mode: hard
+            shard: -1
           - partition: baseline-normal-exit
             selection: "not iq_"
             exit_mode: normal
+            shard: -1
+          - partition: baseline-shard-0
+            selection: "not iq_"
+            exit_mode: hard
+            shard: 0
+          - partition: baseline-shard-1
+            selection: "not iq_"
+            exit_mode: hard
+            shard: 1
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
@@ -84,9 +95,15 @@ jobs:
       - name: Dependências de diagnóstico (sem instalador)
         run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
       - name: Isolar crash nativo Windows por subconjunto
+        if: matrix.shard == -1
         env:
           PT2VHF_TEST_EXIT_MODE: ${{ matrix.exit_mode }}
         run: python scripts/ci_windows_pytest.py -k "${{ matrix.selection }}"
+      - name: Diagnosticar arquivos não-IQ em processos isolados
+        if: matrix.shard >= 0
+        env:
+          PT2VHF_TEST_EXIT_MODE: hard
+        run: python scripts/ci_windows_crash_shard.py --index ${{ matrix.shard }} --count 2
 
   windows-exe:
     # Manual e commit [build-windows] SOMENTE na main; branch experimental nao gera instaladores.
