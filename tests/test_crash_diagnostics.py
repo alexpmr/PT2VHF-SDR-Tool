@@ -28,11 +28,13 @@ def test_local_crash_log_contains_lifecycle_and_exception(tmp_path, monkeypatch)
         except RuntimeError:
             typ, value, tb = sys.exc_info()
             sys.excepthook(typ, value, tb)
+        diag.mark_update_exit()
         diag.mark_clean_exit()
         data = path.read_text(encoding="utf-8")
         assert "START pid=" in data
         assert "UNHANDLED RuntimeError" in data
         assert "synthetic-crash-example" in data
+        assert "UPDATE-EXIT requested" in data
         assert "CLEAN-EXIT" in data
     finally:
         sys.excepthook = old_sys_hook
@@ -62,3 +64,25 @@ def test_crash_log_rotation_and_no_startup_failure(tmp_path, monkeypatch):
             diag._handle.close()
         diag._handle = None
         diag._log_path = None
+
+
+def test_failed_native_handler_does_not_leave_stale_handle(tmp_path, monkeypatch):
+    """Native handler setup failure must not block startup or future retries."""
+    monkeypatch.setattr(diag, "config_dir", lambda: tmp_path)
+    monkeypatch.setattr(diag, "_handle", None)
+    monkeypatch.setattr(diag, "_log_path", None)
+    old_sys, old_thread = sys.excepthook, threading.excepthook
+
+    def fail_native_handler(**_kwargs):
+        raise RuntimeError("synthetic faulthandler failure")
+
+    monkeypatch.setattr(diag.faulthandler, "enable", fail_native_handler)
+    try:
+        assert diag.enable() is None
+        assert diag._handle is None
+        assert diag._log_path is None
+        # Reattempt is possible and does not reuse a closed file handle.
+        assert diag.enable() is None
+        assert diag._handle is None
+    finally:
+        sys.excepthook, threading.excepthook = old_sys, old_thread
