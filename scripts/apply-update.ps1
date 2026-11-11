@@ -26,6 +26,8 @@ function Get-Descendants([int]$root) {
     while ($queue.Count -gt 0) {
         $p = $queue.Dequeue()
         foreach ($c in $all) {
+            # O auxiliar PowerShell é filho do aplicativo: nunca espere ou mate o próprio auxiliar.
+            if ([int]$c.ProcessId -eq $PID) { continue }
             if ($c.ParentProcessId -eq $p -and -not $found.Contains([int]$c.ProcessId)) {
                 $found.Add([int]$c.ProcessId); $queue.Enqueue([int]$c.ProcessId)
             }
@@ -44,19 +46,21 @@ function Wait-Exit([int[]]$pids, [int]$seconds) {
 }
 
 try {
-    $children = @(Get-Descendants $WaitPid)
+    $children = @(Get-Descendants $WaitPid | Where-Object { $_ -ne $PID })
     $left = Wait-Exit (@($WaitPid) + $children) 90
     if ($left.Count -gt 0) {
         # Somente processos que eram filhos do SDR Tool; nunca de outros programas.
-        foreach ($id in $left) {
-            if ($id -ne $WaitPid) { Stop-Process -Id $id -Force -ErrorAction SilentlyContinue }
+        foreach ($childProcessId in $left) {
+            if ($childProcessId -ne $WaitPid -and $childProcessId -ne $PID) {
+                Stop-Process -Id $childProcessId -Force -ErrorAction SilentlyContinue
+            }
         }
         $left = Wait-Exit $left 15
         if ($left -contains $WaitPid) { throw 'O PT2VHF SDR Tool nao fechou a tempo. Feche-o e instale manualmente.' }
     }
     if ($Mode -eq 'Setup') {
         if (-not (Test-Path -LiteralPath $Package -PathType Leaf)) { throw 'Instalador ausente.' }
-        $setupArgs = @('/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/CLOSEAPPLICATIONS', "/LOG=`"$setupLog`"")
+        $setupArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/CLOSEAPPLICATIONS', "/LOG=`"$setupLog`"")
         if ($Destination) { $setupArgs += "/DIR=`"$Destination`"" }
         $p = Start-Process -FilePath $Package -ArgumentList $setupArgs -Wait -PassThru
         if ($p.ExitCode -ne 0) { throw "Instalador terminou com codigo $($p.ExitCode) (log: $setupLog)" }
