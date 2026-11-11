@@ -77,14 +77,23 @@ def audit(cal_manifest: Path, hold_manifest: Path, root: Path):
     return cal, hold
 
 
-def observations(rows, model, max_windows):
+def observations(rows, model, max_windows, *, accounting=None):
     if max_windows < 1:
         raise ValueError("max_windows must be positive")
     data = []
+    selected_total = silent_total = rejected_total = inferred_total = 0
+    per_session = {}
     for path, label, session, _device in rows:
         found = 0
-        for iq in read_windows(path, max_windows):
-            result = model.predict(iq)
+        stats = {"selected": 0, "skipped_silence": 0}
+        for iq in read_windows(path, max_windows, stats=stats):
+            try:
+                result = model.predict(iq)
+            except ValueError as exc:
+                if str(exc) != "No usable RF signal (DC-only or unresolved carrier)":
+                    raise
+                rejected_total += 1
+                continue
             scores = result.probabilities
             if set(scores) != set(CLASSES):
                 raise ValueError("Model label mismatch")
@@ -94,8 +103,29 @@ def observations(rows, model, max_windows):
             predicted = max(scores, key=scores.get)
             data.append((label, predicted, float(scores[predicted]), session))
             found += 1
+        selected_total += stats["selected"]
+        silent_total += stats["skipped_silence"]
+        inferred_total += found
+        session_counts = per_session.setdefault(session, [0, 0])
+        session_counts[0] += stats["selected"]
+        session_counts[1] += found
         if not found:
-            raise ValueError("No nonempty IQ windows in recording")
+            raise ValueError("No inferred IQ windows in recording (silence/DC rejection)")
+    if selected_total != silent_total + rejected_total + inferred_total:
+        raise AssertionError("IQ gate window accounting mismatch")
+    if accounting is not None:
+        coverages = [inferred / selected for selected, inferred in per_session.values()
+                     if selected]
+        accounting.update({
+            "windows_selected": selected_total,
+            "windows_skipped_silence": silent_total,
+            "windows_rejected_preprocessing": rejected_total,
+            "windows_inferred": inferred_total,
+            "pipeline_coverage": inferred_total / selected_total if selected_total else 0.0,
+            "minimum_session_pipeline_coverage": min(coverages) if coverages else 0.0,
+            "sessions": len(per_session),
+            "session_ids_excluded": True,
+        })
     return data
 
 
@@ -148,9 +178,14 @@ def select(rows, max_far=.10, min_coverage=.50):
 
 
 def run(cal_manifest, hold_manifest, root, model, max_windows=100,
-        max_far=.10, min_coverage=.50):
+        max_far=.10, min_coverage=.50, min_pipeline_coverage=.80):
+    if not math.isfinite(min_pipeline_coverage) or not 0 <= min_pipeline_coverage <= 1:
+        raise ValueError("Invalid minimum pipeline coverage")
     cal, hold = audit(cal_manifest, hold_manifest, root)
-    best, curve = select(observations(cal, model, max_windows), max_far, min_coverage)
+    calibration_accounting = {}
+    best, curve = select(observations(cal, model, max_windows,
+                                      accounting=calibration_accounting),
+                         max_far, min_coverage)
     holdout_sessions = len({r[2] for r in hold})
     holdout_devices = len({r[3] for r in hold})
     # An empirical pass on one device or too few sessions is not an
@@ -162,6 +197,9 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
         "selected_threshold": best["threshold"] if best else None,
         "calibration_curve": curve,
         "holdout_result": None,
+        "calibration_pipeline": calibration_accounting,
+        "holdout_pipeline": None,
+        "min_pipeline_coverage": min_pipeline_coverage,
         "calibration_sessions": len({r[2] for r in cal}),
         "holdout_sessions": holdout_sessions,
         "distinct_holdout_devices": holdout_devices,
@@ -176,12 +214,18 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
                         "labels and out-of-device validation require external evidence."),
     }
     if best:
-        holdout = rates(observations(hold, model, max_windows), best["threshold"])
+        holdout_accounting = {}
+        holdout = rates(observations(hold, model, max_windows,
+                                     accounting=holdout_accounting), best["threshold"])
         result["holdout_result"] = holdout
+        result["holdout_pipeline"] = holdout_accounting
         if not acceptable(holdout, max_far, min_coverage):
             result["decision"] = "HOLDOUT_FAILED"
         elif not diversity_ok:
             result["decision"] = "HOLDOUT_INSUFFICIENT_DIVERSITY"
+        elif min(calibration_accounting["minimum_session_pipeline_coverage"],
+                 holdout_accounting["minimum_session_pipeline_coverage"]) < min_pipeline_coverage:
+            result["decision"] = "HOLDOUT_INSUFFICIENT_PIPELINE_COVERAGE"
     return result
 
 
@@ -195,10 +239,12 @@ def main():
     p.add_argument("--max-unknown-far", type=float, default=.10)
     p.add_argument("--min-known-coverage", type=float, default=.50)
     p.add_argument("--max-windows", type=int, default=100)
+    p.add_argument("--min-pipeline-coverage", type=float, default=.80,
+                   help="Minimum inferred/selected fraction for each session in both splits")
     a = p.parse_args()
     result = run(a.calibration_manifest, a.holdout_manifest, a.root,
                  IQClassifier(a.model), a.max_windows,
-                 a.max_unknown_far, a.min_known_coverage)
+                 a.max_unknown_far, a.min_known_coverage, a.min_pipeline_coverage)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print("Experimental IQ gate:", result["decision"], result["selected_threshold"])
