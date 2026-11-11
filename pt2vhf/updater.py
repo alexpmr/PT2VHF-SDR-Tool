@@ -1,6 +1,6 @@
 """Atualização (OTA) no padrão dos programas PT2VHF (como o Sat Tool).
 
-- manifesto e pacotes somente de https://www.pt2vhf.com (sem redirecionamentos);
+- manifesto no site oficial, downloads por redirecionamento restrito à release PT2VHF;
 - verificação automática; download com tamanho e SHA-256 obrigatórios (falha fechada);
 - a instalação é feita por um auxiliar externo (scripts/apply-update.ps1) depois que o programa fecha:
   instalador em modo silencioso ou troca do EXE portátil (com cópia de segurança), e o programa reabre;
@@ -49,6 +49,7 @@ class UpdateInfo:
     page: str
     file: dict | None
     allow_test_host: bool = False
+    unavailable_reason: str = ""
 
 
 def parse_version(v: str) -> tuple[int, ...]:
@@ -139,18 +140,22 @@ def select_update(manifest: dict, kind: str, current: str = __version__,
     if not VERSION_RE.fullmatch(version) or not is_newer(version, current):
         return None
     chosen = None
+    reason = f"O site não oferece pacote de atualização para '{kind}' nesta versão."
     for f in manifest.get("files") or []:
         if not isinstance(f, dict) or f.get("kind") != kind:
             continue
         name, url, size, sha = f.get("name", ""), f.get("url", ""), f.get("size"), str(f.get("sha256", ""))
         if not (allow_test_host or is_official(url, name)):
+            reason = "URL do pacote incompatível com a política segura de atualização."
             continue
         if type(size) is not int or not 0 < size <= MAX_PACKAGE_BYTES or not HASH_RE.fullmatch(sha):
+            reason = "Pacote anunciado sem tamanho e SHA-256 válidos."
             continue
         chosen = f
+        reason = ""
         break
     return UpdateInfo(version, str(manifest.get("date") or ""), str(manifest.get("notes") or ""),
-                      str(manifest.get("page") or WEB_URL), chosen, allow_test_host)
+                      str(manifest.get("page") or WEB_URL), chosen, allow_test_host, reason)
 
 
 def check(kind: str | None = None, base_url: str = UPDATE_URL, timeout: float = 20.0,
