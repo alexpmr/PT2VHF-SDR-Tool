@@ -32,7 +32,11 @@ class IQClassificationWorker:
         # Bound pathological ratios before enqueueing expensive FIR work.
         if max(ratio.numerator, ratio.denominator) > 4096:
             return False
-        chunk = np.asarray(iq, np.complex64).reshape(-1)
+        # A malformed buffer must not raise into the SDR receive callback.
+        try:
+            chunk = np.asarray(iq, np.complex64).reshape(-1)
+        except (TypeError, ValueError, OverflowError):
+            return False
         if (chunk.size * ratio.numerator + ratio.denominator - 1) // ratio.denominator < 2048:
             return False
         item = (chunk.copy(), frequency_hz, time.time(),
@@ -43,7 +47,11 @@ class IQClassificationWorker:
             try:
                 self._queue.get_nowait()
                 self.dropped += 1
-                self._queue.put_nowait(item)
+                try:
+                    self._queue.put_nowait(item)
+                except queue.Full:
+                    # Another producer may have filled the slot after get_nowait.
+                    return False
             except queue.Empty:
                 return False
         return True
@@ -52,6 +60,8 @@ class IQClassificationWorker:
         try:
             classifier = IQClassifier(self.model_path, self.min_confidence)
         except Exception as exc:
+            # Do not keep accepting IQ when the inference thread cannot start.
+            self._stop.set()
             if self.on_error:
                 self.on_error(str(exc))
             return
