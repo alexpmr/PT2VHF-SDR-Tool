@@ -20,25 +20,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Bibliotecas de sistema (Qt offscreen)
+      - name: Diagnóstico das bibliotecas Qt já disponíveis no runner
         run: |
-          packages=(libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3)
-          missing=()
-          for pkg in "${packages[@]}"; do
-            dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -qx "install ok installed" || missing+=("$pkg")
-          done
-          if ((${#missing[@]})); then
-            echo "Bibliotecas Qt ausentes: ${missing[*]}"
-            # Ubuntu hosted runners can use an unreachable Azure HTTP mirror.
-            # Replace it with the official HTTPS Ubuntu archive when installing.
-            if [ -f /etc/apt/apt-mirrors.txt ]; then
-              sudo sed -i 's#http://azure.archive.ubuntu.com/ubuntu#https://archive.ubuntu.com/ubuntu#g' /etc/apt/apt-mirrors.txt
-            fi
-            sudo timeout 90s apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=12 -o Acquire::https::Timeout=12 update
-            sudo timeout 120s apt-get install -y --no-install-recommends "${missing[@]}"
-          else
-            echo "Bibliotecas Qt já instaladas no runner."
-          fi
+          echo "Sistema: $(lsb_release -ds)"
+          ldconfig -p | grep -E 'lib(EGL|GL|xkbcommon|fontconfig|dbus)' || true
+          echo "Testes Qt offscreen serão executados sem apt, indisponível no mirror do runner."
       - run: pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
       - name: Testes Linux / Qt offscreen (diagnóstico independente)
         run: python -X faulthandler scripts/run_tests.py
