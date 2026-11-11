@@ -121,6 +121,11 @@ def test_windows_isolation_runs_only_after_failure_on_experimental_branch():
     assert "selection: iq_" in diagnostic
     assert "ci_windows_pytest.py -k" in diagnostic
     assert "partition: baseline-normal-exit" in diagnostic
+    assert "partition: full-normal-exit" in diagnostic
+    assert "selection: all" in diagnostic
+    assert "matrix.partition != 'full-normal-exit'" in diagnostic
+    assert "if: matrix.partition == 'full-normal-exit'" in diagnostic
+    assert "run: python scripts/ci_windows_pytest.py\n" in diagnostic
     assert "partition: baseline-hard-exit" in diagnostic
     assert "partition: iq-hard-exit" in diagnostic
     assert "PT2VHF_TEST_EXIT_MODE: ${{ matrix.exit_mode }}" in diagnostic
