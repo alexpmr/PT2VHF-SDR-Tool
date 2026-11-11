@@ -52,8 +52,8 @@ jobs:
         run: python -X faulthandler scripts/run_tests.py
 
   windows-exe:
-    # Manual, ou commit [build-windows] exclusivamente na main; IA experimental nunca publica release.
-    if: (github.event_name == 'workflow_dispatch' && inputs.build_windows) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build-windows]'))
+    # Manual e commit [build-windows] SOMENTE na main; branch experimental nao gera instaladores.
+    if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.build_windows) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build-windows]')))
     permissions:
       contents: write
     runs-on: windows-2022  # validação obrigatória para distribuição Windows, independente do Qt Linux
