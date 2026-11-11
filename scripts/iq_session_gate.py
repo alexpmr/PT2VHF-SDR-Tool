@@ -27,7 +27,7 @@ def digest(path):
 
 
 def sampled_iq_window_hashes(path: Path, edge_windows: int = 16) -> set[bytes]:
-    """Sample first/middle/last nonzero IQ windows for partial leakage detection.
+    """Sample edge, quarter, middle and three-quarter IQ windows for leakage.
 
     Only exact byte-for-byte 2048-IQ-sample matches are caught. Edited,
     rechannelized or time-shifted reuse still needs human provenance checks.
@@ -43,10 +43,13 @@ def sampled_iq_window_hashes(path: Path, edge_windows: int = 16) -> set[bytes]:
         # Include the middle of long recordings: trimming or concatenating
         # a capture can reuse an interior window while changing both edges.
         # This remains a bounded exact-match audit, not a full leak proof.
-        middle_start = max(0, (count - edge_windows) // 2)
-        indices = sorted(set(range(min(edge_windows, count))) |
-                         set(range(middle_start, min(count, middle_start + edge_windows))) |
-                         set(range(max(0, count-edge_windows), count)))
+        # Cover quarter positions too: a copied excerpt at 25% or 75%
+        # otherwise escapes the previous first/middle/last-only audit.
+        # Each anchor scans at most edge_windows complete IQ windows.
+        span = max(0, count - edge_windows)
+        starts = (0, span // 4, span // 2, 3 * span // 4, span)
+        indices = sorted({index for start in starts
+                          for index in range(start, min(count, start + edge_windows))})
         for index in indices:
             wav.setpos(index * 2048)
             raw = wav.readframes(2048)
