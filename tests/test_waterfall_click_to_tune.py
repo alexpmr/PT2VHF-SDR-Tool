@@ -17,7 +17,10 @@ def _ui(qt_lifecycle):
     return w
 
 
-def _click(w, plot, hz, y=100):
+def _click(w, plot, hz, y=None):
+    # Spectrum uses negative dBFS; waterfall uses history-row indices.
+    if y is None:
+        y = -75 if plot is w.spec else 100
     view = plot.getViewBox()
     scene_point = view.mapViewToScene(QPointF(hz / 1e6, y))
     assert view.sceneBoundingRect().contains(scene_point)
@@ -94,7 +97,7 @@ def test_drag_passband_outside_acquired_iq_restores_vfo(qt_lifecycle):
         heard = []
         w.tuneRequested.connect(heard.append)
         w.region.setRegion((145.615, 145.627))  # same 12 kHz width, but beyond RF
-        w._region_changed()
+        QApplication.processEvents()
         assert heard == []
         lo, hi = w.region.getRegion()
         assert abs(lo - 145.494) < 0.00001
