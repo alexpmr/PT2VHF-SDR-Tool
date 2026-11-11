@@ -27,7 +27,7 @@ def digest(path):
 
 
 def sampled_iq_window_hashes(path: Path, edge_windows: int = 16) -> set[bytes]:
-    """Sample first/last nonzero IQ windows for partial data leakage detection.
+    """Sample first/middle/last nonzero IQ windows for partial leakage detection.
 
     Only exact byte-for-byte 2048-IQ-sample matches are caught. Edited,
     rechannelized or time-shifted reuse still needs human provenance checks.
@@ -40,7 +40,12 @@ def sampled_iq_window_hashes(path: Path, edge_windows: int = 16) -> set[bytes]:
                 wav.getcomptype()) != (2, 2, 48000, "NONE"):
             raise ValueError("Split audit requires stereo 48k PCM16 IQ WAV")
         count = wav.getnframes() // 2048
+        # Include the middle of long recordings: trimming or concatenating
+        # a capture can reuse an interior window while changing both edges.
+        # This remains a bounded exact-match audit, not a full leak proof.
+        middle_start = max(0, (count - edge_windows) // 2)
         indices = sorted(set(range(min(edge_windows, count))) |
+                         set(range(middle_start, min(count, middle_start + edge_windows))) |
                          set(range(max(0, count-edge_windows), count)))
         for index in indices:
             wav.setpos(index * 2048)
