@@ -150,7 +150,10 @@ def test_holdout_gate_requires_three_sessions_and_two_devices(tmp_path, monkeypa
     cal = manifest(tmp_path, "cal.json", "cal", 1200)
     hold = manifest(tmp_path, "hold.json", "hold", 1700)
 
-    def perfect_observations(rows, model, max_windows):
+    def perfect_observations(rows, model, max_windows, *, accounting=None):
+        if accounting is not None:
+            accounting.update({"minimum_session_pipeline_coverage": 1.0,
+                               "pipeline_coverage": 1.0})
         return [(label, label, .99, session) for _, label, session, _ in rows]
 
     monkeypatch.setattr(gate, "observations", perfect_observations)
@@ -178,3 +181,76 @@ def test_holdout_gate_requires_three_sessions_and_two_devices(tmp_path, monkeypa
     assert diverse["holdout_diversity_gate_passed"] is True
     assert diverse["distinct_holdout_devices"] == 2
     assert diverse["operationally_validated"] is False
+
+
+def test_observations_account_for_silent_and_dc_rejections(tmp_path):
+    """Synthetic-only coverage: preprocessing exclusions are not neural UNKNOWN."""
+    from pt2vhf.dsp.iq_classifier import Classification, CLASSES, IQClassifier
+    from scripts.iq_session_gate import observations
+    path = tmp_path / "mixed.wav"
+    t = np.arange(2048) / 48000
+    tone = (np.sin(2 * np.pi * 1250 * t) * 15000).astype("<i2")
+    frames = np.zeros((4 * 2048, 2), dtype="<i2")
+    frames[:2048, 0] = tone
+    frames[:2048, 1] = tone // 2
+    frames[2048:4096, 0] = 1500  # DC-only; nonzero, but not inferable
+    # Last two windows are silent and must not count as UNKNOWN.
+    with wave.open(str(path), "wb") as out:
+        out.setnchannels(2)
+        out.setsampwidth(2)
+        out.setframerate(48000)
+        out.writeframes(frames.tobytes())
+
+    class Guarded:
+        def predict(self, iq):
+            IQClassifier.features(iq)
+            return Classification("AM", .99,
+                                  {k: (1.0 if k == "AM" else 0.0) for k in CLASSES})
+
+    accounting = {}
+    rows = [(path, "AM", "private-session", "synthetic SDR")]
+    observed = observations(rows, Guarded(), 100, accounting=accounting)
+    assert len(observed) == 1
+    assert accounting["windows_selected"] == 4
+    assert accounting["windows_inferred"] == 1
+    assert accounting["windows_rejected_preprocessing"] == 1
+    assert accounting["windows_skipped_silence"] == 2
+    assert accounting["pipeline_coverage"] == .25
+    assert accounting["minimum_session_pipeline_coverage"] == .25
+    assert "private-session" not in json.dumps(accounting)
+
+
+def test_holdout_rejects_low_pipeline_coverage_even_with_perfect_predictions(
+        tmp_path, monkeypatch):
+    """Synthetic stub: perfect conditional scores cannot hide excluded windows."""
+    import scripts.iq_session_gate as gate
+    cal = manifest(tmp_path, "cal.json", "cal", 1200)
+    hold = manifest(tmp_path, "hold.json", "hold", 1700)
+    wav(tmp_path / "hold-2.wav", 2500)
+    doc = json.loads(hold.read_text())
+    doc["recordings"].append({
+        "path": "hold-2.wav", "mode": "AM", "session_id": "hold-2",
+        "device": "independent synthetic SDR", "frequency_hz": 145500000,
+    })
+    hold.write_text(json.dumps(doc))
+
+    calls = 0
+
+    def perfect_but_low_coverage(rows, model, max_windows, *, accounting=None):
+        nonlocal calls
+        calls += 1
+        if accounting is not None:
+            coverage = 1.0 if calls == 1 else .25
+            accounting.update({"minimum_session_pipeline_coverage": coverage,
+                               "pipeline_coverage": coverage})
+        return [(label, label, .99, session) for _, label, session, _ in rows]
+
+    monkeypatch.setattr(gate, "observations", perfect_but_low_coverage)
+    report = gate.run(cal, hold, tmp_path, object())
+    assert report["holdout_diversity_gate_passed"] is True
+    assert report["holdout_result"]["unknown_false_accept_rate"] == 0
+    assert report["decision"] == "HOLDOUT_INSUFFICIENT_PIPELINE_COVERAGE"
+    assert report["holdout_pipeline"]["minimum_session_pipeline_coverage"] == .25
+    assert report["operationally_validated"] is False
+    with pytest.raises(ValueError, match="minimum pipeline coverage"):
+        gate.run(cal, hold, tmp_path, object(), min_pipeline_coverage=float("nan"))
