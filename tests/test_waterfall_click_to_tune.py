@@ -245,3 +245,41 @@ def test_real_qt_double_click_reaches_waterfall_handler(qt_lifecycle):
         assert heard == [145_525_000]
     finally:
         w.close()
+
+
+def test_waterfall_repeated_tuning_and_centering_soak(qt_lifecycle):
+    """Exercise repeated IQ frames, VFO changes and view recentering under Qt.
+
+    This catches deterministic regressions, but cannot replace a real SDR
+    hardware soak test for native driver crashes.
+    """
+    w = _ui(qt_lifecycle)
+    try:
+        w.add_line(np.full(512, -91, np.float32), 145_500_000, 200_000)
+        w.spec.setXRange(145.43, 145.57, padding=0)
+        QApplication.processEvents()
+        tuned = []
+
+        def on_center(freq):
+            w.set_vfo(freq, -6000, 6000)
+            w.center_on_vfo()
+            tuned.append(freq)
+
+        w.centerTuneRequested.connect(on_center)
+        frequencies = (145_475_000, 145_487_500, 145_500_000,
+                       145_512_500, 145_525_000)
+        for k in range(120):
+            freq = frequencies[k % len(frequencies)]
+            w.add_line(np.full(512, -90 - k % 12, np.float32),
+                       145_500_000, 200_000)
+            _click(w, w.wf, freq, double=True)
+            if k % 8 == 0:
+                QApplication.processEvents()
+        QApplication.processEvents()
+        assert len(tuned) == 120
+        assert tuned[-1] == frequencies[-1]
+        center_range = w.spec.viewRange()[0]
+        assert abs((center_range[0] + center_range[1]) / 2
+                   - frequencies[-1] / 1e6) < 1e-5
+    finally:
+        w.close()
