@@ -1,5 +1,12 @@
 # Backlog — PT2VHF SDR Tool
 
+## Release estável v0.13.2 — progresso no waterfall (11/11/2026)
+- **Branch candidata:** `release/stable-v0.13.2`, derivada da v0.13.1 na `main`; **não mesclar o PR neural experimental #2**.
+- **Waterfall, clique e arraste:** reforçado o filtro de eventos de mouse para permitir sintonia somente na faixa IQ adquirida. Cliques no espaço vazio por pan/zoom não mudam o VFO; passband arrastado para fora da faixa é restaurado. Implementado em código, **aguardando testes CI Linux/Windows e conferência em SDR real**.
+- **Regressão:** novo `tests/test_waterfall_click_to_tune.py` cobre mapeamento cena→frequência, arredondamento, passband e limites de sinal.
+- **OTA da v0.13.1:** correção do download e testes Windows já fazem parte da main; não confundir com site público sincronizado. Issue Hostinger/GitHub→site: https://github.com/alexpmr/PT2VHF-Site/issues/18.
+- **Para release:** conferir PR/CI (inclusive job Windows verdadeiro), gerar assets com SHA-256 e só declarar publicação após validar atualização do site, `updates.json`, `update.php` e links. IA IQ/ONNX segue fora do produto estável.
+
 Itens registrados pelo mantenedor. Implementar somente com solicitação de versão; distinguir código, testes, homologação e publicação.
 
 ## Handoff para Claude Code — 09/11/2026 (revisão de backlog e testes)
