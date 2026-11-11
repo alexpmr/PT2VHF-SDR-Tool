@@ -3,7 +3,8 @@
 Inspirado no KiwiSDR/SDR#/SDR++:
   - clique: sintoniza (arredonda ao passo)    - arrastar o passband: sintoniza
   - arrastar bordas do passband: largura       - roda do mouse: zoom; arrastar com botão direito/meio: pan
-  - duplo clique: zoom total                   - marcadores de memórias e plano de bandas
+  - duplo clique no waterfall: sintoniza e centraliza mantendo zoom
+  - duplo clique no espectro: zoom total        - marcadores de memórias e plano de bandas
 """
 from __future__ import annotations
 
@@ -42,6 +43,7 @@ class MHzAxis(pg.AxisItem):
 
 class SpectrumWaterfall(QWidget):
     tuneRequested = Signal(float)
+    centerTuneRequested = Signal(float)  # duplo clique no waterfall: VFO + centro visual
     passbandChanged = Signal(float, float)  # low, high relativos ao VFO (Hz)
     panRequested = Signal(float)            # arrastou para fora da faixa recebida: novo centro (Hz)
 
@@ -309,17 +311,23 @@ class SpectrumWaterfall(QWidget):
             vb = plot.getViewBox()
             if not vb.sceneBoundingRect().contains(ev.scenePos()):
                 continue
-            if ev.double():
+            if ev.double() and plot is self.spec:
+                # Preserve spectrum double-click gesture: full-width zoom.
                 self.reset_zoom()
                 return
             pt = vb.mapSceneToView(ev.scenePos())
-            f = pt.x() * 1e6
+            target = self._pick_frequency(pt.x())
+            if ev.double():
+                # Waterfall double-click: selection and centering are atomic at
+                # the MainWindow, after VFO/capability checks have passed.
+                if target is not None:
+                    self.centerTuneRequested.emit(target)
+                return
             lo, hi = self.region.getRegion()
             # Spectrum passband is reserved for moving/resizing its handles.
             # In the waterfall itself, any active IQ pixel is clickable.
-            if plot is self.spec and lo * 1e6 <= f <= hi * 1e6:
+            if plot is self.spec and lo * 1e6 <= pt.x() * 1e6 <= hi * 1e6:
                 return
-            target = self._pick_frequency(pt.x())
             if target is not None:
                 self.tuneRequested.emit(target)
             return

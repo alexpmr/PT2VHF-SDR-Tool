@@ -6,6 +6,9 @@
 - O fluxo válido continua baixando dentro do aplicativo e verifica tamanho e SHA-256 antes de executar o helper; nenhuma restrição de integridade foi reduzida.
 - Testes Qt de regressão para a detecção com pacote ausente e prevenção de abertura de navegador.
 - Nota de migração: clientes v0.13.0 precisam de atualização manual única para v0.13.1 ou superior, pois a validação de URL incorreta já está compilada nos binários antigos.
+### Waterfall
+- Duplo clique na imagem do waterfall sintoniza o ponto RF selecionado e centraliza o VFO sem alterar o nível atual de zoom; o clique simples continua sintonizando e o duplo clique no espectro continua restaurando o zoom total.
+- Restrições de IQ disponível, capacidade do SDR e testes Qt de gesto nativo, pan e seleção inválida; QA cruzado Windows/Linux obrigatório.
 ### Status
 - Candidata aguardando conclusão do CI e teste OTA real entre versões Windows. IA IQ/ONNX continua fora da release.
 

@@ -1,5 +1,12 @@
 # Backlog — PT2VHF SDR Tool
 
+## P1 — duplo clique no waterfall: sintonizar e centralizar (11/11/2026)
+- **Solicitação:** dois cliques sobre um ponto válido do waterfall devem **sintonizar o VFO naquela frequência e centralizar essa frequência na área visível**, mantendo o nível atual de zoom. Isso deve atualizar LCD, passband e marcadores sem mudar o modo nem alterar indevidamente a frequência central RF do dispositivo.
+- **Comportamento anterior:** `SpectrumWaterfall._clicked()` executava `reset_zoom()` para todo duplo clique, sem emitir sintonia. Por isso o comando não sintonizava nem centralizava a frequência selecionada.
+- **Implementado para revisão na branch `fix/waterfall-double-click-center`:** evento `centerTuneRequested` envia a frequência calculada da posição do cursor, ajustada ao passo do canal; `MainWindow.select_transmission_centered()` primeiro valida/sintoniza, depois chama `center_on_vfo()`, preservando zoom. O duplo clique no **espectro superior** continua restaurando o zoom total, comportamento preexistente. Cliques simples e arraste do passband continuam inalterados.
+- **Restrições:** não executar se o ponto estiver fora do IQ efetivamente recebido, nem centralizar se a sintonia for rejeitada pela fonte SDR. Sem IQ adquirido, não alterar VFO.
+- **Aceite:** testes Qt em monitor pequeno, com pan/zoom e RF válido/inválido, incluindo recepção real; conferir que VFO/LCD e visualização estão sincronizados. **Estado:** código e testes enviados ao PR experimental de UI; aguardar CI e homologação visual/SDR antes de liberar como concluído.
+
 ## P0 — OTA redireciona ao navegador em clientes antigos (11/11/2026)
 - **Falha reproduzida por inspeção do código da v0.13.0:** `is_official()` somente aceita o caminho direto `/downloads/sdr-tool/<arquivo>` sem query; o servidor `update.php` entrega `/download.php?product=sdr&file=<arquivo>`, o que deixa `UpdateInfo.file=None`. O método `UpdateController._on_checked()` então chama `QDesktopServices.openUrl()` em vez de baixar/instalar. É uma incompatibilidade de protocolo, não uma falha do usuário.
 - **Correção de compatibilidade já lançada no cliente v0.13.1:** reconhece `download.php` e permite apenas redirecionamentos seguros para o asset exato da release GitHub, com SHA-256 e tamanho obrigatórios. O servidor ao vivo oferece tipos instalador e portátil para v0.13.1.

@@ -17,14 +17,14 @@ def _ui(qt_lifecycle):
     return w
 
 
-def _click(w, plot, hz, y=None):
+def _click(w, plot, hz, y=None, double=False):
     # Spectrum uses negative dBFS; waterfall uses history-row indices.
     if y is None:
         y = -75 if plot is w.spec else 100
     view = plot.getViewBox()
     scene_point = view.mapViewToScene(QPointF(hz / 1e6, y))
     assert view.sceneBoundingRect().contains(scene_point)
-    event = SimpleNamespace(button=lambda: Qt.LeftButton, double=lambda: False,
+    event = SimpleNamespace(button=lambda: Qt.LeftButton, double=lambda: double,
                             scenePos=lambda: scene_point)
     w._clicked(event)
 
@@ -102,5 +102,146 @@ def test_drag_passband_outside_acquired_iq_restores_vfo(qt_lifecycle):
         lo, hi = w.region.getRegion()
         assert abs(lo - 145.494) < 0.00001
         assert abs(hi - 145.506) < 0.00001
+    finally:
+        w.close()
+
+
+def test_double_click_waterfall_tunes_and_centers_without_losing_zoom(qt_lifecycle):
+    """The MainWindow receives RF frequency, updates VFO/LCD and then centers."""
+    from pt2vhf.ui.main_window import MainWindow
+
+    w = _ui(qt_lifecycle)
+    try:
+        w.add_line(np.full(512, -90, np.float32), 145_500_000, 200_000)
+        w.spec.setXRange(145.46, 145.54, padding=0)
+        QApplication.processEvents()
+        initial_range = w.spec.viewRange()[0]
+        initial_span = initial_range[1] - initial_range[0]
+
+        class ReceiverHarness:
+            def __init__(self):
+                self.wf = w
+                self.calls = []
+                self.lcd_freq = None
+
+            def tune(self, freq):
+                self.calls.append(("tune", freq))
+                self.lcd_freq = freq
+                self.wf.set_vfo(freq, -6000, 6000)
+
+            def _after_select(self):
+                self.calls.append(("auto", None))
+
+        harness = ReceiverHarness()
+        single_clicks = []
+        w.tuneRequested.connect(single_clicks.append)
+        w.centerTuneRequested.connect(
+            lambda freq: MainWindow.select_transmission_centered(harness, freq))
+        _click(w, w.wf, 145_525_100, double=True)
+
+        assert harness.calls == [("tune", 145_525_000), ("auto", None)]
+        assert harness.lcd_freq == 145_525_000
+        assert w.vfo == 145_525_000
+        assert single_clicks == []  # No duplicate "simple click" from double-click signal.
+        centered = w.spec.viewRange()[0]
+        assert abs((centered[0] + centered[1]) / 2 - 145.525) < 1e-5
+        assert abs((centered[1] - centered[0]) - initial_span) < 1e-5
+        assert abs(w.wf.getViewBox().viewRange()[0][0] - centered[0]) < 1e-5
+    finally:
+        w.close()
+
+
+def test_double_click_outside_acquired_iq_does_nothing(qt_lifecycle):
+    w = _ui(qt_lifecycle)
+    try:
+        w.add_line(np.full(512, -90, np.float32), 145_500_000, 200_000)
+        w.spec.setXRange(145.2, 145.8, padding=0)
+        QApplication.processEvents()
+        before = w.spec.viewRange()[0]
+        requested, centered = [], []
+        w.tuneRequested.connect(requested.append)
+        w.centerTuneRequested.connect(centered.append)
+
+        _click(w, w.wf, 145_350_000, double=True)
+        _click(w, w.wf, 145_650_000, double=True)
+        assert requested == centered == []
+        assert w.spec.viewRange()[0] == before
+        assert w.vfo == 145_500_000
+    finally:
+        w.close()
+
+
+def test_double_click_over_spectrum_keeps_zoom_reset_behavior(qt_lifecycle):
+    w = _ui(qt_lifecycle)
+    try:
+        w.add_line(np.full(512, -90, np.float32), 145_500_000, 200_000)
+        w.spec.setXRange(145.46, 145.54, padding=0)
+        QApplication.processEvents()
+        centered, single = [], []
+        w.centerTuneRequested.connect(centered.append)
+        w.tuneRequested.connect(single.append)
+
+        _click(w, w.spec, 145_520_000, double=True)
+        assert centered == single == []
+        view = w.spec.viewRange()[0]
+        assert abs(view[0] - 145.4) < 1e-5
+        assert abs(view[1] - 145.6) < 1e-5
+    finally:
+        w.close()
+
+
+def test_double_click_never_recenters_after_tune_rejection(qt_lifecycle):
+    from pt2vhf.ui.main_window import MainWindow
+
+    w = _ui(qt_lifecycle)
+    try:
+        w.add_line(np.full(512, -90, np.float32), 145_500_000, 200_000)
+        w.spec.setXRange(145.46, 145.54, padding=0)
+        QApplication.processEvents()
+        before = list(w.spec.viewRange()[0])
+
+        class RejectingReceiver:
+            wf = w
+            def __init__(self):
+                self.calls = []
+            def tune(self, freq):
+                self.calls.append(("rejected", freq))
+                return False
+            def _after_select(self):
+                self.calls.append(("unexpected", None))
+
+        receiver = RejectingReceiver()
+        w.centerTuneRequested.connect(
+            lambda freq: MainWindow.select_transmission_centered(receiver, freq))
+        _click(w, w.wf, 145_525_000, double=True)
+        assert receiver.calls == [("rejected", 145_525_000)]
+        assert list(w.spec.viewRange()[0]) == before
+        assert w.vfo == 145_500_000
+    finally:
+        w.close()
+
+
+def test_real_qt_double_click_reaches_waterfall_handler(qt_lifecycle):
+    """Send an actual Qt double-click to the graphics viewport, not a fake event."""
+    from PySide6.QtTest import QTest
+
+    w = _ui(qt_lifecycle)
+    try:
+        w.add_line(np.full(512, -90, np.float32), 145_500_000, 200_000)
+        w.spec.setXRange(145.46, 145.54, padding=0)
+        QApplication.processEvents()
+        heard = []
+        w.centerTuneRequested.connect(heard.append)
+        point = w.wf.getViewBox().mapViewToScene(QPointF(145.525, 100))
+        pixel = w.glw.mapFromScene(point)
+        assert w.glw.viewport().rect().contains(pixel)
+        # QTest.mouseDClick emits MouseButtonDblClick but does not necessarily
+        # finish the gesture with MouseButtonRelease. Pyqtgraph's scene emits
+        # sigMouseClicked only once its click sequence has been released.
+        QTest.mouseClick(w.glw.viewport(), Qt.LeftButton, pos=pixel)
+        QTest.mouseDClick(w.glw.viewport(), Qt.LeftButton, pos=pixel)
+        QTest.mouseRelease(w.glw.viewport(), Qt.LeftButton, pos=pixel)
+        QApplication.processEvents()
+        assert heard == [145_525_000]
     finally:
         w.close()
