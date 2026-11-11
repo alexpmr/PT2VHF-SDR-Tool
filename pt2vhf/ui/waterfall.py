@@ -282,23 +282,47 @@ class SpectrumWaterfall(QWidget):
     def _snap(self, hz: float) -> float:
         return round(hz / self.step) * self.step if self.step > 0 else hz
 
+    def _pick_frequency(self, x_mhz: float) -> float | None:
+        """Map an on-screen frequency to RF only within an acquired IQ span.
+
+        Never tune to an empty, panned-out region: pyqtgraph can display a
+        much wider viewport than the currently acquired receiver bandwidth.
+        Keep rounding to the channel step but reject a rounded frequency
+        outside the available IQ rather than silently clipping it.
+        """
+        if (self._buf is None or not np.isfinite(self.center)
+                or not np.isfinite(self.fs) or self.fs <= 0
+                or not np.isfinite(x_mhz)):
+            return None
+        hz = float(x_mhz) * 1e6
+        left = self.center - self.fs / 2
+        right = self.center + self.fs / 2
+        if hz < left or hz > right:
+            return None
+        tuned = self._snap(hz)
+        return float(tuned) if left <= tuned <= right else None
+
     def _clicked(self, ev):
         if ev.button() != Qt.LeftButton:
             return
-        if ev.double():
-            self.reset_zoom()
-            return
         for plot in (self.spec, self.wf):
             vb = plot.getViewBox()
-            if vb.sceneBoundingRect().contains(ev.scenePos()):
-                # clique dentro do passband é tratado pelo arraste da região
-                pt = vb.mapSceneToView(ev.scenePos())
-                f = pt.x() * 1e6
-                lo, hi = self.region.getRegion()
-                if plot is self.spec and lo * 1e6 <= f <= hi * 1e6:
-                    return
-                self.tuneRequested.emit(self._snap(f))
+            if not vb.sceneBoundingRect().contains(ev.scenePos()):
+                continue
+            if ev.double():
+                self.reset_zoom()
                 return
+            pt = vb.mapSceneToView(ev.scenePos())
+            f = pt.x() * 1e6
+            lo, hi = self.region.getRegion()
+            # Spectrum passband is reserved for moving/resizing its handles.
+            # In the waterfall itself, any active IQ pixel is clickable.
+            if plot is self.spec and lo * 1e6 <= f <= hi * 1e6:
+                return
+            target = self._pick_frequency(pt.x())
+            if target is not None:
+                self.tuneRequested.emit(target)
+            return
 
     def _pan_check(self):
         """Depois de arrastar: se a área visível saiu da faixa recebida, pede novo centro."""
@@ -318,7 +342,13 @@ class SpectrumWaterfall(QWidget):
         width_old = self.high - self.low
         if abs((b - a) - width_old) < 1.0:  # arrastou o passband inteiro -> sintonia
             delta = new_low - self.low
-            self.tuneRequested.emit(self._snap(self.vfo + delta))
+            target = self._pick_frequency((self.vfo + delta) / 1e6)
+            if target is not None:
+                self.tuneRequested.emit(target)
+            else:
+                # A drag beyond the IQ span must not leave the passband
+                # visually out of sync with the unchanged receiver VFO.
+                self.set_vfo(self.vfo, self.low, self.high)
         else:
             self.passbandChanged.emit(new_low, new_high)
 

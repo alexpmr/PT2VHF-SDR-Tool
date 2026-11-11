@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.13.2] — candidata de manutenção, sem publicação confirmada
+### Implementado no código (branch release/stable-v0.13.2)
+- Sintonia no waterfall/espectro respeita os limites da largura IQ realmente adquirida, mesmo com zoom ou pan fora da faixa; mantém arredondamento por passo e associação com o VFO.
+- Arrastar o passband para uma região não adquirida deixa o VFO original inalterado e restaura o marcador.
+- Duplo clique fora das áreas de espectro não interfere no zoom.
+### Testes e distribuição
+- Novos testes Qt sintéticos de cena→RF, limites de IQ, ausência de sinal, passband e limites de arredondamento. **Aprovação do CI Windows e publicação ainda pendentes.**
+- IA neural IQ/ONNX continua isolada no PR #2; RS41, S-meter absoluto e qualidade RF real não foram homologados.
+- A sincronização do site oficial com a release GitHub foi registrada como bloqueio externo na issue PT2VHF-Site #18.
+
 ## [0.13.0] — 2026-11-09
 ### Implementado no código
 - Ajuste manual do tamanho do LCD em Configurações → Display (50–150%), mantendo proporção de frequência, S-meter, indicadores e teclas; preferência persistida no JSON do usuário.
