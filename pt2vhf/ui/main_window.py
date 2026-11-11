@@ -414,7 +414,7 @@ class MainWindow(QMainWindow):
             b.clicked.connect(lambda _=False, s=span: self.wf.reset_zoom() if s is None else self.wf.zoom_to_vfo(s))
             row.addWidget(b)
         self.center_btn = QPushButton("Centralizar")
-        self.center_btn.setToolTip("Centraliza o waterfall no VFO sem alterar o zoom (Ctrl+E)")
+        self.center_btn.setToolTip("Centraliza no VFO sem alterar o zoom (Ctrl+E). Duplo clique no waterfall sintoniza e centraliza.")
         self.center_btn.clicked.connect(self._center_waterfall)
         row.addWidget(self.center_btn)
         self.keep_center = QCheckBox("Seguir VFO")
@@ -546,6 +546,7 @@ class MainWindow(QMainWindow):
         lcd.freqChanged.connect(self.tune)
         lcd.stepRequested.connect(lambda n: self.tune(self.engine.vfo + n * self.step, snap=True))
         wf.tuneRequested.connect(self.select_transmission)
+        wf.centerTuneRequested.connect(self.select_transmission_centered)
         lcd.modeClicked.connect(self.choose_mode)
         lcd.neighborRequested.connect(self.jump_neighbor)
         lcd.autoTuneToggled.connect(lambda: self._set_auto_tune(not self.auto_tune))
@@ -1630,6 +1631,15 @@ class MainWindow(QMainWindow):
         """Clique no waterfall/espectro: sintoniza e, se ligado, ajusta exatamente na transmissão."""
         if self.tune(freq) is not False:
             self._after_select()
+
+    def select_transmission_centered(self, freq: float):
+        """Duplo clique no waterfall: sintoniza, depois centraliza sem perder o zoom."""
+        if self.tune(freq) is False:
+            return
+        # The tune() call updates VFO, LCD and passband before recentering.
+        # Do not move the display if the SDR rejected the frequency.
+        self.wf.center_on_vfo()
+        self._after_select()
 
     def _after_select(self, from_scanner: bool = False):
         if not self.engine.running or not (self.auto_mode or self.auto_tune):

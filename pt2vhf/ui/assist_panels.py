@@ -5,8 +5,7 @@ from __future__ import annotations
 import threading
 import time
 
-from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QGridLayout, QGroupBox,
                                QHBoxLayout, QLabel, QMessageBox, QProgressDialog, QPushButton,
                                QSlider, QVBoxLayout, QWidget)
@@ -255,13 +254,31 @@ class UpdateController(QObject):
                 QMessageBox.information(self.win, "Atualizações",
                                         f"Você já está na versão mais recente ({__version__}).")
             return
-        self.btn.setText(f"Nova versão {info.version} · atualizar")
-        if self.kind == "source" or info.file is None:
+        if self.kind == "source":
+            self.btn.setText(f"Versão {info.version} disponível · atualização manual")
+            self.btn.setToolTip("O aplicativo iniciado pelo código-fonte não instala EXE automaticamente.")
             if manual:
-                QMessageBox.information(self.win, "Atualizações",
-                                        f"A versão {info.version} está disponível em {info.page}.")
-                QDesktopServices.openUrl(QUrl(info.page))
+                QMessageBox.information(
+                    self.win, "Atualização pelo código-fonte",
+                    f"A versão {info.version} está disponível, mas esta execução usa código-fonte. "
+                    "Atualize o projeto pelo seu gerenciador de versões; não há EXE para substituir.")
             return
+        if info.file is None:
+            # IMPORTANT: never silently launch the browser as an OTA substitute.
+            # This is exactly how older releases with a mismatched site manifest
+            # appeared to 'update' while performing no download at all.
+            reason = info.unavailable_reason or "Nenhum pacote compatível foi selecionado."
+            message = (f"A versão {info.version} foi detectada, mas o instalador OTA "
+                       f"não pôde ser selecionado.\n\nMotivo: {reason}\n\n"
+                       "O aplicativo atual não será fechado nem modificado. "
+                       "Para uma versão antiga incompatível, faça uma atualização manual única "
+                       "pelo site oficial e tente o OTA nas versões seguintes.")
+            self.btn.setText(f"Versão {info.version} · OTA indisponível")
+            self.btn.setToolTip(reason)
+            if manual:
+                QMessageBox.warning(self.win, "Atualização automática indisponível", message)
+            return
+        self.btn.setText(f"Nova versão {info.version} · atualizar")
         if manual:
             self.start(silent=False)
         elif self._cfg().get("auto_update", True):

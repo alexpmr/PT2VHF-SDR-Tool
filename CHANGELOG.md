@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.3] — candidata, não publicada
+### Manutenção OTA
+- Quando o manifesto anuncia versão nova, mas o pacote é rejeitado, o aplicativo não abre o navegador automaticamente e explica o problema (URL, tipo, tamanho ou SHA-256).
+- O fluxo válido continua baixando dentro do aplicativo e verifica tamanho e SHA-256 antes de executar o helper; nenhuma restrição de integridade foi reduzida.
+- Testes Qt de regressão para a detecção com pacote ausente e prevenção de abertura de navegador.
+- Nota de migração: clientes v0.13.0 precisam de atualização manual única para v0.13.1 ou superior, pois a validação de URL incorreta já está compilada nos binários antigos.
+### Waterfall
+- Duplo clique na imagem do waterfall sintoniza o ponto RF selecionado e centraliza o VFO sem alterar o nível atual de zoom; o clique simples continua sintonizando e o duplo clique no espectro continua restaurando o zoom total.
+- Restrições de IQ disponível, capacidade do SDR e testes Qt de gesto nativo, pan e seleção inválida; QA cruzado Windows/Linux obrigatório.
+### Status
+- Candidata aguardando conclusão do CI e teste OTA real entre versões Windows. IA IQ/ONNX continua fora da release.
+
 ## [0.13.2] — candidata de manutenção, sem publicação confirmada
 ### Implementado no código (branch release/stable-v0.13.2)
 - Sintonia no waterfall/espectro respeita os limites da largura IQ realmente adquirida, mesmo com zoom ou pan fora da faixa; mantém arredondamento por passo e associação com o VFO.
