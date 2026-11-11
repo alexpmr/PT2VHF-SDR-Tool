@@ -53,7 +53,7 @@ jobs:
 
   windows-crash-isolation:
     # Diagnostic only: if the complete Windows suite fails, run independent
-    # IQ and non-IQ subsets to distinguish local teardown from cross-test effects.
+    # IQ/non-IQ and hard/normal exit modes distinguish test scope from Qt teardown.
     # Never generates installers or publishes artifacts.
     needs: windows-tests
     if: ${{ always() && needs.windows-tests.result == 'failure' && github.ref == 'refs/heads/feature/iq-signal-classifier' }}
@@ -65,10 +65,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - partition: iq
+          - partition: iq-hard-exit
             selection: iq_
-          - partition: baseline
+            exit_mode: hard
+          - partition: baseline-hard-exit
             selection: "not iq_"
+            exit_mode: hard
+          - partition: baseline-normal-exit
+            selection: "not iq_"
+            exit_mode: normal
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
@@ -79,6 +84,8 @@ jobs:
       - name: Dependências de diagnóstico (sem instalador)
         run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
       - name: Isolar crash nativo Windows por subconjunto
+        env:
+          PT2VHF_TEST_EXIT_MODE: ${{ matrix.exit_mode }}
         run: python scripts/ci_windows_pytest.py -k "${{ matrix.selection }}"
 
   windows-exe:
