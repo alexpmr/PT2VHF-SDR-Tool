@@ -1,5 +1,4 @@
 """Waterfall click-to-tune regression tests; Qt offscreen and synthetic FFT only."""
-import math
 from types import SimpleNamespace
 
 import numpy as np
@@ -79,8 +78,10 @@ def test_frequency_snap_outside_acquired_edge_is_rejected(qt_lifecycle):
         assert w._pick_frequency(145.603) == 145_600_000
         # A step coarser than the sampled bandwidth must not push VFO outside IQ.
         w.step = 30_000
+        w.center = 145_515_000
         w.fs = 20_000
-        assert w._pick_frequency(145.509) is None
-        assert w._pick_frequency(145.5) == 145_500_000
+        assert w._pick_frequency(145.516) is None
+        w.step = 1_000
+        assert w._pick_frequency(145.516) == 145_516_000
     finally:
         w.close()
