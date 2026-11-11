@@ -235,7 +235,12 @@ def test_real_qt_double_click_reaches_waterfall_handler(qt_lifecycle):
         point = w.wf.getViewBox().mapViewToScene(QPointF(145.525, 100))
         pixel = w.glw.mapFromScene(point)
         assert w.glw.viewport().rect().contains(pixel)
+        # QTest.mouseDClick emits MouseButtonDblClick but does not necessarily
+        # finish the gesture with MouseButtonRelease. Pyqtgraph's scene emits
+        # sigMouseClicked only once its click sequence has been released.
+        QTest.mouseClick(w.glw.viewport(), Qt.LeftButton, pos=pixel)
         QTest.mouseDClick(w.glw.viewport(), Qt.LeftButton, pos=pixel)
+        QTest.mouseRelease(w.glw.viewport(), Qt.LeftButton, pos=pixel)
         QApplication.processEvents()
         assert heard == [145_525_000]
     finally:
