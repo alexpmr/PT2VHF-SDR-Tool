@@ -1,5 +1,6 @@
 """Reproduce the first four optimizer steps of synthetic v4, not full training/RF."""
 import argparse
+import copy
 import hashlib
 import json
 import platform
@@ -85,6 +86,23 @@ def conv1d_float64_reference(inputs, layer, outputs):
         }
 
 
+def float64_first_optimizer_step(model, batch_x, batch_y):
+    """Isolated double-precision forward/backward/Adam control; no model mutation."""
+    replica = copy.deepcopy(model).double()
+    optimizer = torch.optim.Adam(replica.parameters(), lr=.003)
+    result = {"initial_parameters_sha256": sha_tensors(replica.parameters())}
+    optimizer.zero_grad()
+    logits = replica(batch_x.double())
+    result["forward_logits_sha256"] = sha_tensors([logits])
+    loss = nn.functional.cross_entropy(logits, batch_y)
+    result["loss_sha256"] = sha_tensors([loss])
+    loss.backward()
+    result["gradients_sha256"] = sha_tensors([weight.grad for weight in replica.parameters()])
+    optimizer.step()
+    result["updated_parameters_sha256"] = sha_tensors(replica.parameters())
+    return result
+
+
 def run_probe(steps=4):
     if not 1 <= steps <= 66:
         raise ValueError("steps must be between 1 and 66")
@@ -129,6 +147,8 @@ def run_probe(steps=4):
         batch_x, batch_y = x[indices], y[indices]
         item = {"step": i, "indices_sha256": sha_tensors([indices]),
                 "batch_sha256": sha_tensors([batch_x, batch_y])}
+        if i == 0:
+            item["float64_first_step"] = float64_first_optimizer_step(model, batch_x, batch_y)
         optimizer.zero_grad()
         # Forward through the same nn.Sequential, hashing each intermediate
         # tensor before any backward/Adam operation. No model semantics change.

@@ -6,7 +6,9 @@ import pytest
 torch = pytest.importorskip("torch")
 from torch import nn
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from diagnose_iq_cpu_step import conv1d_scalar_samples, conv1d_float64_reference
+from diagnose_iq_cpu_step import (
+    conv1d_scalar_samples, conv1d_float64_reference, float64_first_optimizer_step,
+)
 
 
 @pytest.mark.parametrize("padding,stride,dilation,bias", [
@@ -49,3 +51,21 @@ def test_full_float64_reference_rejects_grouped_convolution():
     x = torch.randn(1, 2, 16)
     with pytest.raises(ValueError, match="ungrouped"):
         conv1d_float64_reference(x, layer, layer(x))
+
+
+def test_double_first_step_repeats_without_mutating_original_weights():
+    torch.manual_seed(20261113)
+    from train_iq_synthetic_ci import Net
+    model = Net()
+    x = torch.randn(2, 2, 2048)
+    y = torch.tensor([0, 6])
+    original = [weight.detach().clone() for weight in model.parameters()]
+    first = float64_first_optimizer_step(model, x, y)
+    second = float64_first_optimizer_step(model, x, y)
+    assert first == second
+    assert set(first) == {
+        "initial_parameters_sha256", "forward_logits_sha256", "loss_sha256",
+        "gradients_sha256", "updated_parameters_sha256",
+    }
+    assert first["initial_parameters_sha256"] != first["updated_parameters_sha256"]
+    assert all(torch.equal(before, after) for before, after in zip(original, model.parameters()))

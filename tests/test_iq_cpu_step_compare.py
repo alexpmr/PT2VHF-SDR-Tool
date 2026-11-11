@@ -1,7 +1,7 @@
 """Synthetic fake-hash tests of CPU probe comparison; no RF data."""
 import copy
 import pytest
-from scripts.compare_iq_cpu_step import compare_reports
+from scripts.compare_iq_cpu_step import compare_reports, DOUBLE_STEP
 
 
 def probe(cpu="AMD"):
@@ -16,6 +16,7 @@ def probe(cpu="AMD"):
                        "sample_count": 2, "observed": [3.0, 4.0],
                        "reference": [3.0, 4.0],
                        "max_abs_error": 0.0, "mean_abs_error": 0.0},
+                   "float64_first_step": {key: "a" * 64 for key in DOUBLE_STEP},
                    "second_conv_float64_reference": {
                        "reference_sha256": "a" * 64,
                        "max_abs_error": 0.00001,
@@ -130,4 +131,33 @@ def test_float64_reference_mismatch_and_nonfinite_error_fail_closed():
     assert result["second_conv_float64_comparison"]["reference_exact_match"] is False
     b["steps"][0]["second_conv_float64_reference"]["max_abs_error"] = float("nan")
     with pytest.raises(ValueError, match="float64 error"):
+        compare_reports(a, b)
+
+
+def test_float64_first_step_matches_despite_float32_layer_divergence():
+    a, b = probe(), probe("Intel")
+    b["steps"][0]["layer_forward_sha256"]["01_ReLU"] = "different"
+    result = compare_reports(a, b)
+    assert result["conclusion"] == "NUMERICAL_DIVERGENCE"
+    assert result["float64_first_step_exact_match"] is True
+    assert result["first_divergent_float64_stage"] is None
+
+
+def test_float64_first_step_divergence_is_separately_reported():
+    a, b = probe(), probe("Intel")
+    b["steps"][0]["float64_first_step"]["gradients_sha256"] = "b" * 64
+    result = compare_reports(a, b)
+    assert result["first_divergent_stage"] is None
+    assert result["first_divergent_float64_stage"] == "gradients_sha256"
+    assert result["float64_first_step_exact_match"] is False
+
+
+def test_float64_first_step_missing_or_invalid_hash_fails_closed():
+    a, b = probe(), probe("Intel")
+    del b["steps"][0]["float64_first_step"]["loss_sha256"]
+    with pytest.raises(ValueError, match="stage schema"):
+        compare_reports(a, b)
+    b = probe("Intel")
+    b["steps"][0]["float64_first_step"]["loss_sha256"] = "not-a-sha256"
+    with pytest.raises(ValueError, match="SHA-256"):
         compare_reports(a, b)

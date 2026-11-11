@@ -8,6 +8,7 @@ on:
       - 'scripts/diagnose_iq_cpu_step.py'
       - 'scripts/compare_iq_cpu_step.py'
       - 'tests/test_iq_cpu_step_compare.py'
+      - 'tests/test_iq_cpu_conv_reference.py'
       - '.github/workflows/iq-cpu-step-diagnostic.yml'
 jobs:
   reference:

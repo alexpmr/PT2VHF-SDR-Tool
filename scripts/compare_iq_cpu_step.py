@@ -8,6 +8,8 @@ GLOBAL = ("input_sha256", "validation_input_sha256",
           "initial_parameters_sha256", "epoch0_permutation_sha256")
 STEP = ("indices_sha256", "batch_sha256", "forward_logits_sha256",
         "loss_sha256", "gradients_sha256", "updated_parameters_sha256")
+DOUBLE_STEP = ("initial_parameters_sha256", "forward_logits_sha256",
+               "loss_sha256", "gradients_sha256", "updated_parameters_sha256")
 ENV = ("python_version", "torch_version", "numpy_version", "policy",
        "train_samples", "unknown_examples_replaced", "requested_steps")
 
@@ -19,6 +21,7 @@ def compare_reports(a, b):
     first_conv_comparison = None
     second_conv_comparison = None
     second_conv_float64_comparison = None
+    float64_first_step_matches = None
     for i, (left, right) in enumerate(zip(a["steps"], b["steps"])):
         if left["step"] != i or right["step"] != i:
             raise ValueError("Probe step numbering differs")
@@ -87,6 +90,18 @@ def compare_reports(a, b):
                 "independent_runner_max_abs_error_vs_native": rf["max_abs_error"],
                 "scope": "Full second Conv1d first-minibatch float64 diagnostic; no training changes",
             }
+            dl, dr = left["float64_first_step"], right["float64_first_step"]
+            if set(dl) != set(DOUBLE_STEP) or set(dr) != set(DOUBLE_STEP):
+                raise ValueError("Invalid float64 first-step stage schema")
+            for item in (dl, dr):
+                for key in DOUBLE_STEP:
+                    value = item[key]
+                    if not isinstance(value, str) or len(value) != 64 or any(
+                            char not in "0123456789abcdef" for char in value):
+                        raise ValueError("Invalid float64 first-step SHA-256")
+            float64_first_step_matches = {
+                key: dl[key] == dr[key] for key in DOUBLE_STEP
+            }
     first = next((key for key, ok in matches.items() if not ok), None)
     env_ok = all(a[key] == b[key] for key in ENV)
     cross_cpu = (a["cpu_model"] != b["cpu_model"]
@@ -103,6 +118,10 @@ def compare_reports(a, b):
         "stage_exact_match": matches, "first_conv_scalar_comparison": first_conv_comparison,
         "second_conv_scalar_comparison": second_conv_comparison,
         "second_conv_float64_comparison": second_conv_float64_comparison,
+        "float64_first_step_exact_match": all(float64_first_step_matches.values()),
+        "float64_first_step_stage_exact_match": float64_first_step_matches,
+        "first_divergent_float64_stage": next(
+            (key for key, ok in float64_first_step_matches.items() if not ok), None),
         "conclusion": conclusion,
         "limitations": "Matching early steps cannot prove 22-epoch reproducibility",
     }

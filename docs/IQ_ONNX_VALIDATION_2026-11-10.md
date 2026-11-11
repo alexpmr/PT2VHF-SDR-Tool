@@ -66,3 +66,10 @@ Amostras **sintéticas** com SNR 0/6/12/20 dB, sinais conhecidos e negativos OOD
 - Amostra de negativos por família é pequena (80 por seed) e deriva do mesmo desenho de gerador. **Duas sementes não fornecem intervalo de confiança amplo nem garantia de generalização**. Repetir seeds sem novos perfis físicos não substitui avaliação RF.
 - Diferenças entre execuções do treinamento precisam de investigação de determinismo dos pesos, versionamento e ambiente; comparação de seeds é válida quando mantém fixos pesos e parâmetros. Não promover modelo baseado apenas no ranking deste teste.
 - **Próxima decisão:** antes de treinar outra versão, coletar IQ RF real rotulado por operador, particionado por sessões/dispositivos, e medir CW, AM, UNKNOWN e portadoras OOD com taxas e intervalos de confiança; relatório experimental deve guardar hashes dos pesos e origem do dataset.
+
+
+## Investigação complementar — primeiro passo integral em float64 (hipótese, ainda sem resultado)
+
+O diagnóstico `scripts/diagnose_iq_cpu_step.py` agora replica **somente o primeiro minibatch** em uma cópia independente da rede, convertida integralmente para `float64`. São registrados hashes SHA-256 de pesos iniciais, logits, perda, gradientes e pesos após **um** passo Adam. O comparador informa a primeira divergência desse caminho em campo próprio, **sem suprimir** a divergência original do treino `float32`.
+
+Hipótese testável: se a divergência entre CPUs estiver restrita à implementação `float32`, o passo integral `float64` poderá ser idêntico em processadores distintos. Mesmo que isso se confirme, **não demonstra** reprodutibilidade após 22 épocas, desempenho/latência aceitável ou homologação RF real. O caminho de treinamento e o modelo ONNX de produção não foram alterados. Aguardar CI e comparar somente runners efetivamente heterogêneos.
