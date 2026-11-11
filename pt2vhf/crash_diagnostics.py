@@ -51,6 +51,14 @@ def enable() -> Path | None:
                f"frozen={bool(getattr(sys, 'frozen', False))}")
         faulthandler.enable(file=handle, all_threads=True)
     except (OSError, RuntimeError, ValueError) as ex:
+        # faulthandler.enable() can fail after opening the file.  Never keep a
+        # stale handle that would make the next enable() look successful.
+        if _handle is not None:
+            try:
+                _handle.close()
+            except OSError:
+                pass
+        _handle, _log_path = None, None
         logging.getLogger(__name__).warning("Crash diagnostics unavailable: %s", ex)
         return None
 
@@ -84,3 +92,8 @@ def enable() -> Path | None:
 def mark_clean_exit() -> None:
     """A missing CLEAN-EXIT marker suggests an abrupt termination, not its cause."""
     _write("CLEAN-EXIT Qt event loop finished")
+
+
+def mark_update_exit() -> None:
+    """Distinguish an intentional OTA shutdown from an unexplained exit."""
+    _write("UPDATE-EXIT requested; external installer will restart the app")
