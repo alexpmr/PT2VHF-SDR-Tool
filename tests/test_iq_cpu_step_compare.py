@@ -150,6 +150,7 @@ def test_float64_first_step_divergence_is_separately_reported():
     assert result["first_divergent_stage"] is None
     assert result["first_divergent_float64_stage"] == "gradients_sha256"
     assert result["float64_first_step_exact_match"] is False
+    assert result["conclusion"] == "NUMERICAL_DIVERGENCE"
 
 
 def test_float64_first_step_missing_or_invalid_hash_fails_closed():

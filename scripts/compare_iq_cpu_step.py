@@ -103,11 +103,13 @@ def compare_reports(a, b):
                 key: dl[key] == dr[key] for key in DOUBLE_STEP
             }
     first = next((key for key, ok in matches.items() if not ok), None)
+    float64_first = next(
+        (key for key, ok in float64_first_step_matches.items() if not ok), None)
     env_ok = all(a[key] == b[key] for key in ENV)
     cross_cpu = (a["cpu_model"] != b["cpu_model"]
                  and "unknown" not in (a["cpu_model"], b["cpu_model"]))
     conclusion = ("ENVIRONMENT_MISMATCH" if not env_ok else
-                  "NUMERICAL_DIVERGENCE" if first else
+                  "NUMERICAL_DIVERGENCE" if first or float64_first else
                   "SAME_CPU_ONLY_INCONCLUSIVE" if not cross_cpu else
                   "FIRST_STEPS_MATCH_CROSS_CPU_NOT_FULL_REPLAY")
     return {
@@ -120,8 +122,7 @@ def compare_reports(a, b):
         "second_conv_float64_comparison": second_conv_float64_comparison,
         "float64_first_step_exact_match": all(float64_first_step_matches.values()),
         "float64_first_step_stage_exact_match": float64_first_step_matches,
-        "first_divergent_float64_stage": next(
-            (key for key, ok in float64_first_step_matches.items() if not ok), None),
+        "first_divergent_float64_stage": float64_first,
         "conclusion": conclusion,
         "limitations": "Matching early steps cannot prove 22-epoch reproducibility",
     }
@@ -138,7 +139,8 @@ def main():
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2), flush=True)
-    if not report["environment_exact_match"] or report["first_divergent_stage"]:
+    if (not report["environment_exact_match"] or report["first_divergent_stage"]
+            or report["first_divergent_float64_stage"]):
         raise SystemExit(2)
 
 
