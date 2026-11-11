@@ -73,3 +73,30 @@ def test_worker_queue_replacement_race_does_not_escape_feed(monkeypatch, tmp_pat
         release.set()
         worker.stop()
         worker._thread.join(timeout=2)
+
+
+def test_worker_fails_closed_when_error_handler_raises(monkeypatch, tmp_path):
+    from pt2vhf.dsp import iq_classifier_worker as module
+
+    class FailingClassifier:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def predict(self, samples):
+            raise ValueError("synthetic inference failure")
+
+    def broken_error_handler(message):
+        raise RuntimeError("synthetic callback failure")
+
+    monkeypatch.setattr(module, "IQClassifier", FailingClassifier)
+    worker = module.IQClassificationWorker(
+        tmp_path / "unused.onnx", lambda *_: None, broken_error_handler
+    )
+    try:
+        assert worker.feed(np.ones(4096, dtype=np.complex64))
+        worker._thread.join(timeout=3)
+        assert not worker._thread.is_alive()
+        assert worker._stop.is_set()
+        assert not worker.feed(np.ones(4096, dtype=np.complex64))
+    finally:
+        worker.stop()
