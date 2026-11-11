@@ -114,6 +114,7 @@ def test_second_conv_scalar_comparison_reports_drift():
 
 def test_float64_reference_exact_match_is_independent_of_float32_divergence():
     a, b = probe(), probe("Intel")
+    a["steps"][0]["layer_forward_sha256"]["02_Conv1d"] = "original"
     b["steps"][0]["layer_forward_sha256"]["02_Conv1d"] = "changed"
     result = compare_reports(a, b)
     assert result["first_divergent_stage"] == "steps[0].layers.02_Conv1d"
