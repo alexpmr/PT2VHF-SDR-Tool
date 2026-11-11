@@ -135,3 +135,43 @@ def test_constant_unknown_remains_blocked_as_invalid_classification_sample(tmp_p
         _manifest(tmp_path, [_row("unknown.wav", "s1", "UNKNOWN")]), tmp_path)
     assert report["status"] == "BLOCK"
     assert "BLOCK: nearly_constant_iq_samples" in report["entries"][0]["flags"]
+
+
+def test_full_duration_sampling_catches_late_clipping(tmp_path):
+    # The old prefix-only QA inspected 16 clean windows and falsely passed.
+    first = _noise(n=2048*20, seed=811)
+    tail = np.full(2048*60, 1+1j, dtype=np.complex64)
+    _wav(tmp_path/"late_clip.wav", np.concatenate((first, tail)))
+    report = audit_dataset(
+        _manifest(tmp_path, [_row("late_clip.wav", "s1")]), tmp_path,
+        max_windows=16)
+    entry = report["entries"][0]
+    assert report["status"] == "BLOCK"
+    assert "BLOCK: heavy_adc_or_pcm_clipping" in entry["flags"]
+    assert entry["metrics"]["windows_available"] == 80
+    assert entry["metrics"]["windows_inspected"] == 16
+    assert entry["metrics"]["window_selection"] == "uniform_full_recording_nonoverlapping"
+
+
+def test_full_duration_sampling_detects_late_cross_session_reuse(tmp_path):
+    # Two independent-looking prefixes, but an exact copied IQ window at end.
+    first = _noise(n=2048*80, seed=301)
+    second = _noise(n=2048*80, seed=302)
+    second[-2048:] = first[-2048:]
+    _wav(tmp_path/"a.wav", first)
+    _wav(tmp_path/"b.wav", second)
+    report = audit_dataset(
+        _manifest(tmp_path, [_row("a.wav", "s1"), _row("b.wav", "s2")]),
+        tmp_path, max_windows=16)
+    assert report["blocked_recordings"] == 2
+    assert all("BLOCK: identical_iq_window_across_sessions" in e["flags"]
+               for e in report["entries"])
+
+
+def test_single_window_sampling_and_no_duplicate_indices(tmp_path):
+    _wav(tmp_path/"short.wav", _noise(n=2048*17, seed=303))
+    one = inspect_recording(tmp_path/"short.wav", max_windows=1)
+    all_windows = inspect_recording(tmp_path/"short.wav", max_windows=100)
+    assert one["windows_inspected"] == 1
+    assert one["windows_available"] == 17
+    assert all_windows["windows_inspected"] == 17
