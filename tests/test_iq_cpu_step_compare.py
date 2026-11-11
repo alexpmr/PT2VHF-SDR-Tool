@@ -1,7 +1,7 @@
 """Synthetic fake-hash tests of CPU probe comparison; no RF data."""
 import copy
 import pytest
-from scripts.compare_iq_cpu_step import compare_reports, DOUBLE_STEP
+from scripts.compare_iq_cpu_step import compare_reports, DOUBLE_STEP, ADAM_STAGES
 
 
 def probe(cpu="AMD"):
@@ -16,7 +16,13 @@ def probe(cpu="AMD"):
                        "sample_count": 2, "observed": [3.0, 4.0],
                        "reference": [3.0, 4.0],
                        "max_abs_error": 0.0, "mean_abs_error": 0.0},
-                   "float64_first_step": {key: "a" * 64 for key in DOUBLE_STEP},
+                   "float64_first_step": {
+                       **{key: "a" * 64 for key in DOUBLE_STEP},
+                       "adam_manual_stage_sha256": {
+                           key: "a" * 64 for key in ADAM_STAGES},
+                       "adam_manual_parameter_sha256": ["a" * 64, "a" * 64],
+                       "adam_native_parameter_sha256": ["a" * 64, "a" * 64],
+                   },
                    "second_conv_float64_reference": {
                        "reference_sha256": "a" * 64,
                        "max_abs_error": 0.00001,
@@ -161,4 +167,35 @@ def test_float64_first_step_missing_or_invalid_hash_fails_closed():
     b = probe("Intel")
     b["steps"][0]["float64_first_step"]["loss_sha256"] = "not-a-sha256"
     with pytest.raises(ValueError, match="SHA-256"):
+        compare_reports(a, b)
+
+
+
+def test_manual_adam_stage_divergence_is_fail_closed():
+    a, b = probe(), probe("Intel")
+    b["steps"][0]["float64_first_step"]["adam_manual_stage_sha256"]["denominator"] = "b" * 64
+    result = compare_reports(a, b)
+    assert result["first_divergent_stage"] is None
+    assert result["first_divergent_float64_stage"] is None
+    assert result["first_divergent_adam_stage"] == "denominator"
+    assert result["conclusion"] == "NUMERICAL_DIVERGENCE"
+
+
+def test_adam_per_parameter_divergence_identifies_tensor_index():
+    a, b = probe(), probe("Intel")
+    b["steps"][0]["float64_first_step"]["adam_native_parameter_sha256"][1] = "b" * 64
+    result = compare_reports(a, b)
+    assert result["first_divergent_adam_parameter"]["adam_native_parameter_sha256"] == 1
+    assert result["first_divergent_adam_parameter"]["adam_manual_parameter_sha256"] is None
+    assert result["conclusion"] == "NUMERICAL_DIVERGENCE"
+
+
+def test_malformed_adam_stage_and_parameter_hashes_fail_closed():
+    a, b = probe(), probe("Intel")
+    del b["steps"][0]["float64_first_step"]["adam_manual_stage_sha256"]["denominator"]
+    with pytest.raises(ValueError, match="manual Adam stage schema"):
+        compare_reports(a, b)
+    b = probe("Intel")
+    b["steps"][0]["float64_first_step"]["adam_native_parameter_sha256"][0] = "bad"
+    with pytest.raises(ValueError, match="Adam parameter SHA-256"):
         compare_reports(a, b)

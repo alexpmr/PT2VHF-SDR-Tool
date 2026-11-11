@@ -8,6 +8,7 @@ from torch import nn
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from diagnose_iq_cpu_step import (
     conv1d_scalar_samples, conv1d_float64_reference, float64_first_optimizer_step,
+    manual_adam_first_step,
 )
 
 
@@ -66,6 +67,24 @@ def test_double_first_step_repeats_without_mutating_original_weights():
     assert set(first) == {
         "initial_parameters_sha256", "forward_logits_sha256", "loss_sha256",
         "gradients_sha256", "updated_parameters_sha256",
+        "adam_manual_stage_sha256", "adam_manual_parameter_sha256",
+        "adam_native_parameter_sha256",
     }
     assert first["initial_parameters_sha256"] != first["updated_parameters_sha256"]
     assert all(torch.equal(before, after) for before, after in zip(original, model.parameters()))
+
+
+
+def test_manual_adam_diagnostic_is_read_only_and_repeatable():
+    p = nn.Parameter(torch.tensor([1.0, -2.0], dtype=torch.float64))
+    p.grad = torch.tensor([0.1, -0.2], dtype=torch.float64)
+    before = p.detach().clone()
+    first = manual_adam_first_step([p])
+    assert first == manual_adam_first_step([p])
+    assert torch.equal(p, before)
+    assert len(first["stage_sha256"]) == 6
+    assert len(first["parameter_sha256"]) == 1
+    assert all(len(value) == 64 for value in first["stage_sha256"].values())
+    p.grad = None
+    with pytest.raises(ValueError, match="requires gradients"):
+        manual_adam_first_step([p])

@@ -3,6 +3,7 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import platform
 from pathlib import Path
 
@@ -86,6 +87,35 @@ def conv1d_float64_reference(inputs, layer, outputs):
         }
 
 
+def manual_adam_first_step(parameters, lr=.003, beta1=.9, beta2=.999, eps=1e-8):
+    """Non-fused, explicit Adam step-1 arithmetic for diagnosis only.
+
+    The operation order is intentional and may not be bitwise equivalent
+    to PyTorch Adam. It never modifies parameters or optimizer state.
+    """
+    params = list(parameters)
+    if not params or any(p.grad is None for p in params):
+        raise ValueError("Manual Adam diagnostic requires gradients")
+    with torch.no_grad():
+        gradients = [p.grad.detach() for p in params]
+        first = [g.mul(1 - beta1) for g in gradients]
+        second = [g.square().mul(1 - beta2) for g in gradients]
+        roots = [v.sqrt() for v in second]
+        denominators = [r.div(math.sqrt(1 - beta2)).add(eps) for r in roots]
+        ratios = [m.div(denom) for m, denom in zip(first, denominators)]
+        proposed = [p.detach().add(ratio, alpha=-lr / (1 - beta1))
+                    for p, ratio in zip(params, ratios)]
+    stages = (
+        ("first_moment", first), ("second_moment", second),
+        ("sqrt_second_moment", roots), ("denominator", denominators),
+        ("normalized_update", ratios), ("manual_updated_parameters", proposed),
+    )
+    return {
+        "stage_sha256": {name: sha_tensors(values) for name, values in stages},
+        "parameter_sha256": [sha_tensors([value]) for value in proposed],
+    }
+
+
 def float64_first_optimizer_step(model, batch_x, batch_y):
     """Isolated double-precision forward/backward/Adam control; no model mutation."""
     replica = copy.deepcopy(model).double()
@@ -98,8 +128,14 @@ def float64_first_optimizer_step(model, batch_x, batch_y):
     result["loss_sha256"] = sha_tensors([loss])
     loss.backward()
     result["gradients_sha256"] = sha_tensors([weight.grad for weight in replica.parameters()])
+    manual = manual_adam_first_step(replica.parameters())
+    result["adam_manual_stage_sha256"] = manual["stage_sha256"]
+    result["adam_manual_parameter_sha256"] = manual["parameter_sha256"]
     optimizer.step()
     result["updated_parameters_sha256"] = sha_tensors(replica.parameters())
+    result["adam_native_parameter_sha256"] = [
+        sha_tensors([weight]) for weight in replica.parameters()
+    ]
     return result
 
 

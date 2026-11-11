@@ -75,3 +75,9 @@ O diagnóstico `scripts/diagnose_iq_cpu_step.py` agora replica **somente o prime
 Hipótese testável: se a divergência entre CPUs estiver restrita à implementação `float32`, o passo integral `float64` poderá ser idêntico em processadores distintos. Mesmo que isso se confirme, **não demonstra** reprodutibilidade após 22 épocas, desempenho/latência aceitável ou homologação RF real. O caminho de treinamento e o modelo ONNX de produção não foram alterados. Aguardar CI e comparar somente runners efetivamente heterogêneos.
 
 O comparador retorna falha de diagnóstico também quando **apenas** o passo integral float64 diverge; essa divergência não pode ser ocultada pelo sucesso do caminho float32. `first_divergent_stage` preserva a primeira divergência original; `first_divergent_float64_stage` identifica separadamente a divergência do controle.
+
+
+
+## Diagnóstico direcionado do Adam (instrumentação experimental)
+
+O probe de primeiro minibatch passa a registrar, **sem modificar o treinamento v4**, os hashes dos estágios de uma atualização Adam de referência escrita explicitamente em float64: primeiro e segundo momentos, raiz quadrada do segundo momento, denominador, atualização normalizada e pesos propostos. Também são registrados hashes por tensor dos pesos propostos e dos pesos efetivamente atualizados pelo Adam do PyTorch. A referência manual é **somente diagnóstica**: sua ordem de operações pode diferir do kernel nativo, mesmo no mesmo processador. O comparador mantém separadas as divergências do forward, do Adam manual e dos parâmetros nativos; falha se qualquer uma divergir entre CPUs. O índice do primeiro tensor divergente é relatado sem expor pesos. A instrumentação não equivale a reprodutibilidade de 22 épocas nem a RF real.

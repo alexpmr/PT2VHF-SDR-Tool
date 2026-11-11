@@ -10,6 +10,10 @@ STEP = ("indices_sha256", "batch_sha256", "forward_logits_sha256",
         "loss_sha256", "gradients_sha256", "updated_parameters_sha256")
 DOUBLE_STEP = ("initial_parameters_sha256", "forward_logits_sha256",
                "loss_sha256", "gradients_sha256", "updated_parameters_sha256")
+ADAM_STAGES = ("first_moment", "second_moment", "sqrt_second_moment",
+               "denominator", "normalized_update", "manual_updated_parameters")
+ADAM_KEYS = ("adam_manual_stage_sha256", "adam_manual_parameter_sha256",
+             "adam_native_parameter_sha256")
 ENV = ("python_version", "torch_version", "numpy_version", "policy",
        "train_samples", "unknown_examples_replaced", "requested_steps")
 
@@ -22,6 +26,8 @@ def compare_reports(a, b):
     second_conv_comparison = None
     second_conv_float64_comparison = None
     float64_first_step_matches = None
+    adam_stage_matches = None
+    adam_parameter_matches = None
     for i, (left, right) in enumerate(zip(a["steps"], b["steps"])):
         if left["step"] != i or right["step"] != i:
             raise ValueError("Probe step numbering differs")
@@ -91,7 +97,8 @@ def compare_reports(a, b):
                 "scope": "Full second Conv1d first-minibatch float64 diagnostic; no training changes",
             }
             dl, dr = left["float64_first_step"], right["float64_first_step"]
-            if set(dl) != set(DOUBLE_STEP) or set(dr) != set(DOUBLE_STEP):
+            expected = set(DOUBLE_STEP) | set(ADAM_KEYS)
+            if set(dl) != expected or set(dr) != expected:
                 raise ValueError("Invalid float64 first-step stage schema")
             for item in (dl, dr):
                 for key in DOUBLE_STEP:
@@ -102,14 +109,48 @@ def compare_reports(a, b):
             float64_first_step_matches = {
                 key: dl[key] == dr[key] for key in DOUBLE_STEP
             }
+            stage_left, stage_right = (dl["adam_manual_stage_sha256"],
+                                       dr["adam_manual_stage_sha256"])
+            if (not isinstance(stage_left, dict) or not isinstance(stage_right, dict)
+                    or set(stage_left) != set(ADAM_STAGES)
+                    or set(stage_right) != set(ADAM_STAGES)):
+                raise ValueError("Invalid manual Adam stage schema")
+            for value in list(stage_left.values()) + list(stage_right.values()):
+                if (not isinstance(value, str) or len(value) != 64
+                        or any(char not in "0123456789abcdef" for char in value)):
+                    raise ValueError("Invalid manual Adam SHA-256")
+            adam_stage_matches = {
+                key: stage_left[key] == stage_right[key] for key in ADAM_STAGES
+            }
+            adam_parameter_matches = {}
+            for key in ("adam_manual_parameter_sha256", "adam_native_parameter_sha256"):
+                left_params, right_params = dl[key], dr[key]
+                if (not isinstance(left_params, list) or not isinstance(right_params, list)
+                        or not left_params or len(left_params) != len(right_params)):
+                    raise ValueError("Invalid Adam parameter count")
+                for value in left_params + right_params:
+                    if (not isinstance(value, str) or len(value) != 64
+                            or any(char not in "0123456789abcdef" for char in value)):
+                        raise ValueError("Invalid Adam parameter SHA-256")
+                adam_parameter_matches[key] = [
+                    x == y for x, y in zip(left_params, right_params)
+                ]
     first = next((key for key, ok in matches.items() if not ok), None)
     float64_first = next(
         (key for key, ok in float64_first_step_matches.items() if not ok), None)
+    first_adam_stage = next(
+        (key for key, ok in adam_stage_matches.items() if not ok), None)
+    first_adam_parameters = {
+        key: next((i for i, ok in enumerate(flags) if not ok), None)
+        for key, flags in adam_parameter_matches.items()
+    }
+    adam_mismatch = first_adam_stage is not None or any(
+        value is not None for value in first_adam_parameters.values())
     env_ok = all(a[key] == b[key] for key in ENV)
     cross_cpu = (a["cpu_model"] != b["cpu_model"]
                  and "unknown" not in (a["cpu_model"], b["cpu_model"]))
     conclusion = ("ENVIRONMENT_MISMATCH" if not env_ok else
-                  "NUMERICAL_DIVERGENCE" if first or float64_first else
+                  "NUMERICAL_DIVERGENCE" if first or float64_first or adam_mismatch else
                   "SAME_CPU_ONLY_INCONCLUSIVE" if not cross_cpu else
                   "FIRST_STEPS_MATCH_CROSS_CPU_NOT_FULL_REPLAY")
     return {
@@ -123,6 +164,10 @@ def compare_reports(a, b):
         "float64_first_step_exact_match": all(float64_first_step_matches.values()),
         "float64_first_step_stage_exact_match": float64_first_step_matches,
         "first_divergent_float64_stage": float64_first,
+        "adam_manual_stage_exact_match": adam_stage_matches,
+        "first_divergent_adam_stage": first_adam_stage,
+        "adam_parameter_exact_match": adam_parameter_matches,
+        "first_divergent_adam_parameter": first_adam_parameters,
         "conclusion": conclusion,
         "limitations": "Matching early steps cannot prove 22-epoch reproducibility",
     }
@@ -140,7 +185,10 @@ def main():
     args.out.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2), flush=True)
     if (not report["environment_exact_match"] or report["first_divergent_stage"]
-            or report["first_divergent_float64_stage"]):
+            or report["first_divergent_float64_stage"]
+            or report["first_divergent_adam_stage"]
+            or any(value is not None for value in
+                   report["first_divergent_adam_parameter"].values())):
         raise SystemExit(2)
 
 
