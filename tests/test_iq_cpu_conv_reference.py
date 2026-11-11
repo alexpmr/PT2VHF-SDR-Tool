@@ -95,11 +95,24 @@ def test_sqrt_decimal_oracle_detects_single_ulp_drift_without_changing_inputs():
     moments = torch.tensor([0.0, 1.0, 2.0, 3.0, 1e-300], dtype=torch.float64)
     native = moments.sqrt()
     before = moments.clone()
-    reference = sqrt_ulp_reference([moments], [native])
+    # The native CPU sqrt is allowed to differ by 1 ULP from the correctly
+    # rounded Decimal oracle. Never assume bitwise equality across runners.
+    observed = sqrt_ulp_reference([moments], [native])
+    assert observed["sample_count"] == 4
+    assert observed["max_ulp_error"] <= 1
+
+    from decimal import Decimal, localcontext
+    with localcontext() as ctx:
+        ctx.prec = 110
+        oracle = torch.tensor(
+            [float(Decimal.from_float(float(v)).sqrt()) for v in moments],
+            dtype=torch.float64,
+        )
+    reference = sqrt_ulp_reference([moments], [oracle])
     assert reference["sample_count"] == 4
-    assert reference["max_ulp_error"] <= 1
+    assert reference["mismatch_count"] == 0
     assert reference["oracle_sha256"] == reference["native_sha256"]
-    changed = torch.nextafter(native, torch.full_like(native, float("inf")))
+    changed = torch.nextafter(oracle, torch.full_like(oracle, float("inf")))
     drift = sqrt_ulp_reference([moments], [changed])
     assert drift["oracle_sha256"] == reference["oracle_sha256"]
     assert drift["native_sha256"] != reference["native_sha256"]
