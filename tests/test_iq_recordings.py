@@ -53,6 +53,11 @@ def test_long_wav_samples_beginning_middle_and_end_without_overlap(tmp_path):
         1000, 6000, 12000
     ]
     assert len(list(read_windows(wav, limit=20))) == 12
+    # With only one selected window, a startup-only sample would return 1000.
+    center_only = list(read_windows(wav, limit=1, with_index=True))
+    assert len(center_only) == 1
+    assert center_only[0][0] == 5
+    assert round(float(center_only[0][1].real.mean() * 32768)) == 6000
 
 
 def test_manifest_blocks_traversal_and_wfm(tmp_path):
