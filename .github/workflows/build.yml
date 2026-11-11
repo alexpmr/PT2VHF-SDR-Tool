@@ -13,19 +13,18 @@ on:
 
 jobs:
   tests:
-    # Ubuntu 22.04 image may retain libEGL preinstalled; avoid network-blocked apt mirrors.
-    runs-on: ubuntu-22.04
+    # Official Ubuntu Noble browser-test image bundles libEGL and other Qt/GUI
+    # system dependencies; hosted runner apt mirrors are unavailable.
+    runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.64.1-noble
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Diagnóstico das bibliotecas Qt já disponíveis no runner
+      - name: Python runtime and graphics prerequisites
         run: |
-          echo "Sistema: $(lsb_release -ds)"
-          ldconfig -p | grep -E 'lib(EGL|GL|xkbcommon|fontconfig|dbus)' || true
-          echo "Testes Qt offscreen serão executados sem apt, indisponível no mirror do runner."
-      - run: pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
+          python --version
+          ldconfig -p | grep 'libEGL.so.1'
+      - run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
       - name: Testes Linux / Qt offscreen (diagnóstico independente)
         run: python -X faulthandler scripts/run_tests.py
         env:
