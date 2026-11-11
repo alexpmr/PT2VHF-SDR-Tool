@@ -13,6 +13,17 @@ Exemplo no PowerShell, após preparar o manifesto com prepare_iq_rf_capture.py:
 python -m scripts.audit_iq_dataset --manifest C:\IQ\onnx\manifest.json --root C:\IQ\onnx --out C:\IQ\onnx\relatorio_qa_privado.json --max-windows 256
 ~~~
 
+A auditoria seleciona até `--max-windows` janelas IQ não sobrepostas,
+**uniformemente distribuídas pelo WAV inteiro**, incluindo início e fim quando
+há pelo menos duas janelas selecionadas. Antes dessa correção, inspecionava
+somente o prefixo do arquivo: clipping tardio e janelas repetidas ao final
+podiam passar despercebidos. O relatório registra `windows_available`,
+`windows_inspected` e `window_selection` para evidenciar a cobertura.
+Para examinar todas as janelas, escolha `--max-windows` maior ou igual à
+quantidade total de janelas completas; isso aumenta CPU e memória para os
+hashes e não detecta cópias deslocadas ou transformadas. Mesmo com amostragem
+uniforme, anomalias entre posições selecionadas podem não ser observadas.
+
 Resultados: **BLOCK** (dados inadequados ou reutilizados entre sessões),
 **REVIEW** (precisa de inspeção do operador), **PASS** (sem as anomalias definidas).
 BLOCK gera exit code 2, mas o relatório é salvo. REVIEW não deve ser considerado
