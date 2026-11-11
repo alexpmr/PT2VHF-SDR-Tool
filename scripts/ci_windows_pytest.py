@@ -26,7 +26,7 @@ def is_fatal_runtime_output(line: str) -> bool:
 
 
 def main() -> int:
-    command = [sys.executable, "-X", "faulthandler", "scripts/run_tests.py"]
+    command = [sys.executable, "-X", "faulthandler", "scripts/run_tests.py", *sys.argv[1:]]
     found_fatal = False
     with subprocess.Popen(
         command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

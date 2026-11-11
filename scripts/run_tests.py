@@ -15,7 +15,7 @@ import sys
 
 def main():
     import pytest
-    result = pytest.main(["-q"])
+    result = pytest.main(["-q", *sys.argv[1:]])
     sys.stdout.flush()
     sys.stderr.flush()
     os._exit(int(result))
