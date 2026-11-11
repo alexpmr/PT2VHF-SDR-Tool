@@ -16,8 +16,10 @@ from pathlib import Path
 
 import numpy as np
 
-from .audio import ActivityRecorder, AudioOutput, WavRecorder
+from .audio import ActivityRecorder, AudioOutput, WavRecorder, WavSizeLimitError
+from .iq_provenance import IQCaptureProvenance, sidecar_path, write_sidecar
 from .neural_audio import NeuralAudioWorker
+from .dsp.iq_classifier_worker import IQClassificationWorker
 from .decoders import aprs as aprs_mod
 from .decoders.afsk import AFSKDemodulator
 from .decoders.tones import CTCSSDetector, DTMFDecoder
@@ -26,6 +28,10 @@ from .sources.base import IQSource
 from .timeshift import TimeShiftBuffer
 
 log = logging.getLogger(__name__)
+
+
+# Closing/hash of a long IQ capture must not stall live DSP or the Qt GUI.
+IQ_ASYNC_HASH_MIN_BYTES = 64 * 1024 * 1024
 
 
 class ExtraReceiver:
@@ -56,6 +62,7 @@ class Engine:
         self.vox_rec: ActivityRecorder | None = None        # botão Gravar áudio com VOX
         self.audio_listeners: list = []
         self.neural_audio: NeuralAudioWorker | None = None
+        self.iq_classifier: IQClassificationWorker | None = None
         self.iq_listeners: list = []  # decoders consume original complex IQ via bounded queues
         self.iq_vox = False                                 # IQ só com transmissão
         self._iq_open_until = 0.0
@@ -76,6 +83,8 @@ class Engine:
         self._wf_acc = 0.0
         self._audio_rec: WavRecorder | None = None
         self._iq_rec: WavRecorder | None = None
+        self._iq_provenance: IQCaptureProvenance | None = None
+        self._last_iq_finalize_thread: threading.Thread | None = None
         self._lock = threading.Lock()
         self.audio_tap = None  # callback opcional (testes)
         self._make_decoders()
@@ -119,6 +128,21 @@ class Engine:
             if self._audio_rec is not None and len(audio):
                 self._audio_rec.write(audio)
 
+    def classify_current_signal(self, model_path: str, seconds: float = 0.1):
+        """One-shot IQ classification, advisory only; never retunes or changes mode."""
+        if not self.running:
+            raise RuntimeError("Receptor não está ativo")
+        if self.iq_classifier is None:
+            self.iq_classifier = IQClassificationWorker(
+                model_path,
+                lambda result, freq, ts: self.events.put(("iq_classification", {
+                    "mode": result.mode, "confidence": result.confidence,
+                    "probabilities": result.probabilities, "frequency_hz": freq}, ts)),
+                lambda error: self.events.put(("iq_classification_error", error, time.time())))
+        self.capture_if(max(0.02, float(seconds)),
+                        lambda iq, fs: self.iq_classifier.feed(iq, self.vfo, sample_rate=fs)
+                        if self.iq_classifier is not None else None)
+
     # ----------------------------------------------------------- ciclo de vida
     def start(self, source: IQSource):
         self.stop()
@@ -142,11 +166,18 @@ class Engine:
         self.status["running"] = True
 
     def stop(self):
+        if self.iq_classifier is not None:
+            self.iq_classifier.stop()
+            self.iq_classifier = None
         self._running = False
         if self._thread:
             self._thread.join(timeout=3)
             self._thread = None
         if self.source:
+            with self._lock:
+                if self._iq_provenance is not None:
+                    self._iq_provenance.observe_source_dropped(
+                        getattr(self.source, "dropped", 0))
             try:
                 self.source.close()
             except Exception as e:  # noqa: BLE001
@@ -303,16 +334,90 @@ class Engine:
 
     def start_iq_recording(self, folder: str) -> Path:
         name = datetime.now().strftime(f"PT2VHF_%Y%m%d_%H%M%S_{int(self.center_freq)}Hz_IQ.wav")
-        p = Path(folder) / name
         with self._lock:
-            self._iq_rec = WavRecorder(p, self.sample_rate, 2)
+            p = Path(folder) / name
+            candidate_number = 1
+            while p.exists() or sidecar_path(p).exists():
+                p = Path(folder) / f"{Path(name).stem}_{candidate_number}.wav"
+                candidate_number += 1
+            if self._iq_rec is not None:
+                raise RuntimeError("Já existe uma gravação IQ ativa")
+            source = self.source
+            if source is None or self.sample_rate <= 0:
+                raise RuntimeError("Fonte SDR não está conectada")
+            metadata = IQCaptureProvenance(
+                p, center_hz=source.center_freq, sample_rate=source.sample_rate,
+                vfo_hz=self.vfo, source=source.name,
+                mode=self.rx.mode if self.rx is not None else "",
+                vox=self.iq_vox,
+            )
+            metadata.set_source_dropped_baseline(getattr(source, "dropped", 0))
+            rec = WavRecorder(p, source.sample_rate, 2)
+            try:
+                write_sidecar(p, metadata.pending_report())
+            except Exception:
+                rec.close()
+                p.unlink(missing_ok=True)
+                raise
+            self._iq_rec = rec
+            self._iq_provenance = metadata
         return p
 
+    def _finalize_iq_sidecar(self, metadata: IQCaptureProvenance,
+                             wav_path: Path, frames: int):
+        """Hash an already-closed WAV; keep pending marker until verified."""
+        try:
+            write_sidecar(wav_path, metadata.final_report(frames))
+        except Exception:  # noqa: BLE001
+            log.exception("Falha ao finalizar integridade IQ de %s; sidecar pendente", wav_path)
+            self.events.put(("iq_recording_warning",
+                             "Falha ao verificar integridade do WAV IQ; gravação incompleta.",
+                             time.time()))
+        else:
+            self.events.put(("iq_recording_finalized",
+                             str(wav_path), time.time()))
+
     def stop_iq_recording(self):
+        metadata = None
+        wav_path = None
+        frames = 0
+        close_failed = False
         with self._lock:
             if self._iq_rec:
-                self._iq_rec.close()
-                self._iq_rec = None
+                rec = self._iq_rec
+                wav_path = rec.path
+                frames = rec.samples
+                metadata = self._iq_provenance
+                if metadata is not None and self.source is not None:
+                    metadata.observe_source_dropped(getattr(self.source, "dropped", 0))
+                try:
+                    rec.close()
+                except Exception:  # noqa: BLE001
+                    close_failed = True
+                    log.exception("Falha ao fechar WAV IQ %s; sidecar ficará pendente", wav_path)
+                finally:
+                    # Never leave a failed recorder active on the DSP thread.
+                    self._iq_rec = None
+                    self._iq_provenance = None
+        if metadata is not None and wav_path is not None:
+            if close_failed:
+                self.events.put(("iq_recording_warning",
+                                 "Falha ao fechar WAV IQ; gravação marcada incompleta.",
+                                 time.time()))
+                return
+            # The checksum can read 4 GiB. On a live DSP thread or when a
+            # large file is closed from Qt, perform that I/O on a separate
+            # non-daemon thread. The pending sidecar stays invalid until done.
+            if (threading.current_thread() is self._thread or
+                    wav_path.stat().st_size >= IQ_ASYNC_HASH_MIN_BYTES):
+                worker = threading.Thread(
+                    target=self._finalize_iq_sidecar,
+                    args=(metadata, wav_path, frames),
+                    daemon=False, name="iq-wav-checksum")
+                self._last_iq_finalize_thread = worker
+                worker.start()
+            else:
+                self._finalize_iq_sidecar(metadata, wav_path, frames)
 
     @property
     def recording_audio(self):
@@ -336,11 +441,43 @@ class Engine:
             except Exception as e:  # noqa: BLE001
                 log.exception("Comando falhou: %s", e)
 
-        blk = blk - np.mean(blk)  # remove DC (pico central do RTL-SDR)
+        # Record the original complex IQ BEFORE DC correction. A genuine CW
+        # carrier or AM carrier at the SDR center is otherwise irreversibly
+        # lost from the WAV. Receiver/display retain their existing DC fix.
+        raw_iq_for_capture = blk
+        close_invalid_iq = None
         with self._lock:
-            if self._iq_rec and (not self.iq_vox or rx.squelch.is_open or time.monotonic() < self._iq_open_until):
-                self._iq_rec.write(blk)
+            if self._iq_rec is not None:
+                should_write = (not self.iq_vox or rx.squelch.is_open
+                                or time.monotonic() < self._iq_open_until)
+                wrote = False
+                if should_write:
+                    try:
+                        self._iq_rec.write(raw_iq_for_capture)
+                    except WavSizeLimitError:
+                        close_invalid_iq = "wav_riff_limit"
+                    except (OSError, ValueError):
+                        close_invalid_iq = "wav_write_failed"
+                    else:
+                        wrote = True
+                if self._iq_provenance is not None:
+                    # Record only successfully written frames. A rejected
+                    # block must not inflate the WAV/sidecar sample count.
+                    self._iq_provenance.observe(src.center_freq, src.sample_rate,
+                                                len(blk), wrote,
+                                                getattr(src, "dropped", 0))
+                    if close_invalid_iq:
+                        self._iq_provenance.interrupt(close_invalid_iq)
+        if close_invalid_iq:
+            self.stop_iq_recording()
+            msg = ("Gravação IQ interrompida antes de ultrapassar 4 GiB (WAV RIFF)."
+                   if close_invalid_iq == "wav_riff_limit"
+                   else "Falha ao gravar IQ; arquivo não é válido para teste neural.")
+            self.events.put(("iq_recording_warning", msg, time.time()))
 
+        # Apply legacy per-block DC correction only to downstream reception,
+        # spectrum, IF classifier and decoder paths, NEVER the saved raw IQ.
+        blk = blk - np.mean(blk)
         fs = src.sample_rate
         for listener in tuple(self.iq_listeners):
             try:
@@ -435,15 +572,25 @@ class Engine:
             self.audio_tap(audio, raw)
 
     def _loop(self):
+        unexpected_stop = None
         while self._running:
-            pop = getattr(self.source, "pop_messages", None)
-            if pop is not None:
-                for msg in pop():
-                    self.events.put(("source_msg", msg, time.time()))
-            blk = self.source.read(timeout=0.5) if self.source else None
+            try:
+                pop = getattr(self.source, "pop_messages", None)
+                if pop is not None:
+                    for msg in pop():
+                        self.events.put(("source_msg", msg, time.time()))
+                blk = self.source.read(timeout=0.5) if self.source else None
+            except Exception as exc:  # noqa: BLE001
+                if self._running:
+                    unexpected_stop = "source_read_failed"
+                    log.exception("Falha ao ler fonte IQ")
+                    self.events.put(("error", f"Fonte IQ interrompida: {exc}", time.time()))
+                break
             if blk is None:
                 if self.source and not self.source._running:
-                    self.events.put(("error", "A fonte de sinal parou.", time.time()))
+                    if self._running:
+                        unexpected_stop = "source_stopped_unexpectedly"
+                        self.events.put(("error", "A fonte de sinal parou.", time.time()))
                     break
                 continue
             t0 = time.perf_counter()
@@ -456,3 +603,9 @@ class Engine:
             self.status["dropped"] = self.source.dropped
         self._running = False
         self.status["running"] = False
+        if unexpected_stop:
+            with self._lock:
+                if self._iq_provenance is not None:
+                    self._iq_provenance.interrupt(unexpected_stop)
+            # Called from the DSP thread: do not join it or stop the entire engine.
+            self.stop_iq_recording()

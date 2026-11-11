@@ -1,0 +1,328 @@
+name: Experimental IQ model training and ONNX export
+on:
+  workflow_dispatch:
+  # Em pull_request, o filtro paths considera TODO o diff acumulado do PR;
+  # assim, qualquer ajuste de captura retrainaria os quatro modelos.
+  # Em push, o filtro considera somente as alterações deste commit.
+  # Avaliador RF offline e seus testes pertencem ao CI geral do PR;
+  # não reexecutar treinamento sintético v2-v5 sem hipótese neural nova.
+  # Para mudanças deste próprio workflow, usar workflow_dispatch após revisão.
+  push:
+    branches:
+      - feature/iq-signal-classifier
+    paths:
+      - 'scripts/train_iq_synthetic_ci.py'
+      - 'scripts/train_iq_augmented_v3.py'
+      - 'scripts/train_iq_unknown_v4.py'
+      - 'scripts/iq_unknown_curriculum.py'
+      - 'scripts/iq_augmentation.py'
+      - 'scripts/compare_iq_stress.py'
+      - 'scripts/iq_out_of_family.py'
+      - 'scripts/evaluate_iq_ood.py'
+      - 'tests/test_iq_ood_signals.py'
+      - 'scripts/smoke_iq_wav_onnx.py'
+      - 'scripts/export_iq_synthetic_v2.py'
+      - 'scripts/evaluate_iq_synthetic_stress.py'
+      - 'pt2vhf/dsp/iq_classifier.py'
+      # Runtime worker/resampling changes are covered by PR CI; they do
+      # not modify synthetic model training or ONNX export.
+      - 'tests/test_iq_classifier_contract.py'
+      - 'tests/test_iq_augmentation.py'
+      - 'tests/test_iq_ood_signals.py'
+      - 'tests/test_iq_unknown_curriculum.py'
+jobs:
+  train-export-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU inference and export dependencies
+        run: |
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install numpy onnx onnxruntime onnxscript
+      - name: Train reproducible synthetic baseline
+        run: python scripts/train_iq_synthetic_ci.py
+      - name: Export and verify ONNX numerical parity
+        run: python scripts/export_iq_synthetic_v2.py --checkpoint models/iq/synthetic_v2.pt --output models/iq/synthetic_v2.onnx
+      - name: Train experimental augmented candidate (not deployable)
+        run: python scripts/train_iq_augmented_v3.py
+      - name: Export and verify candidate ONNX
+        run: python scripts/export_iq_synthetic_v2.py --checkpoint models/iq/synthetic_v3.pt --output models/iq/synthetic_v3.onnx
+      - name: Train UNKNOWN-diverse v4 candidate (experimental only)
+        env:
+          ATEN_CPU_CAPABILITY: default
+          MKL_CBWR: COMPATIBLE
+          OMP_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
+        run: python scripts/train_iq_unknown_v4.py --portable-cpu
+      - name: Export and verify v4 candidate ONNX
+        run: python scripts/export_iq_synthetic_v2.py --checkpoint models/iq/synthetic_v4.pt --output models/iq/synthetic_v4.onnx
+      - name: Check v4 training reproducibility with a second isolated run
+        env:
+          ATEN_CPU_CAPABILITY: default
+          MKL_CBWR: COMPATIBLE
+          OMP_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
+        run: |
+          python scripts/train_iq_unknown_v4.py --portable-cpu --output-dir models/iq/replay
+          python - <<'PY'
+          import json
+          import platform
+          from pathlib import Path
+          import numpy as np
+          import torch
+          cpu_model = next((line.partition(":")[2].strip() for line in
+              Path("/proc/cpuinfo").read_text().splitlines()
+              if line.startswith("model name")), "unknown")
+          print("Training runner CPU:", cpu_model, flush=True)
+          print("PyTorch build:", torch.__config__.show(), flush=True)
+          original = torch.load("models/iq/synthetic_v4.pt", map_location="cpu", weights_only=True)
+          repeated = torch.load("models/iq/replay/synthetic_v4.pt", map_location="cpu", weights_only=True)
+          assert list(original) == list(repeated), "Replay model parameter names differ"
+          diffs = {key: float((original[key] - repeated[key]).abs().max()) for key in original}
+          all_equal = all(torch.equal(original[key], repeated[key]) for key in original)
+          a = json.loads(Path("models/iq/synthetic_v4_metrics.json").read_text())
+          b = json.loads(Path("models/iq/replay/synthetic_v4_metrics.json").read_text())
+          report = {
+              "scope": "CPU synthetic v4 exact replay within one GitHub Actions job; not RF validation",
+              "model": "synthetic_v4",
+              "parameter_exact_match": all_equal,
+              "max_parameter_absolute_difference": max(diffs.values()),
+              "metrics_exact_match": a == b,
+              "torch_version": torch.__version__,
+              "numpy_version": np.__version__,
+              "python_version": platform.python_version(),
+              "threads": a["training_cpu_policy"]["threads"],
+              "cpu_model": cpu_model,
+              "limitations": "One replay on one runner cannot establish reproducibility across machines, versions or sessions"
+          }
+          output = Path("models/iq/synthetic_v4_replay_metrics.json")
+          output.write_text(json.dumps(report, indent=2) + "\n")
+          print(json.dumps(report, indent=2), flush=True)
+          assert report["parameter_exact_match"] and report["metrics_exact_match"], (
+              "v4 training is not exactly reproducible on the same CPU runner")
+          PY
+      - name: Train intermediate UNKNOWN v5 candidate (45%, diagnostic only)
+        run: python scripts/train_iq_unknown_v4.py --unknown-fraction 0.45 --model-stem synthetic_v5
+      - name: Export and verify v5 ONNX
+        run: python scripts/export_iq_synthetic_v2.py --checkpoint models/iq/synthetic_v5.pt --output models/iq/synthetic_v5.onnx
+      - name: Smoke-test application ONNX classifier
+        run: |
+          python - <<'PY'
+          import numpy as np
+          from pt2vhf.dsp.iq_classifier import IQClassifier
+          model = IQClassifier("models/iq/synthetic_v2.onnx")
+          iq = np.exp(2j * np.pi * np.arange(4096) / 40).astype(np.complex64)
+          result = model.predict(iq)
+          assert result.mode in ("CW", "AM", "NFM", "WFM", "USB", "LSB", "UNKNOWN")
+          assert abs(sum(result.probabilities.values()) - 1.0) < 1e-5
+          print(result)
+          PY
+      - name: Evaluate ONNX on unseen synthetic signals and RF-like impairments
+        run: |
+          PYTHONPATH=. python scripts/evaluate_iq_synthetic_stress.py --model models/iq/synthetic_v2.onnx --output models/iq/synthetic_v2_stress_metrics.json
+          PYTHONPATH=. python scripts/evaluate_iq_synthetic_stress.py --model models/iq/synthetic_v3.onnx --output models/iq/synthetic_v3_stress_metrics.json
+      - name: Compare augmented candidate with fixed synthetic baseline
+        run: |
+          python scripts/compare_iq_stress.py --reference models/iq/synthetic_v2_stress_metrics.json --candidate models/iq/synthetic_v3_stress_metrics.json --output models/iq/synthetic_v3_comparison.json
+      - name: Diagnose out-of-family IQ and false-confidence errors
+        run: |
+          PYTHONPATH=. python scripts/evaluate_iq_ood.py --reference models/iq/synthetic_v2.onnx --candidate models/iq/synthetic_v3.onnx --third-model models/iq/synthetic_v4.onnx --fourth-model models/iq/synthetic_v5.onnx --output models/iq/synthetic_v3_ood_metrics.json
+      - name: Repeat OOD holdout with alternate seed (experimental robustness)
+        run: |
+          PYTHONPATH=. python scripts/evaluate_iq_ood.py --reference models/iq/synthetic_v2.onnx --candidate models/iq/synthetic_v3.onnx --third-model models/iq/synthetic_v4.onnx --fourth-model models/iq/synthetic_v5.onnx --seed 20261113 --output models/iq/synthetic_v3_ood_altseed_metrics.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("models/iq")
+          old = json.loads((root / "synthetic_v3_ood_metrics.json").read_text())
+          new = json.loads((root / "synthetic_v3_ood_altseed_metrics.json").read_text())
+          assert old["seed"] == 20261112 and new["seed"] == 20261113
+          assert set(old["models"]) == set(new["models"]) == {"v2", "v3", "v4", "v5"}
+          for name in old["models"]:
+              a, b = old["models"][name], new["models"][name]
+              assert a["labeled_samples"] == b["labeled_samples"] == 960
+              assert a["negative_samples"] == b["negative_samples"] == 320
+              for metric in ("top1_accuracy", "high_confidence_wrong_rate", "expected_calibration_error_10_bins"):
+                  print(f"{name} {metric}: seed0={a[metric]:.3f} seed1={b[metric]:.3f} delta={b[metric]-a[metric]:+.3f}")
+              for kind in a["negative_ood"]:
+                  rate0 = a["negative_ood"][kind]["high_confidence_known_class_rate"]
+                  rate1 = b["negative_ood"][kind]["high_confidence_known_class_rate"]
+                  print(f"{name} OOD {kind}: seed0={rate0:.3f} seed1={rate1:.3f} delta={rate1-rate0:+.3f}")
+          PY
+      - name: Smoke-test WAV parser with real ONNX models and synthetic-only data
+        run: PYTHONPATH=. python scripts/smoke_iq_wav_onnx.py
+      - name: Install Qt Linux system libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Run IQ classifier unit tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python -m pip install scipy pytest PySide6==6.11.3
+          python -m pytest -q tests/test_iq_classifier.py tests/test_iq_classifier_worker.py tests/test_iq_classifier_resampling.py tests/test_iq_classifier_contract.py tests/test_iq_augmentation.py tests/test_iq_ood_signals.py tests/test_iq_unknown_curriculum.py tests/test_iq_recordings.py tests/test_iq_session_gate.py tests/test_iq_capture_preparation.py tests/test_iq_dataset_audit.py tests/test_iq_provenance.py tests/test_iq_portable_cpu_training.py
+      - name: Verify synthetic validation metrics and record checksums
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("models/iq/synthetic_v2_metrics.json")
+          data = json.loads(p.read_text(encoding="utf-8"))
+          print("Synthetic validation metrics:", data)
+          stress = json.loads(Path("models/iq/synthetic_v2_stress_metrics.json").read_text(encoding="utf-8"))
+          assert data["validation_samples"] == 1400
+          assert data["accuracy"] >= 0.94
+          assert stress["scope"].startswith("Experimental synthetic-only")
+          assert len(stress["conditions"]) == 6
+          candidate = json.loads(Path("models/iq/synthetic_v3_metrics.json").read_text(encoding="utf-8"))
+          comparison = json.loads(Path("models/iq/synthetic_v3_comparison.json").read_text(encoding="utf-8"))
+          assert candidate["labels"] == data["labels"]
+          assert candidate["validation_v2_seed"]["accuracy"] >= 0.94
+          assert all(comparison["criteria"].values())
+          ood = json.loads(Path("models/iq/synthetic_v3_ood_metrics.json").read_text(encoding="utf-8"))
+          assert ood["classes_not_evaluated"] == ["WFM"]
+          assert ood["models"]["v2"]["labeled_samples"] == ood["models"]["v3"]["labeled_samples"]
+          assert ood["models"]["v2"]["negative_samples"] == ood["models"]["v3"]["negative_samples"]
+          assert set(ood["models"]) == {"v2", "v3", "v4", "v5"}
+          assert ood["models"]["v4"]["negative_samples"] == 320
+          assert ood["models"]["v4"]["labeled_samples"] == 960
+          assert ood["models"]["v5"]["labeled_samples"] == 960
+          assert ood["models"]["v5"]["negative_samples"] == 320
+          unknown4 = json.loads(Path("models/iq/synthetic_v4_metrics.json").read_text(encoding="utf-8"))
+          assert unknown4["labels"] == data["labels"]
+          assert unknown4["unknown_examples_replaced"] > 0
+          unknown5 = json.loads(Path("models/iq/synthetic_v5_metrics.json").read_text(encoding="utf-8"))
+          assert unknown5["labels"] == data["labels"]
+          assert 0 < unknown5["unknown_examples_replaced"] < unknown4["unknown_examples_replaced"]
+          for m in ("v2", "v3", "v4", "v5"):
+            curve = ood["models"][m]["confidence_threshold_analysis"]
+            assert list(curve) == ["0.8", "0.9", "0.95", "0.99", "0.999"]
+            assert curve["0.8"]["ood_samples"] == 320
+            assert curve["0.8"]["known_samples"] == 800
+            assert curve["0.8"]["unknown_samples"] == 160
+            assert curve["0.999"]["ood_negative_misaccepted"] <= curve["0.8"]["ood_negative_misaccepted"]
+          assert stress["conditions"]["nominal"]["top1_accuracy"] >= 0.94
+          assert p.is_file() and Path("models/iq/synthetic_v2.onnx").stat().st_size > 0
+          wav_smoke = json.loads(Path("models/iq/synthetic_wav_smoke_metrics.json").read_text(encoding="utf-8"))
+          assert wav_smoke["source"].startswith("SYNTHETIC WAV ONLY")
+          assert set(wav_smoke["result"]["models"]) == {"v2","v3","v4","v5"}
+          PY
+          cd models/iq
+          sha256sum synthetic_v2.onnx synthetic_v2.pt synthetic_v2_metrics.json synthetic_v2_stress_metrics.json synthetic_v3.onnx synthetic_v3.pt synthetic_v3_metrics.json synthetic_v3_stress_metrics.json synthetic_v3_comparison.json synthetic_v3_ood_metrics.json synthetic_v3_ood_altseed_metrics.json synthetic_v4.onnx synthetic_v4.pt synthetic_v4_metrics.json synthetic_v4_replay_metrics.json synthetic_v5.onnx synthetic_v5.pt synthetic_v5_metrics.json synthetic_wav_smoke_metrics.json > SHA256SUMS
+          sha256sum -c SHA256SUMS
+      - name: Upload experimental model and metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: pt2vhf-iq-synthetic-onnx-experimental
+          path: |
+            models/iq/synthetic_v2.onnx
+            models/iq/synthetic_v2.pt
+            models/iq/synthetic_v2_metrics.json
+            models/iq/synthetic_v2_stress_metrics.json
+            models/iq/synthetic_v3.onnx
+            models/iq/synthetic_v3.pt
+            models/iq/synthetic_v3_metrics.json
+            models/iq/synthetic_v3_stress_metrics.json
+            models/iq/synthetic_v3_comparison.json
+            models/iq/synthetic_v3_ood_metrics.json
+            models/iq/synthetic_v3_ood_altseed_metrics.json
+            models/iq/synthetic_v4.onnx
+            models/iq/synthetic_v4.pt
+            models/iq/synthetic_v4_metrics.json
+            models/iq/synthetic_v4_replay_metrics.json
+            models/iq/synthetic_v5.onnx
+            models/iq/synthetic_v5.pt
+            models/iq/synthetic_v5_metrics.json
+            models/iq/synthetic_wav_smoke_metrics.json
+            models/iq/SHA256SUMS
+          if-no-files-found: error
+
+  verify-v4-across-runners:
+    name: Independent runner v4 exact replay (synthetic)
+    needs: train-export-validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU training dependencies
+        run: |
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install numpy
+      - name: Download reference v4 weights and provenance
+        uses: actions/download-artifact@v4
+        with:
+          name: pt2vhf-iq-synthetic-onnx-experimental
+          path: models/iq
+      - name: Independently retrain v4 on a separate runner
+        env:
+          ATEN_CPU_CAPABILITY: default
+          MKL_CBWR: COMPATIBLE
+          OMP_NUM_THREADS: "1"
+          MKL_NUM_THREADS: "1"
+        run: python scripts/train_iq_unknown_v4.py --portable-cpu --output-dir models/iq/cross_runner
+      - name: Compare parameter tensors and training metrics exactly
+        run: |
+          python - <<'PY'
+          import json
+          import platform
+          from pathlib import Path
+          import numpy as np
+          import torch
+
+          root = Path("models/iq")
+          prior = json.loads((root / "synthetic_v4_replay_metrics.json").read_text())
+          environment = {
+              "torch_version": torch.__version__,
+              "numpy_version": np.__version__,
+              "python_version": platform.python_version(),
+              "threads": json.loads((root / "cross_runner/synthetic_v4_metrics.json").read_text())["training_cpu_policy"]["threads"],
+          }
+          cpu_model = next((line.partition(":")[2].strip() for line in
+              Path("/proc/cpuinfo").read_text().splitlines()
+              if line.startswith("model name")), "unknown")
+          print("Original runner:", {key: prior[key] for key in environment}, flush=True)
+          print("Independent runner:", environment, flush=True)
+          print("Original CPU:", prior.get("cpu_model", "unknown"), flush=True)
+          print("Independent CPU:", cpu_model, flush=True)
+          print("PyTorch build:", torch.__config__.show(), flush=True)
+          assert all(prior[key] == value for key, value in environment.items()), (
+              "Different environments; compare only under matching versions and CPU thread count")
+          orig = torch.load(root / "synthetic_v4.pt", map_location="cpu", weights_only=True)
+          new = torch.load(root / "cross_runner/synthetic_v4.pt", map_location="cpu", weights_only=True)
+          assert list(orig) == list(new)
+          max_difference = max(float((orig[key] - new[key]).abs().max()) for key in orig)
+          exact = all(torch.equal(orig[key], new[key]) for key in orig)
+          orig_metrics = json.loads((root / "synthetic_v4_metrics.json").read_text())
+          new_metrics = json.loads((root / "cross_runner/synthetic_v4_metrics.json").read_text())
+          same_metrics = orig_metrics == new_metrics
+          same_input = orig_metrics.get("training_input_sha256") == new_metrics.get("training_input_sha256")
+          same_initial = orig_metrics.get("initial_parameters_sha256") == new_metrics.get("initial_parameters_sha256")
+          report = {
+              "scope": "Independent Linux GitHub-hosted CPU runner; synthetic v4 only; no RF validation",
+              "parameter_exact_match": exact,
+              "max_parameter_absolute_difference": max_difference,
+              "metrics_exact_match": same_metrics,
+              "training_input_exact_match": same_input,
+              "initial_parameters_exact_match": same_initial,
+              "reference_cpu_model": prior.get("cpu_model", "unknown"),
+              "independent_cpu_model": cpu_model,
+              "environment": environment,
+              "limitations": "Two GitHub Ubuntu runners do not establish GPU, OS, or RF generalization",
+          }
+          (root / "synthetic_v4_cross_runner_metrics.json").write_text(
+              json.dumps(report, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps(report, indent=2), flush=True)
+          assert exact and same_metrics, "v4 mismatch between independent CPU runners"
+          PY
+      - name: Upload independent-runner comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pt2vhf-iq-v4-cross-runner-report
+          path: models/iq/synthetic_v4_cross_runner_metrics.json
+          if-no-files-found: warn

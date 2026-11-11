@@ -2165,6 +2165,15 @@ class MainWindow(QMainWindow):
             elif kind == "replay_end":
                 self.lcd.flags["REPLAY"] = False
                 self.tshift.status.setText("Ao vivo")
+            elif kind == "iq_recording_finalized":
+                self.statusBar().showMessage("Gravação IQ finalizada; SHA-256 verificado.", 6000)
+            elif kind == "iq_recording_warning":
+                self.audio_panel.rec_iq.blockSignals(True)
+                self.audio_panel.rec_iq.setChecked(False)
+                self.audio_panel.rec_iq.blockSignals(False)
+                self._rec_flag()
+                self.statusBar().showMessage(str(data), 15000)
+                QMessageBox.warning(self, "Gravação IQ interrompida", str(data))
             elif kind == "source_msg":
                 self.statusBar().showMessage(data, 10000)
                 self.rx_panel.info.setText(data)
