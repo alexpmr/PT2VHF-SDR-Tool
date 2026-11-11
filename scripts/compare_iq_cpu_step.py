@@ -226,11 +226,9 @@ def main():
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2), flush=True)
-    if (not report["environment_exact_match"] or report["first_divergent_stage"]
-            or report["first_divergent_float64_stage"]
-            or report["first_divergent_adam_stage"]
-            or any(value is not None for value in
-                   report["first_divergent_adam_parameter"].values())):
+    # Use the single fail-closed conclusion as the CLI exit gate. Checking only
+    # individual stages missed isolated native/oracle sqrt hash divergence.
+    if report["conclusion"] in ("ENVIRONMENT_MISMATCH", "NUMERICAL_DIVERGENCE"):
         raise SystemExit(2)
 
 

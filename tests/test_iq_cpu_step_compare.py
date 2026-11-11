@@ -228,3 +228,33 @@ def test_sqrt_oracle_malformed_samples_fail_closed():
     b["steps"][0]["float64_first_step"]["adam_sqrt_oracle"]["oracle_sha256"] = "invalid"
     with pytest.raises(ValueError, match="oracle SHA-256"):
         compare_reports(a, b)
+
+
+@pytest.mark.parametrize("digest_key", ["native_sha256", "oracle_sha256"])
+def test_cli_fails_closed_on_isolated_sqrt_oracle_hash_drift(tmp_path, digest_key):
+    """An isolated sampled sqrt hash mismatch must fail the CLI, not just JSON."""
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    reference, independent = probe(), probe("Intel")
+    independent["steps"][0]["float64_first_step"]["adam_sqrt_oracle"][digest_key] = "b" * 64
+    left = tmp_path / "reference.json"
+    right = tmp_path / "independent.json"
+    output = tmp_path / "comparison.json"
+    left.write_text(json.dumps(reference), encoding="utf-8")
+    right.write_text(json.dumps(independent), encoding="utf-8")
+    script = Path(__file__).resolve().parents[1] / "scripts" / "compare_iq_cpu_step.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--reference", str(left),
+         "--independent", str(right), "--out", str(output)],
+        capture_output=True, text=True, timeout=15,
+    )
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["conclusion"] == "NUMERICAL_DIVERGENCE"
+    assert report["first_divergent_stage"] is None
+    assert report["first_divergent_float64_stage"] is None
+    assert report["first_divergent_adam_stage"] is None
+    assert all(value is None for value in report["first_divergent_adam_parameter"].values())
+    assert result.returncode == 2
