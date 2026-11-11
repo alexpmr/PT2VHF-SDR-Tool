@@ -7,13 +7,13 @@ from scripts import ci_windows_crash_shard as shard
 
 
 def test_collection_parses_only_node_ids_and_normalizes_paths():
-    output = (
-        "tests/test_b.py::test_two\\n"
-        "tests\\\\test_a.py::test_one[param]\\n"
-        "tests/test_b.py::test_three\\n"
-        "110/343 tests collected (233 deselected)\\n"
-        "WARNING: irrelevant\\n"
-    ).replace("\\n", "\n")
+    output = "\n".join([
+        "tests/test_b.py::test_two",
+        r"tests\test_a.py::test_one[param]",
+        "tests/test_b.py::test_three",
+        "110/343 tests collected (233 deselected)",
+        "WARNING: irrelevant",
+    ])
     assert shard.collected_test_files(output) == [
         "tests/test_a.py", "tests/test_b.py"
     ]
