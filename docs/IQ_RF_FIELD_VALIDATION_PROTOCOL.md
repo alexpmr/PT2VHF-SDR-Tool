@@ -49,7 +49,7 @@ python scripts/audit_iq_dataset.py \
 - `BLOCK`: corrigir antes de usar o arquivo; o comando retorna código 2.
 - `REVIEW`: avaliação humana obrigatória do problema sinalizado.
 - `PASS`: nenhum problema listado foi detectado; **não comprova origem RF, rotulagem ou desempenho do modelo**.
-- A auditoria compara hashes de WAVs completos e amostras de janelas IQ **no início, meio e fim** das gravações para detectar reutilização exata entre calibração e holdout. Essa amostragem limitada não identifica todas as cópias modificadas, deslocadas, reamostradas ou vazamentos fora das posições inspecionadas; a proveniência e os rótulos continuam exigindo verificação independente.
+- A auditoria compara hashes de WAVs completos e amostras de janelas IQ **nas bordas, nos quartos e no meio** das gravações para detectar reutilização exata entre calibração e holdout. Essa amostragem limitada não identifica todas as cópias modificadas, deslocadas, reamostradas ou vazamentos fora das posições inspecionadas; a proveniência e os rótulos continuam exigindo verificação independente.
 
 ## Avaliação comparativa dos modelos, sem alterar o SDR
 
@@ -67,7 +67,7 @@ python scripts/evaluate_iq_recordings.py \
   --out "/dados/iq_relatorios/comparativo.json"
 ```
 
-O parâmetro `--max-windows` seleciona até 100 janelas IQ **não sobrepostas e uniformemente distribuídas ao longo de cada WAV** (incluindo início e fim), em vez de considerar apenas os primeiros segundos. Isso reduz o viés temporal de início de gravação, mas continua sendo uma amostragem determinística limitada; transmissões curtas entre janelas podem não ser observadas. Para ensaios de sensibilidade temporal, aumentar o limite e documentar a cobertura.
+O parâmetro `--max-windows` seleciona até 100 janelas IQ **não sobrepostas e uniformemente distribuídas ao longo de cada WAV** (incluindo início e fim quando há ao menos duas janelas; com limite 1, seleciona a janela central), em vez de considerar apenas os primeiros segundos. Isso reduz o viés temporal de início de gravação, mas continua sendo uma amostragem determinística limitada; transmissões curtas entre janelas podem não ser observadas. Para ensaios de sensibilidade temporal, aumentar o limite e documentar a cobertura.
 
 Revisar matriz de confusão, recall por classe (em especial CW/AM), erros de alta confiança, curva de aceitação de UNKNOWN, cobertura de sinais conhecidos, acurácia média por sessão e latência/uso de CPU medidos separadamente. O script calcula um intervalo exploratório de confiança por bootstrap de sessões (descrito abaixo), mas **não** calcula latência nem uso de CPU operacional: medir esses indicadores separadamente. A matriz de confusão e o recall utilizam a decisão efetiva do classificador, inclusive o limiar configurado para UNKNOWN; a curva de aceitação aplica cada limiar de forma independente sobre as probabilidades brutas. Não confundir as duas políticas.
 
