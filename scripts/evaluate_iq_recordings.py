@@ -90,7 +90,12 @@ def read_windows(path: Path, limit=100, stats=None, *, with_index=False):
         if (w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getcomptype()) != (2, 2, 48000, "NONE"):
             raise ValueError("Expected stereo PCM16 48000 Hz IQ WAV")
         total = w.getnframes() // SAMPLES
-        selected = np.linspace(0, total - 1, min(limit, total), dtype=np.int64)
+        # A one-window budget must inspect the middle, not the startup.
+        # With >=2 windows, retain deterministic coverage of both edges.
+        count = min(limit, total)
+        selected = (np.array([(total - 1) // 2], dtype=np.int64)
+                    if count == 1 else
+                    np.linspace(0, total - 1, count, dtype=np.int64))
         if stats is not None:
             stats["selected"] = stats.get("selected", 0) + len(selected)
         for index in selected:
