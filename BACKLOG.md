@@ -1,5 +1,12 @@
 # Backlog — PT2VHF SDR Tool
 
+## P0 — OTA redireciona ao navegador em clientes antigos (11/11/2026)
+- **Falha reproduzida por inspeção do código da v0.13.0:** `is_official()` somente aceita o caminho direto `/downloads/sdr-tool/<arquivo>` sem query; o servidor `update.php` entrega `/download.php?product=sdr&file=<arquivo>`, o que deixa `UpdateInfo.file=None`. O método `UpdateController._on_checked()` então chama `QDesktopServices.openUrl()` em vez de baixar/instalar. É uma incompatibilidade de protocolo, não uma falha do usuário.
+- **Correção de compatibilidade já lançada no cliente v0.13.1:** reconhece `download.php` e permite apenas redirecionamentos seguros para o asset exato da release GitHub, com SHA-256 e tamanho obrigatórios. O servidor ao vivo oferece tipos instalador e portátil para v0.13.1.
+- **Limite de migração:** clientes v0.13.0 compilados não podem receber retroativamente a nova validação de URL; requerem uma **instalação manual única** da v0.13.1 ou superior, salvo se for criada e homologada uma ponte legada no servidor que sirva o pacote sem redirecionamento. Não alegar OTA recuperado na v0.13.0.
+- **Prevenção de regressão (PR #5):** não abrir navegador como substituto silencioso do OTA; diagnosticar URL, hash, tamanho ou ausência de pacote, manter o executável intacto e testar o comportamento da GUI Qt em modo manual e automático.
+- **Aceite futuro:** testar atualização real `0.13.1 → próximo estável` no Windows Setup e Portable através do manifesto público, incluindo download completo, SHA-256, reinício, notas e backup/rollback.
+
 ## Release estável v0.13.2 — progresso no waterfall (11/11/2026)
 - **Branch candidata:** `release/stable-v0.13.2`, derivada da v0.13.1 na `main`; **não mesclar o PR neural experimental #2**.
 - **Waterfall, clique e arraste:** reforçado o filtro de eventos de mouse para permitir sintonia somente na faixa IQ adquirida. Cliques no espaço vazio por pan/zoom não mudam o VFO; passband arrastado para fora da faixa é restaurado. Implementado em código, **aguardando testes CI Linux/Windows e conferência em SDR real**.
