@@ -219,3 +219,24 @@ def test_double_click_never_recenters_after_tune_rejection(qt_lifecycle):
         assert w.vfo == 145_500_000
     finally:
         w.close()
+
+
+def test_real_qt_double_click_reaches_waterfall_handler(qt_lifecycle):
+    """Send an actual Qt double-click to the graphics viewport, not a fake event."""
+    from PySide6.QtTest import QTest
+
+    w = _ui(qt_lifecycle)
+    try:
+        w.add_line(np.full(512, -90, np.float32), 145_500_000, 200_000)
+        w.spec.setXRange(145.46, 145.54, padding=0)
+        QApplication.processEvents()
+        heard = []
+        w.centerTuneRequested.connect(heard.append)
+        point = w.wf.getViewBox().mapViewToScene(QPointF(145.525, 100))
+        pixel = w.glw.mapFromScene(point)
+        assert w.glw.viewport().rect().contains(pixel)
+        QTest.mouseDClick(w.glw.viewport(), Qt.LeftButton, pos=pixel)
+        QApplication.processEvents()
+        assert heard == [145_525_000]
+    finally:
+        w.close()
