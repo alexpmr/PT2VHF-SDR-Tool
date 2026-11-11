@@ -29,7 +29,7 @@ jobs:
 
   windows-exe:
     # Manual ou commit explícito [build-windows] (não compilar em cada push).
-    if: (github.event_name == 'pull_request' && startsWith(github.head_ref, 'release/stable-')) || (github.event_name == 'workflow_dispatch' && inputs.build_windows) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build-windows]')) || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'release/stable-'))
+    if: (github.event_name == 'pull_request' && startsWith(github.head_ref, 'release/stable-')) || (github.event_name == 'workflow_dispatch' && inputs.build_windows) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build-windows]'))
     permissions:
       contents: write
     runs-on: windows-2022  # validação obrigatória para distribuição Windows, independente do Qt Linux
