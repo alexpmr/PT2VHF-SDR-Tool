@@ -47,9 +47,16 @@ function Stop-InstalledGui {
 function Invoke-SetupSmoke([string]$source) {
     $env:PT2VHF_TEST_PACKAGE = $source
     Remove-Item -LiteralPath $resultFile -Force -ErrorAction SilentlyContinue
+    # Start-Process -Wait aguarda a arvore inteira no Windows, inclusive o helper
+    # e o SDR reiniciado (GUI persistente): isso bloqueia o CI indefinidamente.
+    # Esperar somente o processo launcher via System.Diagnostics.Process.
     $p = Start-Process -FilePath $powershell -ArgumentList @(
         '-NoProfile', '-NonInteractive', '-File', ('"' + $launcher + '"')
-    ) -Wait -PassThru
+    ) -PassThru
+    if (-not $p.WaitForExit(30000)) {
+        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+        throw 'Launcher Setup excedeu 30 segundos.'
+    }
     if ($p.ExitCode -ne 0) { throw "Launcher Setup falhou: $($p.ExitCode)" }
     for ($i = 0; $i -lt 100; $i++) {
         if (Test-Path -LiteralPath $resultFile) { break }
