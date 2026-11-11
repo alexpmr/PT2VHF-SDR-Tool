@@ -79,8 +79,17 @@ def audit(cal_manifest: Path, hold_manifest: Path, root: Path):
         if calibration_windows & sampled_iq_window_hashes(source):
             raise ValueError("Identical IQ window across calibration/holdout: test leakage")
     for label, rows in (("calibration", cal), ("holdout", hold)):
+        # Session-macro rates assume known and UNKNOWN captures come from
+        # distinct sessions. Two session IDs are not enough when a single
+        # session contributes to both populations (pseudo-independence).
+        session_families = {}
+        for _source, mode, session, _device in rows:
+            family = "UNKNOWN" if mode == "UNKNOWN" else "KNOWN"
+            if session in session_families and session_families[session] != family:
+                raise ValueError(label + " session mixes known and UNKNOWN labels")
+            session_families[session] = family
         modes = {r[1] for r in rows}
-        if len({r[2] for r in rows}) < 2 or "UNKNOWN" not in modes or len(modes) == 1:
+        if len(session_families) < 2 or "UNKNOWN" not in modes or len(modes) == 1:
             raise ValueError(label + " requires separate known and UNKNOWN sessions")
     return cal, hold
 
