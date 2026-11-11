@@ -52,8 +52,8 @@ jobs:
         run: python -X faulthandler scripts/run_tests.py
 
   windows-exe:
-    # Manual ou commit explícito [build-windows] (não compilar em cada push).
-    if: (github.event_name == 'workflow_dispatch' && inputs.build_windows) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build-windows]'))
+    # Manual, ou commit [build-windows] exclusivamente na main; IA experimental nunca publica release.
+    if: (github.event_name == 'workflow_dispatch' && inputs.build_windows) || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build-windows]'))
     permissions:
       contents: write
     runs-on: windows-2022  # validação obrigatória para distribuição Windows, independente do Qt Linux
@@ -159,7 +159,7 @@ jobs:
           name: PT2VHF-SDR-Tool-${{ steps.ver.outputs.version }}-windows
           path: release/
       - name: Publicar Release GitHub (origem para o site)
-        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[build-windows]')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build-windows]')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
