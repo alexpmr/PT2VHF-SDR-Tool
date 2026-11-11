@@ -292,3 +292,27 @@ def test_holdout_rejects_low_pipeline_coverage_even_with_perfect_predictions(
     assert report["operationally_validated"] is False
     with pytest.raises(ValueError, match="minimum pipeline coverage"):
         gate.run(cal, hold, tmp_path, object(), min_pipeline_coverage=float("nan"))
+
+
+@pytest.mark.parametrize("copied_index", [20, 60])
+def test_audit_rejects_quarter_position_iq_reuse(tmp_path, copied_index):
+    """Synthetic 80-window WAVs: reused quarter excerpts must fail split QA."""
+    cal = manifest(tmp_path, "cal.json", "cal", 1200)
+    hold = manifest(tmp_path, "hold.json", "hold", 1700)
+    first = np.random.default_rng(904).integers(
+        -8000, 8000, size=(80 * 2048, 2), dtype=np.int16)
+    second = np.random.default_rng(905).integers(
+        -8000, 8000, size=(80 * 2048, 2), dtype=np.int16)
+    start = copied_index * 2048
+    second[start:start + 2048] = first[start:start + 2048]
+
+    for filename, pcm in (("cal-0.wav", first), ("hold-0.wav", second)):
+        with wave.open(str(tmp_path / filename), "wb") as out:
+            out.setnchannels(2)
+            out.setsampwidth(2)
+            out.setframerate(48000)
+            out.writeframes(pcm.tobytes())
+
+    assert digest(tmp_path / "cal-0.wav") != digest(tmp_path / "hold-0.wav")
+    with pytest.raises(ValueError, match="Identical IQ window"):
+        audit(cal, hold, tmp_path)
