@@ -24,8 +24,8 @@ on:
       - 'scripts/export_iq_synthetic_v2.py'
       - 'scripts/evaluate_iq_synthetic_stress.py'
       - 'pt2vhf/dsp/iq_classifier.py'
-      - 'pt2vhf/dsp/iq_classifier_worker.py'
-      - 'tests/test_iq_classifier_resampling.py'
+      # Runtime worker/resampling changes are covered by PR CI; they do
+      # not modify synthetic model training or ONNX export.
       - 'tests/test_iq_classifier_contract.py'
       - 'tests/test_iq_augmentation.py'
       - 'tests/test_iq_ood_signals.py'
