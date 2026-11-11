@@ -19,7 +19,7 @@ RATE = 48000
 
 
 def inspect_recording(path: Path, *, max_windows: int = 256) -> dict:
-    """Inspect bounded non-overlapping PCM16 IQ windows, retaining hashes in memory."""
+    """Inspect uniformly spaced PCM16 IQ windows across the entire recording."""
     if max_windows < 1:
         raise ValueError("max_windows must be >= 1")
     hashes = set()
@@ -30,7 +30,14 @@ def inspect_recording(path: Path, *, max_windows: int = 256) -> dict:
                 wav.getcomptype()) != (2, 2, RATE, "NONE"):
             raise ValueError("Expected 48 kHz, stereo PCM16 WAV IQ (left I, right Q)")
         frames = wav.getnframes()
-        for _ in range(min(max_windows, frames // WINDOW)):
+        available = frames // WINDOW
+        count = min(max_windows, available)
+        # Bounded, deterministic coverage across the *whole* recording.
+        # The former prefix-only scan missed late clipping and reused IQ.
+        for ordinal in range(count):
+            index = (ordinal * (available - 1) // (count - 1)
+                     if count > 1 else (available - 1) // 2)
+            wav.setpos(index * WINDOW)
             raw = wav.readframes(WINDOW)
             if len(raw) != WINDOW * 4:
                 raise ValueError("Truncated PCM IQ window")
@@ -61,7 +68,9 @@ def inspect_recording(path: Path, *, max_windows: int = 256) -> dict:
         raise ValueError("Recording has no complete 2048-sample IQ windows")
     return {
         "frames_total": frames,
+        "windows_available": available,
         "windows_inspected": windows,
+        "window_selection": "uniform_full_recording_nonoverlapping",
         "rms_dbfs_mean": round(20 * math.log10(max(math.sqrt(power_sum / windows), 1e-12)), 2),
         "quiet_window_rate": quiet / windows,
         "clipping_sample_rate": clipped / samples,
