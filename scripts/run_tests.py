@@ -18,8 +18,15 @@ def main():
     result = pytest.main(["-q", *sys.argv[1:]])
     sys.stdout.flush()
     sys.stderr.flush()
+    # Diagnostic-only alternative: compare ordinary Python/Qt shutdown with
+    # the legacy hard exit on Windows. Never enable for release builds.
+    exit_mode = os.environ.get("PT2VHF_TEST_EXIT_MODE", "hard")
+    if exit_mode == "normal":
+        return int(result)
+    if exit_mode != "hard":
+        raise ValueError("PT2VHF_TEST_EXIT_MODE must be 'hard' or 'normal'")
     os._exit(int(result))
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
