@@ -71,13 +71,10 @@ def test_runner_delay_default_and_validation(monkeypatch):
         runner.main()
 
 
-def test_workflow_delay_probe_is_branch_isolated_and_never_builds():
+def test_workflow_retires_exhausted_delay_probe():
+    # CI #412 reproduced all 16 crashes with 0, 250, 1000 and 2000 ms.
+    # Keep the historical probe script for reproducibility but do not rerun
+    # the same diagnostic on every push without a new timing hypothesis.
     workflow = (Path(__file__).resolve().parents[1] / ".github" /
                 "workflows" / "build.yml").read_text(encoding="utf-8")
-    job = workflow.split("\n  windows-exit-delay-probe:", 1)[1].split("\n  windows-exe:", 1)[0]
-    assert "needs: windows-qt-teardown-probe" in job
-    assert "needs.windows-qt-teardown-probe.result == 'failure'" in job
-    assert "github.ref == 'refs/heads/feature/iq-signal-classifier'" in job
-    assert "python -m scripts.ci_windows_exit_delay_probe" in job
-    assert "gh release create" not in job
-    assert "pyinstaller" not in job.lower()
+    assert "\n  windows-exit-delay-probe:" not in workflow
