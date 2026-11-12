@@ -86,3 +86,28 @@ obrigatório. Presença de rótulo não prova sua veracidade, nem garante
 recall, independência entre sessões ou qualidade RF; o gate continua offline,
 `operationally_validated=false`. Os testes desta alteração usam WAVs
 sintéticos e predições simuladas. Não é homologação nem autorização de merge.
+
+
+## Cobertura cruzada classe × SDR — 12/11/2026
+
+A média de cobertura por classe e a média por SDR, verificadas
+**separadamente**, podem passar enquanto uma combinação específica
+falha completamente: por exemplo, CW em um segundo SDR com recall zero,
+mas CW funcionando no primeiro SDR e AM funcionando em ambos.
+
+O gate agora calcula
+`known_worst_class_device_correct_coverage` sobre cada célula
+**observada** (classe conhecida × dispositivo SDR) e exige o mesmo
+`--min-known-coverage` para a pior célula. O campo
+`known_class_device_cells_observed` informa quantas combinações foram
+medidas, sem divulgar identificadores de sessões ou dispositivos.
+O diagnóstico e a seleção de limiar continuam separados por sessão
+(calibração versus holdout).
+
+**Limitações:** uma célula com uma única janela pode produzir 0% ou 100%
+sem precisão estatística; as janelas não são independentes. Combinações
+classe × SDR **ausentes** não são testadas pelo mínimo, e a diversidade
+global de dois SDRs não garante que todos os modos tenham sido observados
+em ambos. Para homologação RF, exigir matriz completa por classe/SDR,
+sessões independentes, distribuição de SNR e intervalos de incerteza
+por sessão. Nenhum teste sintético prova acurácia RF ou autoriza promoção.
