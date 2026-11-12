@@ -1572,10 +1572,18 @@ class MainWindow(QMainWindow):
     def quit_for_update(self):
         """Fecha tudo para o auxiliar externo instalar a atualização (ele reabre o programa)."""
         self._quitting_for_update = True
+        # The old QTimer was installed *after* QApplication.quit(), when the
+        # Qt event loop was already ending. It never fired on stuck native
+        # audio/SDR shutdown, leaving the external OTA helper waiting forever.
+        # A daemon OS timer runs independently of Qt and only after the OTA
+        # helper has confirmed it started.
+        import threading
+        watchdog = threading.Timer(20.0, lambda: os._exit(0))
+        watchdog.daemon = True
+        watchdog.start()
         self.close()
         from PySide6.QtWidgets import QApplication
         QApplication.quit()
-        QTimer.singleShot(8000, lambda: os._exit(0))
 
     # ================================================================== Sondas RS41 / IQ original
     def _start_sonde(self, freq, fsk_path, rs41_path):
