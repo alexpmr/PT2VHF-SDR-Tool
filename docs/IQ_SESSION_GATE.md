@@ -111,3 +111,32 @@ global de dois SDRs não garante que todos os modos tenham sido observados
 em ambos. Para homologação RF, exigir matriz completa por classe/SDR,
 sessões independentes, distribuição de SNR e intervalos de incerteza
 por sessão. Nenhum teste sintético prova acurácia RF ou autoriza promoção.
+
+
+## Pior sessão UNKNOWN e pior célula classe × SDR × sessão — 12/11/2026
+
+**Nova hipótese de mascaramento testada apenas com observações sintéticas:**
+a taxa de falsa aceitação de UNKNOWN pode ser baixa globalmente, na média
+entre sessões e até por SDR, mas chegar a 100% em uma única sessão ruim.
+Analogamente, CW pode falhar totalmente em uma sessão de um SDR, enquanto
+outras sessões com muitas janelas corretas fazem a cobertura da mesma
+classe × SDR parecer adequada. Janelas correlacionadas não substituem
+sessões independentes.
+
+O gate de pesquisa agora exige também:
+- `unknown_worst_session_false_accept_rate <= --max-unknown-far`;
+- `known_worst_class_device_session_correct_coverage >= --min-known-coverage`
+  quando há identidade de SDR, como é obrigatório na avaliação fim a fim.
+
+O relatório inclui o número de células observadas
+`known_class_device_session_cells_observed`, mas **não** divulga IDs de
+sessões ou nomes de dispositivos. A seleção de limiar continua restrita à
+calibração; o holdout usa o limiar congelado. Os novos mínimos não substituem
+contagens amostrais, intervalos de confiança, diversidade de famílias OOD,
+SNR, rótulos externos ou captura RF genuína. Um único resultado de sessão
+pode ser estatisticamente instável: o critério é conservador e exploratório,
+não uma estimativa validada de risco operacional.
+
+Três testes sintéticos cobrem falsa aprovação OOD em sessão isolada,
+falha CW em uma célula classe × SDR × sessão e controle positivo/compatibilidade
+com a API unitária legada. **Nenhuma validação RF real foi executada.**
