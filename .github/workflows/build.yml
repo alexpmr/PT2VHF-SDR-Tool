@@ -10,6 +10,10 @@ on:
         description: "Gerar executável do Windows"
         type: boolean
         default: false
+      diagnose_windows:
+        description: "Diagnósticos nativos repetitivos somente sob hipótese nova (branch experimental)"
+        type: boolean
+        default: false
 
 jobs:
 
@@ -94,11 +98,12 @@ jobs:
   # Preserve the evidence in docs; do not rerun this exhausted matrix on pushes.
 
   windows-crash-isolation:
-    # Diagnostic only: if the complete Windows suite fails, run independent
+    # Manual opt-in only: exhausted diagnostics are NOT repeated on every push.
+    # If the complete Windows suite fails, run independent
     # IQ/non-IQ and hard/normal exit modes distinguish test scope from Qt teardown.
     # Never generates installers or publishes artifacts.
     needs: windows-tests
-    if: ${{ always() && needs.windows-tests.result == 'failure' && github.ref == 'refs/heads/feature/iq-signal-classifier' }}
+    if: ${{ always() && needs.windows-tests.result == 'failure' && github.event_name == 'workflow_dispatch' && inputs.diagnose_windows == true && github.ref == 'refs/heads/feature/iq-signal-classifier' }}
     runs-on: windows-2022
     timeout-minutes: 30
     permissions:
@@ -157,10 +162,11 @@ jobs:
         run: python scripts/ci_windows_crash_shard.py --index ${{ matrix.shard }} --count 2
 
   windows-file-probe:
-    # Diagnostic-only follow-up after native Windows crash; per-file isolation.
+    # Manual opt-in after a native Windows crash; per-file isolation.
+    # Keep disabled on ordinary pushes: previous per-file results are unchanged.
     # Never builds an installer or publishes releases.
     needs: windows-tests
-    if: ${{ always() && needs.windows-tests.result == 'failure' && github.ref == 'refs/heads/feature/iq-signal-classifier' }}
+    if: ${{ always() && needs.windows-tests.result == 'failure' && github.event_name == 'workflow_dispatch' && inputs.diagnose_windows == true && github.ref == 'refs/heads/feature/iq-signal-classifier' }}
     runs-on: windows-2022
     timeout-minutes: 30
     permissions:
