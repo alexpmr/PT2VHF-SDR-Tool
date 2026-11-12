@@ -51,6 +51,15 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Testes no Windows
         run: python scripts/run_tests.py
+      - name: P0 - smoke do coletor local de eventos Windows (sem telemetria)
+        run: |
+          $path = Join-Path $env:TEMP "pt2vhf-wer-ci.txt"
+          .\\scripts\\collect_windows_crash_evidence.ps1 -Days 1 -OutputFile $path
+          if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) { throw "WER collector failed" }
+          if (-not (Test-Path -LiteralPath $path)) { throw "WER summary missing" }
+          $data = Get-Content -LiteralPath $path -Raw
+          if (-not $data.Contains("PT2VHF SDR Tool - Windows crash event summary")) { throw "WER summary invalid" }
+          Remove-Item -LiteralPath $path -Force
       - uses: actions/checkout@v4
         with:
           ref: v0.13.2
