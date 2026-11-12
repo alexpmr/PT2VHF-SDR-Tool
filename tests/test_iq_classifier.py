@@ -52,3 +52,22 @@ def test_modulated_centered_am_still_has_valid_model_features():
     assert np.isfinite(features).all()
     assert abs(z.mean()) < 1e-4
     assert np.isclose(np.sqrt(np.mean(abs(z)**2)),1,atol=1e-4)
+
+@pytest.mark.parametrize("gain", [1e20, 1e30, 3e38])
+def test_extreme_finite_iq_gain_does_not_overflow_to_fake_zero_features(gain):
+    """Synthetic numerical regression; this is not RF model validation."""
+    n = np.arange(SAMPLES, dtype=np.float64)
+    carrier = np.exp(2j * np.pi * 7 * n / SAMPLES).astype(np.complex64)
+    reference = IQClassifier.features(carrier)
+    amplified = IQClassifier.features(carrier * np.complex64(gain))
+    assert amplified.shape == reference.shape
+    assert np.isfinite(amplified).all()
+    np.testing.assert_allclose(amplified, reference, rtol=2e-5, atol=2e-5)
+    assert float(np.max(np.abs(amplified))) > 0.5
+
+
+def test_extreme_finite_dc_only_remains_rejected():
+    """Overflow fallback must not invent RF from an enormous DC offset."""
+    carrier = np.full(SAMPLES, np.complex64(3e38), dtype=np.complex64)
+    with pytest.raises(ValueError, match="No usable RF signal"):
+        IQClassifier.features(carrier)
