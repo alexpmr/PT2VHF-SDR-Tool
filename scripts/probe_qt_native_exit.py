@@ -1,0 +1,124 @@
+"""P0 diagnostic: detect native Qt/pyqtgraph crashes at process shutdown.
+
+Runs minimal Qt and SDR waterfall scenarios in *separate* child processes,
+with ordinary Python shutdown and with os._exit.  Unlike pytest's in-process
+summary, the parent checks the actual Windows process exit status.
+This does not exercise physical SDR drivers or prove the production crash.
+"""
+from __future__ import annotations
+
+import argparse
+import gc
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def child(scenario: str, exit_mode: str, frames: int) -> int:
+    sys.path.insert(0, str(ROOT))
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    os.environ["PT2VHF_NO_STARTUP_DIALOGS"] = "1"
+    os.environ["PT2VHF_NO_AUTOCONNECT"] = "1"
+
+    from PySide6.QtWidgets import QApplication, QWidget
+
+    app = QApplication([])
+    app.setQuitOnLastWindowClosed(False)
+    if scenario == "bare":
+        widget = QWidget()
+        widget.show()
+        app.processEvents()
+        widget.close()
+        del widget
+    elif scenario == "waterfall":
+        import numpy as np
+        from pt2vhf.ui.waterfall import SpectrumWaterfall
+
+        widget = SpectrumWaterfall()
+        widget.set_vfo(145_500_000, -6_000, 6_000)
+        widget.show()
+        for index in range(frames):
+            widget.add_line(
+                np.full(512, -90 - index % 12, dtype=np.float32),
+                145_500_000, 200_000,
+            )
+            if index % 4 == 0:
+                app.processEvents()
+        widget.close()
+        del widget
+    else:
+        raise ValueError(f"Unknown scenario: {scenario}")
+
+    app.processEvents()
+    gc.collect()
+    app.processEvents()
+    print(f"CHILD-READY scenario={scenario} exit={exit_mode} frames={frames}", flush=True)
+    if exit_mode == "hard":
+        # ExitProcess still calls native DLL detach handlers on Windows.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
+    return 0  # Ordinary Python/Qt interpreter shutdown is also tested.
+
+
+def parent(repeats: int, frames: int, timeout: int) -> int:
+    failures = []
+    env = dict(os.environ)
+    env["QT_QPA_PLATFORM"] = "offscreen"
+    env["PYTHONFAULTHANDLER"] = "1"
+    env["PT2VHF_NO_STARTUP_DIALOGS"] = "1"
+    env["PT2VHF_NO_AUTOCONNECT"] = "1"
+    env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    for scenario in ("bare", "waterfall"):
+        for exit_mode in ("normal", "hard"):
+            for attempt in range(1, repeats + 1):
+                cmd = [
+                    sys.executable, "-X", "faulthandler", str(Path(__file__).resolve()),
+                    "--child", "--scenario", scenario, "--exit-mode", exit_mode,
+                    "--frames", str(frames),
+                ]
+                try:
+                    proc = subprocess.run(
+                        cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        text=True, errors="replace", timeout=timeout, check=False,
+                    )
+                except subprocess.TimeoutExpired as exc:
+                    failures.append(f"{scenario}/{exit_mode} #{attempt}: TIMEOUT ({timeout}s)")
+                    print(failures[-1], flush=True)
+                    continue
+                status = f"{proc.returncode} (0x{proc.returncode & 0xffffffff:08X})"
+                print(
+                    f"QT-EXIT scenario={scenario} mode={exit_mode} attempt={attempt} "
+                    f"status={status}\n{proc.stdout[-4000:]}",
+                    flush=True,
+                )
+                if proc.returncode != 0 or "CHILD-READY" not in proc.stdout:
+                    failures.append(f"{scenario}/{exit_mode} #{attempt}: {status}")
+    if failures:
+        print("NATIVE-EXIT-FAILURES:\n" + "\n".join(failures), flush=True)
+        return 1
+    print("QT native shutdown subprocess probes passed; hardware SDR untested.", flush=True)
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--child", action="store_true")
+    parser.add_argument("--scenario", choices=("bare", "waterfall"), default="bare")
+    parser.add_argument("--exit-mode", choices=("normal", "hard"), default="normal")
+    parser.add_argument("--frames", type=int, default=120)
+    parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument("--timeout", type=int, default=90)
+    args = parser.parse_args()
+    if args.frames < 1 or args.repeats < 1 or args.timeout < 1:
+        parser.error("frames, repeats and timeout must be positive")
+    if args.child:
+        return child(args.scenario, args.exit_mode, args.frames)
+    return parent(args.repeats, args.frames, args.timeout)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
