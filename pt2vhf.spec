@@ -28,6 +28,12 @@ if av_spec and av_spec.origin:
     else:
         raise RuntimeError("Dependencia audiolab.av sem pasta templates: verifique o wheel")
 datas += [("scripts/apply-update.ps1", "scripts")]
+# Same asset path works in PyInstaller one-dir, one-file, Windows/Linux/macOS.
+# Fail builds explicitly if the branded splash is missing from the repo.
+splash_asset = os.path.join("assets", "branding", "powered-by-pt2vhf.jpg")
+if not os.path.isfile(splash_asset):
+    raise RuntimeError("Missing required PT2VHF splash asset: " + splash_asset)
+datas.append((splash_asset, "assets/branding"))
 for f in ("drivers/wdi-simple.exe", "drivers/libwdi-COPYING-LGPL.txt"):
     if os.path.isfile(f):
         datas.append((f, "drivers"))
