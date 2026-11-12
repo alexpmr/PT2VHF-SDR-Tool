@@ -16,6 +16,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import uuid
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -226,11 +228,12 @@ def helper_script() -> Path:
 
 
 def update_script_args(helper: Path, *, pid: int, package: Path, destination: Path, exe: Path,
-                       portable: bool, version: str = "") -> list:
+                       portable: bool, version: str = "", ready_file: Path | None = None) -> list:
     ps = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     return [str(ps), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
             "-File", str(helper), "-WaitPid", str(pid), "-Package", str(package), "-Destination", str(destination),
-            "-Executable", str(exe), "-Mode", "Portable" if portable else "Setup", "-Version", str(version)]
+            "-Executable", str(exe), "-Mode", "Portable" if portable else "Setup", "-Version", str(version),
+            *(["-ReadyFile", str(ready_file)] if ready_file is not None else [])]
 
 
 def apply(path: Path, kind: str, version: str = "") -> None:
@@ -245,14 +248,37 @@ def apply(path: Path, kind: str, version: str = "") -> None:
     helper = path.parent / "apply-update.ps1"  # fora da pasta temporária do EXE portátil
     shutil.copy2(script, helper)
     exe = Path(sys.executable).resolve()
+    # Unique acknowledgement ensures the PowerShell script actually STARTED,
+    # not merely that CreateProcess returned successfully.
+    ready = path.parent / ("ota-helper-ready-" + uuid.uuid4().hex + ".txt")
     args = update_script_args(helper, pid=os.getpid(), package=path, destination=exe.parent, exe=exe,
-                              portable=(kind == "portable"), version=version)
+                              portable=(kind == "portable"), version=version, ready_file=ready)
     flags = (getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
              | getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0))
     try:
-        subprocess.Popen(args, close_fds=True, creationflags=flags)
-    except OSError:
-        subprocess.Popen(args, close_fds=True, creationflags=flags & ~getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0))
+        try:
+            worker = subprocess.Popen(args, close_fds=True, creationflags=flags)
+        except OSError:
+            worker = subprocess.Popen(
+                args, close_fds=True,
+                creationflags=flags & ~getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0))
+    except OSError as exc:
+        raise UpdateError(f"Não foi possível iniciar o auxiliar OTA: {exc}") from exc
+    try:
+        until = time.monotonic() + 12.0
+        while time.monotonic() < until:
+            if ready.is_file():
+                if ready.read_text(encoding="utf-8-sig").strip() == "READY":
+                    return
+                raise UpdateError("Auxiliar OTA respondeu incorretamente. O aplicativo permanecerá aberto.")
+            if worker.poll() is not None:
+                raise UpdateError("O PowerShell encerrou antes de iniciar a atualização. "
+                                  "Consulte PT2VHF-SDR-Tool-ota-helper.log em %TEMP%.")
+            time.sleep(0.15)
+        raise UpdateError("O auxiliar OTA não confirmou inicialização em 12 segundos; "
+                          "o aplicativo permanecerá aberto. Consulte o log OTA em %TEMP%.")
+    finally:
+        ready.unlink(missing_ok=True)
 
 
 def read_update_result(temp_dir: Path | None = None) -> tuple[str, str, str] | None:
