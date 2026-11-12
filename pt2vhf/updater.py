@@ -272,13 +272,27 @@ def apply(path: Path, kind: str, version: str = "") -> None:
         until = time.monotonic() + 12.0
         while time.monotonic() < until:
             if ready.is_file():
-                if ready.read_text(encoding="utf-8-sig").strip() == "READY":
+                # PowerShell creates the file before completing Set-Content:
+                # an empty partial read is NOT a failed acknowledgement.
+                try:
+                    response = ready.read_text(encoding="utf-8-sig").strip()
+                except OSError:
+                    response = ""
+                if response == "READY":
                     return
-                raise UpdateError("Auxiliar OTA respondeu incorretamente. O aplicativo permanecerá aberto.")
+                if response:
+                    raise UpdateError("Auxiliar OTA respondeu incorretamente. O aplicativo permanecerá aberto.")
             if worker.poll() is not None:
                 raise UpdateError("O PowerShell encerrou antes de iniciar a atualização. "
                                   "Consulte PT2VHF-SDR-Tool-ota-helper.log em %TEMP%.")
             time.sleep(0.15)
+        # On timeout the detached helper must be stopped. Otherwise it might
+        # eventually install over a still-running GUI despite a rejected ACK.
+        try:
+            if worker.poll() is None:
+                worker.terminate()
+        except OSError:
+            pass
         raise UpdateError("O auxiliar OTA não confirmou inicialização em 12 segundos; "
                           "o aplicativo permanecerá aberto. Consulte o log OTA em %TEMP%.")
     finally:
