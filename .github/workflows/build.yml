@@ -48,8 +48,46 @@ jobs:
           python-version: "3.12"
       - name: Dependências dos testes (sem build de instalador)
         run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
+      - name: Habilitar minidumps WER locais para falhas nativas Python
+        shell: pwsh
+        run: |
+          $dumpDir = Join-Path $env:RUNNER_TEMP "pt2vhf-native-dumps"
+          New-Item -ItemType Directory -Force -Path $dumpDir | Out-Null
+          $key = "HKCU:\\Software\\Microsoft\\Windows\\Windows Error Reporting\\LocalDumps\\python.exe"
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpFolder -PropertyType ExpandString -Value $dumpDir -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpType -PropertyType DWord -Value 1 -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpCount -PropertyType DWord -Value 3 -Force | Out-Null
+          (Get-Date).ToString("o") | Set-Content (Join-Path $env:RUNNER_TEMP "pt2vhf-wer-start.txt")
+          Write-Host "WER LocalDumps configured (minidump only; runner-local, never uploaded)"
       - name: Testes Windows / Qt offscreen (falhar se houver crash nativo)
         run: python scripts/ci_windows_pytest.py
+      - name: Diagnóstico WER após falha nativa (sem upload de dumps)
+        if: failure()
+        shell: pwsh
+        run: |
+          $dumpDir = Join-Path $env:RUNNER_TEMP "pt2vhf-native-dumps"
+          $dumps = @(Get-ChildItem -Path $dumpDir -Filter "*.dmp" -File -ErrorAction SilentlyContinue)
+          if ($dumps.Count -eq 0) {
+            Write-Host "WER: no python.exe minidump captured; absence does not exclude native corruption"
+          } else {
+            foreach ($dump in $dumps) {
+              Write-Host ("WER minidump: {0} bytes={1} SHA256={2}" -f $dump.Name, $dump.Length, (Get-FileHash -Path $dump.FullName -Algorithm SHA256).Hash.ToLower())
+            }
+          }
+          $start = [datetime]::Parse((Get-Content (Join-Path $env:RUNNER_TEMP "pt2vhf-wer-start.txt") -Raw))
+          try {
+            $events = @(Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000,1001; StartTime=$start} -ErrorAction Stop |
+              Where-Object { $_.Message -match '(?i)python(\\.exe)?|pt2vhf' } | Select-Object -First 8)
+            if ($events.Count -eq 0) { Write-Host "WER: no matching Application Error / Windows Error Reporting events" }
+            foreach ($event in $events) {
+              Write-Host ("WER event ID={0} time={1}" -f $event.Id, $event.TimeCreated.ToString("o"))
+              Write-Host ($event.Message.Substring(0, [Math]::Min(1800, $event.Message.Length)))
+            }
+          } catch {
+            Write-Host "WER event query unavailable: $($_.Exception.Message)"
+          }
+          Write-Host "Privacy: dump files stay on ephemeral runner; no artifact upload or release."
 
   # Runtime A/B (Python 3.11/3.12 x PySide6 6.9.3/6.11.3) retired after
   # all 8 isolated UI cases reproduced native crashes in CI #43177095139.
