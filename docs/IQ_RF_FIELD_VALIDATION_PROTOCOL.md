@@ -18,6 +18,35 @@
 5. Dividir treino, ajustes de limiar e avaliação **por sessão e dispositivo**, evitando que segmentos da mesma transmissão apareçam em conjuntos diferentes. Nunca treinar em dados reservados para avaliação cega.
 6. Guardar os WAVs RF brutos e o manifesto **fora do GitHub**; não incluir identificadores pessoais nem conteúdo de comunicações particulares nos relatórios públicos. Confirmar licitude/consentimento quando necessário.
 
+## Limite temporal fundamental: CW versus portadora OOD (revisão de 12/11/2026)
+
+O classificador ONNX recebe **2.048 amostras complexas a 48.000 amostras/s**:
+cada decisão observa apenas **42,67 ms** de IQ. Isso é um limite do contrato
+atual, não uma medição de RF. Pela convenção de velocidade CW, a duração de um
+ponto é `1,2 / WPM` segundos: **60 ms a 20 WPM** e **40 ms a 30 WPM**.
+Portanto, mesmo um CW perfeitamente rotulado pode produzir janelas inteiras
+contendo apenas portadora ligada, sem qualquer transição de chaveamento.
+
+**Consequência de identificabilidade:** uma janela de CW sem transições e uma
+portadora contínua não modulada, com frequência/amplitude/ruído equivalentes,
+podem ser indistinguíveis nesse intervalo. Não existe limiar de confiança
+softmax capaz de resolver, sozinho, uma ausência de informação física. Não
+tratar uma portadora contínua reconhecida como CW como acerto. Uma eventual
+política de abstinência/UNKNOWN precisa de evidência temporal de chaveamento
+(ou de uma fonte externa), preservando explicitamente o estado **indeterminado**
+quando a observação é curta demais. Isso requer desenho e QA próprios, não
+apenas aumentar o limiar ou treinar novas sementes sintéticas.
+
+**Requisito adicional para o corpus RF:** registrar segmentos CW completos
+contendo vários pontos/traços e silêncios, com timestamps e rótulos
+independentes; avaliar tanto janelas de 42,67 ms quanto sequências
+multijanela e estratificar por velocidade CW. Capturar portadoras OOD
+contínuas, também com verificação externa, no mesmo plano de SNR/deslocamento
+de frequência. A divisão treino/calibração/holdout continua por sessão e
+dispositivo; janelas adjacentes da mesma transmissão não são independentes.
+Esse protocolo não constitui validação executada nem autoriza classificação
+automática de modo.
+
 ## Preparar as gravações — comandos existentes no repositório
 
 Executar a partir da raiz do projeto, com um ambiente Python contendo as dependências do SDR Tool. Substituir os caminhos e frequências pelos da coleta, mantendo a gravação de entrada fora da pasta de resultados.
