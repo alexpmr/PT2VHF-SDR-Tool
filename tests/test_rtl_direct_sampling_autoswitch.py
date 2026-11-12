@@ -137,3 +137,60 @@ def test_saved_hf_path_selects_tuner_on_startup_policy():
     assert select_direct_sampling_mode(433e6, 1_200_000, 2, 2) == 0
     assert select_direct_sampling_mode(155_930_000, 1_200_000, 2, 2) == 0
     assert select_direct_sampling_mode(7_100_000, 1_200_000, 2, 2) == 2
+
+
+def test_startup_in_433_mhz_ignores_persisted_hf_direct_mode(
+        monkeypatch, tmp_path, qt_lifecycle):
+    """The saved HF mode must be disabled BEFORE Engine.start opens RF."""
+    from pt2vhf.ui.main_window import MainWindow
+    from pt2vhf.sources import rtlsdr_source as module
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    w = MainWindow()
+    starts = []
+
+    class FakeRtl:
+        name = "RTL-SDR"
+        tuner = "R820T"
+        library = "standard"
+        product = "generic"
+        block_size = 16384
+        def __init__(self, sample_rate, center_freq, *_args):
+            self.sample_rate = sample_rate
+            self.center_freq = center_freq
+            self.direct_sampling = 0
+            self.events = []
+        def set_bias_tee(self, on):
+            self.events.append(("bias", on))
+        def set_direct_sampling(self, mode):
+            self.direct_sampling = int(mode)
+            self.events.append(("direct", int(mode)))
+        def check_freq(self, freq):
+            lo, hi = tuning_range(self.tuner, False, self.direct_sampling)
+            return "" if lo <= freq <= hi else "fora do alcance"
+
+    def fake_start(src):
+        starts.append(src)
+        w.engine.source = src
+
+    monkeypatch.setattr(module, "RtlSdrSource", FakeRtl)
+    monkeypatch.setattr(w.engine, "start", fake_start)
+    monkeypatch.setattr(w, "_apply_receiver_settings", lambda: None)
+    monkeypatch.setattr(w, "_update_lcd", lambda: None)
+
+    try:
+        w.engine.vfo = 433_920_000
+        w.cfg["direct_sampling"] = 2
+        w.start_source({
+            "source": "RTL-SDR", "sample_rate": 1_200_000,
+            "device_index": 0, "gain": None, "ppm": 0
+        })
+        assert len(starts) == 1
+        assert starts[0].direct_sampling == 0
+        assert w.cfg["direct_sampling"] == 0
+        assert w.cfg["hf_direct_sampling_mode"] == 2
+        assert w.rx_panel.direct.currentIndex() == 0
+    finally:
+        w.engine.source = None
+        w.close()
