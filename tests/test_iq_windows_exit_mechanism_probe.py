@@ -63,13 +63,13 @@ def test_retired_exit_mechanism_job_stays_disabled_and_replacement_is_safe():
     workflow = (Path(__file__).resolve().parents[1] / ".github" /
                 "workflows" / "build.yml").read_text(encoding="utf-8")
     assert "\n  windows-exit-mechanism-probe:" not in workflow
-    assert "\n  windows-qt-runtime-probe:" in workflow
-    job = workflow.split("\n  windows-qt-runtime-probe:", 1)[1].split(
-        "\n  windows-crash-isolation:", 1
+    assert "\n  windows-qt-runtime-probe:" not in workflow
+    job = workflow.split("\n  windows-file-probe:", 1)[1].split(
+        "\n  windows-case-probe:", 1
     )[0]
     assert "needs: windows-tests" in job
     assert "needs.windows-tests.result == 'failure'" in job
     assert "github.ref == 'refs/heads/feature/iq-signal-classifier'" in job
-    assert "scripts/ci_windows_pytest.py" in job
+    assert "python -m scripts.ci_windows_file_probe" in job
     assert "pyinstaller" not in job.lower()
     assert "gh release create" not in job
