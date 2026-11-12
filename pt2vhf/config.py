@@ -67,7 +67,7 @@ DEFAULTS = {
     "band_stacks": {},
     "bands_visible": ["160 m", "80 m", "60 m", "40 m", "30 m", "20 m", "17 m",
                       "15 m", "12 m", "10 m", "6 m", "2 m", "70 cm", "11 m (PX)",
-                      "FM Broadcast", "Aviação (VHF)", "Marítimo VHF"],
+                      "FM Broadcast", "Aviação (VHF)", "Marítimo VHF", "915 MHz"],
     "wf_keep_vfo_centered": False,
     "rx_ever_connected": False,
     "analog_enabled": False,
@@ -101,6 +101,14 @@ class Config(dict):
                 self.update(json.loads(self.path.read_text(encoding="utf-8")))
             except (OSError, ValueError):
                 pass
+        # Add the new receive-only 915 MHz shortcut exactly once to existing
+        # installations. Thereafter honor intentional user hide/show choices.
+        if not self.get("bands_v1_migrated", False):
+            shown = list(self.get("bands_visible", []))
+            if "915 MHz" not in shown:
+                shown.append("915 MHz")
+            self["bands_visible"] = shown
+            self["bands_v1_migrated"] = True
 
     def save(self):
         try:
