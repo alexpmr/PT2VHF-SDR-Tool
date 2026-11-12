@@ -178,28 +178,11 @@ jobs:
       - name: Isolar cada arquivo não-IQ em processo Windows independente
         run: python -m scripts.ci_windows_file_probe --timeout-seconds 180
 
-  windows-case-probe:
-    # One-time QPA hypothesis: compare Qt minimal against the previously failing
-    # offscreen platform, keeping the same isolated UI cases and hard exit.
-    # Runs only after file-level probe fails; never builds installers or releases.
-    needs: windows-file-probe
-    if: ${{ always() && needs.windows-file-probe.result == 'failure' && github.ref == 'refs/heads/feature/iq-signal-classifier' }}
-    runs-on: windows-2022
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      QT_QPA_PLATFORM: minimal
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Dependências do diagnóstico por caso (sem instalador)
-        run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
-      - name: Comparar Qt minimal em casos UI isolados (hard exit; diagnóstico)
-        run: python -m scripts.ci_windows_case_probe --timeout-seconds 180 --exit-mode hard
-
+  # QPA minimal/offscreen isolated case probe retired after CI #43213137478:
+  # 4/9 hard-exit UI cases still crashed under minimal, matching the four
+  # hard-exit cases previously observed under offscreen. The root cause is
+  # unresolved; keep the mandatory Windows suite fail-closed. The manual
+  # scripts/ci_windows_case_probe.py tool remains available for new hypotheses.
 
   windows-exe:
     # Manual e commit [build-windows] SOMENTE na main; branch experimental nao gera instaladores.
