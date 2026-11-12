@@ -222,7 +222,8 @@ def test_holdout_gate_requires_three_sessions_and_two_devices(tmp_path, monkeypa
         if accounting is not None:
             accounting.update({"minimum_session_pipeline_coverage": 1.0,
                                "pipeline_coverage": 1.0})
-        return [(label, label, .99, session) for _, label, session, _ in rows]
+        return [(label, label, .99, session, device)
+                for _, label, session, device in rows]
 
     monkeypatch.setattr(gate, "observations", perfect_observations)
     two_sessions = gate.run(cal, hold, tmp_path, object())
@@ -299,6 +300,7 @@ def test_observations_account_for_silent_and_dc_rejections(tmp_path):
     rows = [(path, "AM", "private-session", "synthetic SDR")]
     observed = observations(rows, Guarded(), 100, accounting=accounting)
     assert len(observed) == 1
+    assert observed[0][4] == "synthetic SDR"
     assert accounting["windows_selected"] == 4
     assert accounting["windows_inferred"] == 1
     assert accounting["windows_rejected_preprocessing"] == 1
@@ -336,7 +338,8 @@ def test_holdout_rejects_low_pipeline_coverage_even_with_perfect_predictions(
             coverage = 1.0 if calls == 1 else .25
             accounting.update({"minimum_session_pipeline_coverage": coverage,
                                "pipeline_coverage": coverage})
-        return [(label, label, .99, session) for _, label, session, _ in rows]
+        return [(label, label, .99, session, device)
+                for _, label, session, device in rows]
 
     monkeypatch.setattr(gate, "observations", perfect_but_low_coverage)
     report = gate.run(cal, hold, tmp_path, object())
@@ -411,3 +414,49 @@ def test_observations_accept_softmax_probability_roundoff(tmp_path):
                             Rounded(), max_windows=2)
     assert len(observed) == 2
     assert all(item[1] == "AM" for item in observed)
+
+
+def test_device_worst_case_blocks_ood_masked_by_many_good_sessions():
+    """Synthetic: session-macro and pooled FAR can hide a failed SDR."""
+    known = [("AM", "AM", .99, "known-a", "sdr-a"),
+             ("AM", "AM", .99, "known-b", "sdr-b")]
+    unknown = [("UNKNOWN", "UNKNOWN", .99, f"quiet-{i}", "sdr-a")
+               for i in range(20)]
+    unknown.append(("UNKNOWN", "AM", .99, "bad-unknown", "sdr-b"))
+    rows = known + unknown
+    measured = rates(rows, .95)
+    assert measured["unknown_false_accept_rate"] == pytest.approx(1 / 21)
+    assert measured["unknown_session_macro_false_accept"] == pytest.approx(1 / 21)
+    assert measured["unknown_worst_device_false_accept_rate"] == 1.0
+    assert measured["known_worst_device_correct_coverage"] == 1.0
+    chosen, _ = select(rows, max_far=.10, min_coverage=.50)
+    assert chosen is None
+    assert "sdr-a" not in json.dumps(measured)
+    assert "sdr-b" not in json.dumps(measured)
+
+
+def test_device_worst_case_blocks_known_coverage_masked_by_many_sessions():
+    """Synthetic: good aggregate known recall cannot mask a failed SDR."""
+    known = [("AM", "AM", .99, f"good-{i}", "sdr-a")
+             for i in range(20)]
+    known.append(("AM", "UNKNOWN", .99, "bad-known", "sdr-b"))
+    unknown = [("UNKNOWN", "UNKNOWN", .99, "unknown-a", "sdr-a"),
+               ("UNKNOWN", "UNKNOWN", .99, "unknown-b", "sdr-b")]
+    rows = known + unknown
+    measured = rates(rows, .95)
+    assert measured["known_session_macro_coverage"] == pytest.approx(20 / 21)
+    assert measured["known_worst_device_correct_coverage"] == 0.0
+    assert measured["unknown_worst_device_false_accept_rate"] == 0.0
+    chosen, _ = select(rows, max_far=.10, min_coverage=.50)
+    assert chosen is None
+
+
+def test_iq_device_metadata_required_and_consistent_for_threshold_gate():
+    """Legacy four-field rows remain usable only in standalone rate tests."""
+    rows = [("AM", "AM", .99, "known", "sdr-a"),
+            ("UNKNOWN", "UNKNOWN", .99, "unknown", "sdr-b")]
+    with pytest.raises(ValueError, match="Inconsistent IQ observation device metadata"):
+        rates([rows[0], rows[1][:4]], .95)
+    legacy = rates([row[:4] for row in rows], .95)
+    assert legacy["unknown_worst_device_false_accept_rate"] is None
+    assert legacy["known_worst_device_correct_coverage"] is None
