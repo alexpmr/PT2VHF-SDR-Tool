@@ -8,6 +8,8 @@ Inspirado no KiwiSDR/SDR#/SDR++:
 """
 from __future__ import annotations
 
+import weakref
+
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import QEvent, QRectF, Qt, Signal
@@ -121,8 +123,17 @@ class SpectrumWaterfall(QWidget):
         self._pan_timer = QTimer(self)
         self._pan_timer.setSingleShot(True)
         self._pan_timer.timeout.connect(self._pan_check)
-        self.spec.getViewBox().sigRangeChangedManually.connect(lambda *_: self._pan_timer.start(350))
-        self.wf.getViewBox().sigRangeChangedManually.connect(lambda *_: self._pan_timer.start(350))
+        # Avoid Qt signal -> Python lambda -> self ownership cycles at interpreter shutdown.
+        # The QTimer is parented to this QWidget; keep only a weak reference in the slot.
+        pan_timer_ref = weakref.ref(self._pan_timer)
+
+        def schedule_pan(*_args):
+            timer = pan_timer_ref()
+            if timer is not None:
+                timer.start(350)
+
+        self.spec.getViewBox().sigRangeChangedManually.connect(schedule_pan)
+        self.wf.getViewBox().sigRangeChangedManually.connect(schedule_pan)
         self.glw.viewport().installEventFilter(self)
         self._apply_levels()
 
