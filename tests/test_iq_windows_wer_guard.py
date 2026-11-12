@@ -12,7 +12,7 @@ def _windows_test_lane() -> str:
 
 def test_wer_diagnostics_do_not_publish_crash_dumps():
     lane = _windows_test_lane()
-    assert "LocalDumps\\\\python.exe" in lane
+    assert "LocalDumps\\python.exe" in lane
     assert "DumpType -PropertyType DWord -Value 1" in lane
     assert "DumpCount -PropertyType DWord -Value 3" in lane
     assert "Join-Path $env:RUNNER_TEMP" in lane
