@@ -209,9 +209,18 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
                          max_far, min_coverage)
     holdout_sessions = len({r[2] for r in hold})
     holdout_devices = len({r[3] for r in hold})
-    # An empirical pass on one device or too few sessions is not an
-    # independent-device holdout, even when its observed rates look perfect.
-    diversity_ok = holdout_sessions >= 3 and holdout_devices >= 2
+    # Aggregate diversity alone can hide a single UNKNOWN session or a
+    # single UNKNOWN device. Window counts do not replace independent RF
+    # sessions; require both label populations across independent devices.
+    known_rows = [r for r in hold if r[1] != "UNKNOWN"]
+    unknown_rows = [r for r in hold if r[1] == "UNKNOWN"]
+    holdout_known_sessions = len({r[2] for r in known_rows})
+    holdout_unknown_sessions = len({r[2] for r in unknown_rows})
+    holdout_known_devices = len({r[3] for r in known_rows})
+    holdout_unknown_devices = len({r[3] for r in unknown_rows})
+    diversity_ok = (holdout_sessions >= 4 and holdout_devices >= 2
+                    and holdout_known_sessions >= 2 and holdout_unknown_sessions >= 2
+                    and holdout_known_devices >= 2 and holdout_unknown_devices >= 2)
     result = {
         "scope": "Offline split-session diagnostic; RF authenticity not established",
         "decision": "NO_ACCEPTABLE_THRESHOLD" if best is None else "HOLDOUT_EVALUATED",
@@ -224,8 +233,14 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
         "calibration_sessions": len({r[2] for r in cal}),
         "holdout_sessions": holdout_sessions,
         "distinct_holdout_devices": holdout_devices,
-        "min_holdout_sessions": 3,
+        "holdout_known_sessions": holdout_known_sessions,
+        "holdout_unknown_sessions": holdout_unknown_sessions,
+        "holdout_known_devices": holdout_known_devices,
+        "holdout_unknown_devices": holdout_unknown_devices,
+        "min_holdout_sessions": 4,
+        "min_holdout_sessions_per_population": 2,
         "min_distinct_holdout_devices": 2,
+        "min_distinct_holdout_devices_per_population": 2,
         "holdout_diversity_gate_passed": diversity_ok,
         "max_unknown_false_accept": max_far,
         "min_known_correct_coverage": min_coverage,
