@@ -48,3 +48,36 @@ Para reduzir execução redundante de commits intermediários, o workflow cancel
 um novo commit. Não cancela jobs da `main` nem verificações de evento PR.
 Uma execução cancelada não fornece resultado QA; somente o CI do HEAD final
 pode ser usado como evidência.
+
+## CDB nativo Windows — resultado inconclusivo e retirada do job (12/11/2026)
+
+[CI #43268621795](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43268621795),
+commit experimental `581939f`, foi verificado diretamente nos logs:
+
+- **Linux:** 413 testes aprovados, 2 ignorados; job `tests` aprovado.
+- **Windows obrigatório:** 413 aprovados, 2 ignorados, 1 aviso; logo após o pytest,
+  `Windows fatal exception: access violation` em `scripts/run_tests.py:62`.
+  O wrapper detectou a falha e reprovou `windows-tests`, corretamente.
+- **Censo nativo Windows:** antes do pytest 1 thread Python, 4 threads nativas;
+  após pytest e antes de `os._exit`, 1 Python, 16 nativas, 666 widgets
+  Qt top-level, nenhum visível. São contagens, **não** prova de vazamento
+  ou causa do crash.
+- **CDB independente:** ferramentas oficiais instaladas (`debugger=cdb-ready`),
+  processo depurado terminou com código 0; o resumo registrou
+  `access_violation=not-observed frames=0`. **Nenhuma pilha nativa foi obtida.**
+  A execução sob depurador não reproduziu a exceção observada no job
+  obrigatório; isso pode refletir alterações de timing/ambiente, mas
+  **não estabelece causalidade nem demonstra correção**.
+- **WER:** nenhum minidump nem evento correspondente; nenhum artefato publicado.
+
+**Decisão:** retirar o job automático de uso único `windows-native-stack-probe`
+para não reinstalar o SDK nem repetir um diagnóstico inconclusivo em cada
+push. Preservar `windows-tests` obrigatório e fail-closed; o parser de
+logs e seus testes sintéticos ficam disponíveis para uma futura hipótese
+específica, sem exposição de dumps. Um próximo experimento deverá primeiro
+especificar mecanismo que preserve/reproduza o crash e permita atribuir
+módulo/pilha, com saída sanitizada e sem alterar a política de aprovação.
+
+**Bloqueios inalterados:** RF real rotulado independentemente, divergência
+AMD × Intel v4, OOD/UNKNOWN, CW/AM, latência/CPU operacional e QA Windows.
+Nenhum dado sintético ou execução sob depurador constitui homologação.
