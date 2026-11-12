@@ -51,14 +51,17 @@ def test_probe_catches_timeout(monkeypatch):
         probe.probe(0)
 
 
-def test_workflow_exit_probe_is_diagnostic_only():
+def test_retired_exit_probe_is_not_scheduled_or_used_to_build():
+    """Historical diagnostic code stays available without an automatic CI lane."""
     from pathlib import Path
     workflow = (Path(__file__).resolve().parents[1] / ".github" /
                 "workflows" / "build.yml").read_text(encoding="utf-8")
-    job = workflow.split("\n  windows-exit-probe:", 1)[1].split("\n  windows-exe:", 1)[0]
-    assert "needs: windows-case-probe" in job
-    assert "needs.windows-case-probe.result == 'failure'" in job
+    assert "\n  windows-exit-probe:" not in workflow
+    assert "\n  windows-qt-runtime-probe:" in workflow
+    job = workflow.split("\n  windows-qt-runtime-probe:", 1)[1].split(
+        "\n  windows-crash-isolation:", 1
+    )[0]
+    assert "needs.windows-tests.result == 'failure'" in job
     assert "github.ref == 'refs/heads/feature/iq-signal-classifier'" in job
-    assert "python -m scripts.ci_windows_exit_probe" in job
     assert "gh release create" not in job
     assert "pyinstaller" not in job.lower()
