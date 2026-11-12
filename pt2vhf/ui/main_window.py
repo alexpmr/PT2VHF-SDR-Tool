@@ -54,14 +54,17 @@ QPushButton { background: #252d37; border: 1px solid #39444f; border-radius: 4px
 QPushButton:hover { background: #2f3945; }
 QPushButton:checked { background: #c9871e; color: #120c02; border-color: #f0b44a; font-weight: bold; }
 QPushButton#powerButton:checked { background: #1f8a3b; color: white; border-color: #3fd46a; }
-/* Visible checkbox states in the dark theme, including unchecked controls. */
+/* High-contrast checkbox indicators on Windows/Linux/macOS dark themes.
+   Explicit :unchecked is required: native Windows dark-theme boxes can blend
+   into the panel when Qt resolves the indicator from the platform palette. */
 QCheckBox { spacing: 6px; }
-QCheckBox::indicator { width: 15px; height: 15px; border: 2px solid #91a6b9;
-  border-radius: 3px; background: #17212a; }
-QCheckBox::indicator:unchecked:hover { border-color: #f0b44a; background: #233443; }
+QCheckBox::indicator { width: 15px; height: 15px; border-radius: 3px; }
+QCheckBox::indicator:unchecked { border: 2px solid #a8bfd1; background: #182631; }
+QCheckBox::indicator:unchecked:hover { border: 2px solid #ffbd62; background: #283b4a; }
 QCheckBox::indicator:checked { border: 2px solid #ffd17e; background: #f0b44a; }
-QCheckBox::indicator:checked:hover { border-color: #fff0b4; background: #ffc15d; }
-QCheckBox::indicator:disabled { border-color: #59636e; background: #303841; }
+QCheckBox::indicator:checked:hover { border: 2px solid #fff0b4; background: #ffc15d; }
+QCheckBox::indicator:unchecked:disabled { border: 2px solid #657481; background: #29333c; }
+QCheckBox::indicator:checked:disabled { border: 2px solid #a48b56; background: #9c7e3e; }
 QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTreeWidget, QTableWidget {
   background: #0f1216; border: 1px solid #2e3742; border-radius: 3px; padding: 2px;
   selection-background-color: #c9871e; selection-color: #120c02; }
