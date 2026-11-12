@@ -54,6 +54,14 @@ QPushButton { background: #252d37; border: 1px solid #39444f; border-radius: 4px
 QPushButton:hover { background: #2f3945; }
 QPushButton:checked { background: #c9871e; color: #120c02; border-color: #f0b44a; font-weight: bold; }
 QPushButton#powerButton:checked { background: #1f8a3b; color: white; border-color: #3fd46a; }
+/* Visible checkbox states in the dark theme, including unchecked controls. */
+QCheckBox { spacing: 6px; }
+QCheckBox::indicator { width: 15px; height: 15px; border: 2px solid #91a6b9;
+  border-radius: 3px; background: #17212a; }
+QCheckBox::indicator:unchecked:hover { border-color: #f0b44a; background: #233443; }
+QCheckBox::indicator:checked { border: 2px solid #ffd17e; background: #f0b44a; }
+QCheckBox::indicator:checked:hover { border-color: #fff0b4; background: #ffc15d; }
+QCheckBox::indicator:disabled { border-color: #59636e; background: #303841; }
 QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTreeWidget, QTableWidget {
   background: #0f1216; border: 1px solid #2e3742; border-radius: 3px; padding: 2px;
   selection-background-color: #c9871e; selection-color: #120c02; }
@@ -1099,20 +1107,27 @@ class MainWindow(QMainWindow):
         current = band_for(self.engine.vfo)
         same_band = current is not None and current.name == band.name
         self._remember_current_band()
-        history = self.cfg.get("band_stacks", {}).get(band.name, [])
-        if same_band and len(history) > 1:
-            next_entry = history.pop(1)
-            history.insert(0, next_entry)
-        elif history:
-            next_entry = history[0]
+        # The five named presets are deterministic shortcuts, not band stacks.
+        # In particular 123.450 MHz must not be rounded to the nearest 8.33 kHz
+        # *grid from 0 Hz* by tune(snap=True).
+        shortcut = getattr(band, "quick_freq", None)
+        if shortcut is not None:
+            next_entry = {"freq": float(shortcut), "mode": band.mode}
         else:
-            next_entry = {"freq": (band.start + band.end) / 2, "mode": band.mode}
+            history = self.cfg.get("band_stacks", {}).get(band.name, [])
+            if same_band and len(history) > 1:
+                next_entry = history.pop(1)
+                history.insert(0, next_entry)
+            elif history:
+                next_entry = history[0]
+            else:
+                next_entry = {"freq": (band.start + band.end) / 2, "mode": band.mode}
         freq = float(next_entry["freq"])
         if not band.start <= freq <= band.end or not self._freq_supported(freq):
             return
         self.set_step(band.step)
         self.set_mode(next_entry["mode"])
-        self.tune(freq, snap=True)
+        self.tune(freq, snap=shortcut is None)
 
 
     def _set_deemph(self, us):
