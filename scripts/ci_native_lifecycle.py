@@ -96,3 +96,36 @@ def report(phase: str) -> None:
         print(f"CI-NATIVE-LIFECYCLE phase={phase} {fields}", flush=True)
     except Exception as exc:  # Diagnostic path must never break actual tests.
         print(f"CI-NATIVE-LIFECYCLE unavailable={type(exc).__name__}", flush=True)
+
+
+def dispose_qt_top_levels() -> tuple[int, int]:
+    """Experimental A/B only: request DeferredDelete for leftover Qt widgets.
+
+    Use exclusively after pytest.main() returned and only in a separate
+    diagnostic job. This does not belong in user-facing applications or in
+    mandatory CI, because forced widget teardown may itself expose a crash.
+    Returns (attempted_deletes, failed_requests).
+    """
+    widgets_module = sys.modules.get("PySide6.QtWidgets")
+    core_module = sys.modules.get("PySide6.QtCore")
+    if widgets_module is None or core_module is None:
+        return 0, 0
+    app = widgets_module.QApplication.instance()
+    if app is None:
+        return 0, 0
+    widgets = list(app.topLevelWidgets())
+    failed = 0
+    for widget in widgets:
+        try:
+            widget.deleteLater()
+        except (RuntimeError, AttributeError, TypeError):
+            failed += 1
+    try:
+        core_module.QCoreApplication.sendPostedEvents(
+            None, core_module.QEvent.DeferredDelete)
+        app.processEvents()
+    except (RuntimeError, AttributeError, TypeError):
+        failed += 1
+    print(f"CI-QT-DISPOSAL attempted={len(widgets)} failed={failed}",
+          flush=True)
+    return len(widgets), failed
