@@ -114,6 +114,52 @@ jobs:
   # all 8 isolated UI cases reproduced native crashes in CI #43177095139.
   # Preserve the evidence in docs; do not rerun this exhausted matrix on pushes.
 
+  windows-native-stack-probe:
+    # ONE-TIME experimental diagnosis of the first-chance native AV in
+    # scripts/run_tests.py at os._exit. Retire after interpreting this run.
+    # Not a release gate, not an installer, no memory/dump artifacts uploaded.
+    # Run only for trusted pushes to the experimental branch (never forks/PRs).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/iq-signal-classifier'
+    runs-on: windows-2022
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dependencies for native diagnosis (no installer)
+        run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
+      - name: Install official Microsoft CDB debugger (Windows SDK debug tools only)
+        shell: pwsh
+        run: |
+          $sdk = Join-Path $env:RUNNER_TEMP "pt2vhf-sdksetup.exe"
+          $installLog = Join-Path $env:RUNNER_TEMP "pt2vhf-sdk-install.log"
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2338977" -OutFile $sdk
+          $arguments = '/quiet /norestart /features OptionId.WindowsDesktopDebuggers /log "{0}"' -f $installLog
+          $process = Start-Process -FilePath $sdk -ArgumentList $arguments -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Debug tools install failed: $($process.ExitCode)" }
+          if (-not (Test-Path "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe")) {
+            throw "CDB unavailable after SDK install"
+          }
+          Write-Host "CI-NATIVE-STACK debugger=cdb-ready"
+      - name: Capture first-chance AV module and symbolic stack without uploading memory
+        shell: pwsh
+        run: |
+          $cdb = "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe"
+          $log = Join-Path $env:RUNNER_TEMP "pt2vhf-native-cdb.log"
+          # CDB command runs on the FIRST access violation, if observed.
+          # The raw log stays runner-local; parser emits module!symbol only.
+          & $cdb -logo $log -G -c 'sxe -c ".ecxr;kv 24;q" av;g' python.exe -X faulthandler scripts/run_tests.py *> $null
+          Write-Host "CI-NATIVE-STACK debugger_exit_code=$LASTEXITCODE"
+          python scripts/ci_native_stack_summary.py $log
+          if ($LASTEXITCODE -ne 0) {
+            throw "No verified native AV stack (or CDB log unavailable); no QA promotion"
+          }
+
   windows-crash-isolation:
     # Manual opt-in only: exhausted diagnostics are NOT repeated on every push.
     # If the complete Windows suite fails, run independent
