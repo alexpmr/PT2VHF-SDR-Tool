@@ -4,7 +4,7 @@ Runs a Qt/pyqtgraph teardown isolation matrix in *separate* child processes,
 with ordinary Python shutdown and with os._exit.  Unlike pytest's in-process
 summary, the parent checks the actual Windows process exit status.
 The matrix separates Qt, GraphicsLayout, ImageItem, SDR waterfall initialization,
-full synthetic updates, hidden widget and explicit deferred QObject cleanup. It does not
+full synthetic updates, hidden widget, signal disconnect, explicit native deletion and deferred QObject cleanup. It does not
 exercise physical SDR drivers or prove the production crash.
 """
 from __future__ import annotations
@@ -57,7 +57,8 @@ def child(scenario: str, exit_mode: str, frames: int, source_root: Path) -> int:
         widget.close()
         del widget
     elif scenario in ("waterfall-empty", "waterfall", "waterfall-deferred",
-                      "waterfall-empty-deferred", "waterfall-empty-hidden"):
+                      "waterfall-empty-deferred", "waterfall-empty-hidden",
+                      "waterfall-empty-disconnected", "waterfall-empty-explicit-delete"):
         import numpy as np
         from pt2vhf.ui.waterfall import SpectrumWaterfall
 
@@ -72,7 +73,22 @@ def child(scenario: str, exit_mode: str, frames: int, source_root: Path) -> int:
             )
             if index % 4 == 0:
                 app.processEvents()
+        if scenario == "waterfall-empty-disconnected":
+            # Isolate Python/Qt signal ownership cycles without changing widget destruction.
+            # Disconnect callbacks registered by SpectrumWaterfall.__init__.
+            widget.glw.scene().sigMouseClicked.disconnect(widget._clicked)
+            widget.region.sigRegionChangeFinished.disconnect(widget._region_changed)
+            widget.spec.getViewBox().sigRangeChangedManually.disconnect()
+            widget.wf.getViewBox().sigRangeChangedManually.disconnect()
+            widget._pan_timer.timeout.disconnect(widget._pan_check)
+            widget._pan_timer.stop()
+            widget.glw.viewport().removeEventFilter(widget)
         widget.close()
+        if scenario == "waterfall-empty-explicit-delete":
+            # Diagnostic only: destroy the C++ QWidget while QApplication is alive.
+            # Not a production fix; tests whether delayed interpreter GC is implicated.
+            import shiboken6
+            shiboken6.delete(widget)
         if scenario in ("waterfall-deferred", "waterfall-empty-deferred"):
             # Diagnostic only: force QObject deferred deletes while Qt lives.
             widget.deleteLater()
@@ -104,6 +120,7 @@ def parent(repeats: int, frames: int, timeout: int, source_root: Path) -> int:
     env["PYTHONPATH"] = str(source_root) + os.pathsep + env.get("PYTHONPATH", "")
     for scenario in ("bare", "graphics", "image", "waterfall-empty",
                      "waterfall-empty-hidden", "waterfall-empty-deferred",
+                     "waterfall-empty-disconnected", "waterfall-empty-explicit-delete",
                      "waterfall", "waterfall-deferred"):
         for exit_mode in ("normal", "hard"):
             for attempt in range(1, repeats + 1):
@@ -141,6 +158,7 @@ def main() -> int:
     parser.add_argument("--child", action="store_true")
     parser.add_argument("--scenario", choices=("bare", "graphics", "image", "waterfall-empty",
                                              "waterfall-empty-hidden", "waterfall-empty-deferred",
+                                             "waterfall-empty-disconnected", "waterfall-empty-explicit-delete",
                                              "waterfall", "waterfall-deferred"), default="bare")
     parser.add_argument("--exit-mode", choices=("normal", "hard"), default="normal")
     parser.add_argument("--frames", type=int, default=120)
