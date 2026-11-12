@@ -290,6 +290,19 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
     missing_calibration = sorted(required - {r[1] for r in cal})
     missing_holdout = sorted(required - {r[1] for r in hold})
     class_coverage_ok = not (missing_calibration or missing_holdout)
+    # Aggregate class coverage and observed class/SDR cells are insufficient:
+    # an untested CW/SDR combination cannot count as a successful RF holdout.
+    # Require each held-out SDR to contribute every required known mode AND
+    # UNKNOWN. Publish counts only, never private SDR identifiers.
+    holdout_devices_set = {r[3] for r in hold}
+    observed_holdout_cells = {(r[1], r[3]) for r in hold}
+    expected_holdout_cells = {
+        (mode, device)
+        for device in holdout_devices_set
+        for mode in (*REQUIRED_KNOWN_CLASSES, "UNKNOWN")
+    }
+    missing_holdout_cells = expected_holdout_cells - observed_holdout_cells
+    class_device_coverage_ok = not missing_holdout_cells
     result = {
         "scope": "Offline split-session diagnostic; RF authenticity not established",
         "decision": "NO_ACCEPTABLE_THRESHOLD" if best is None else "HOLDOUT_EVALUATED",
@@ -315,6 +328,9 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
         "missing_known_classes_calibration": missing_calibration,
         "missing_known_classes_holdout": missing_holdout,
         "holdout_class_coverage_gate_passed": class_coverage_ok,
+        "holdout_class_device_coverage_gate_passed": class_device_coverage_ok,
+        "required_holdout_class_device_cells": len(expected_holdout_cells),
+        "missing_holdout_class_device_cells": len(missing_holdout_cells),
         "max_unknown_false_accept": max_far,
         "min_known_correct_coverage": min_coverage,
         "operationally_validated": False,
@@ -342,6 +358,8 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
             result["decision"] = "HOLDOUT_INSUFFICIENT_PIPELINE_COVERAGE"
         elif not class_coverage_ok:
             result["decision"] = "HOLDOUT_INSUFFICIENT_CLASS_COVERAGE"
+        elif not class_device_coverage_ok:
+            result["decision"] = "HOLDOUT_INSUFFICIENT_CLASS_DEVICE_COVERAGE"
     return result
 
 
