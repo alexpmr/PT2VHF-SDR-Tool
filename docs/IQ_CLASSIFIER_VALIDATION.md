@@ -19,3 +19,25 @@ O pipeline deve preservar as métricas como artefato. Não declarar conclusão d
 
 ## Segurança operacional
 Ausência de modelo ONNX, entrada inválida e confiança abaixo do limiar devem resultar em classificação desconhecida ou erro explícito; nunca em modo inventado.
+
+## Política de diagnósticos Windows (12/11/2026)
+
+O job `windows-tests` continua obrigatório e **fail-closed** na branch
+`feature/iq-signal-classifier`: qualquer `Windows fatal exception`,
+mesmo após `N passed`, reprova o CI. Isso **não** constitui uma correção
+da corrupção de memória.
+
+Os jobs `windows-crash-isolation` (matriz de 6 casos) e
+`windows-file-probe` repetiam resultados já observados em múltiplos
+commits. A partir desta revisão, ficam **desabilitados em push/PR comum**.
+Para executá-los sob **hipótese nova**, usar GitHub Actions →
+`Testes (build Windows sob demanda)` → `Run workflow`, selecionar a
+branch experimental e habilitar `diagnose_windows`. Esses jobs somente
+executam se o job Windows obrigatório falhar. O padrão é `false`.
+Não habilitar `build_windows`; a geração de instaladores continua
+restrita à `main`.
+
+Este ajuste reduz custo e ruído do CI, mas **não prova estabilidade Windows**
+nem resolve AMD/Intel, OOD/UNKNOWN, CW/AM, latência ou RF real. Resultados
+anteriores não devem ser contados como novas medições. Se surgir um novo
+padrão de falha, documentar a hipótese e habilitar a coleta manual dirigida.
