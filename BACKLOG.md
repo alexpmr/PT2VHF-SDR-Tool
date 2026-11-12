@@ -1,5 +1,12 @@
 # Backlog — PT2VHF SDR Tool
 
+## P2 — checkboxes invisíveis desmarcados (12/11/2026)
+- **Relato:** caixas de seleção desmarcadas desaparecem no tema escuro.
+- **Correção candidata:** borda e fundo explícitos no indicador desmarcado, hover e estado desabilitado; preservar o desenho nativo da marca de seleção quando ativado.
+- **Branch:** `fix/checkbox-contrast-20261112`; não integrar antes da validação Qt e inspeção visual em Windows, Linux e nos temas disponíveis.
+- **Aceite:** controles marcados, desmarcados e desabilitados permanecem distinguíveis, inclusive em monitores com escala alterada.
+
+
 ## P1 — duplo clique no waterfall: sintonizar e centralizar (11/11/2026)
 - **Solicitação:** dois cliques sobre um ponto válido do waterfall devem **sintonizar o VFO naquela frequência e centralizar essa frequência na área visível**, mantendo o nível atual de zoom. Isso deve atualizar LCD, passband e marcadores sem mudar o modo nem alterar indevidamente a frequência central RF do dispositivo.
 - **Comportamento anterior:** `SpectrumWaterfall._clicked()` executava `reset_zoom()` para todo duplo clique, sem emitir sintonia. Por isso o comando não sintonizava nem centralizava a frequência selecionada.
