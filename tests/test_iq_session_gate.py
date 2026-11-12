@@ -244,10 +244,30 @@ def test_holdout_gate_requires_three_sessions_and_two_devices(tmp_path, monkeypa
 
     doc["recordings"][-1]["device"] = "independent synthetic SDR"
     hold.write_text(json.dumps(doc))
+    # Three total sessions and two devices still leave UNKNOWN represented
+    # by a single session on a single SDR: never accept this as OOD QA.
+    insufficient_ood = gate.run(cal, hold, tmp_path, object())
+    assert insufficient_ood["decision"] == "HOLDOUT_INSUFFICIENT_DIVERSITY"
+    assert insufficient_ood["holdout_unknown_sessions"] == 1
+    assert insufficient_ood["holdout_unknown_devices"] == 1
+
+    wav(tmp_path / "hold-3.wav", 3100)
+    doc["recordings"].append({
+        "path": "hold-3.wav", "mode": "UNKNOWN", "session_id": "hold-3",
+        "device": "synthetic device", "frequency_hz": 145500000,
+    })
+    hold.write_text(json.dumps(doc))
+    one_unknown_device = gate.run(cal, hold, tmp_path, object())
+    assert one_unknown_device["holdout_unknown_sessions"] == 2
+    assert one_unknown_device["decision"] == "HOLDOUT_INSUFFICIENT_DIVERSITY"
+    doc["recordings"][-1]["device"] = "independent synthetic SDR"
+    hold.write_text(json.dumps(doc))
     diverse = gate.run(cal, hold, tmp_path, object())
     assert diverse["decision"] == "HOLDOUT_EVALUATED"
     assert diverse["holdout_diversity_gate_passed"] is True
     assert diverse["distinct_holdout_devices"] == 2
+    assert diverse["holdout_known_sessions"] == diverse["holdout_unknown_sessions"] == 2
+    assert diverse["holdout_known_devices"] == diverse["holdout_unknown_devices"] == 2
     assert diverse["operationally_validated"] is False
 
 
@@ -298,6 +318,11 @@ def test_holdout_rejects_low_pipeline_coverage_even_with_perfect_predictions(
     doc = json.loads(hold.read_text())
     doc["recordings"].append({
         "path": "hold-2.wav", "mode": "AM", "session_id": "hold-2",
+        "device": "independent synthetic SDR", "frequency_hz": 145500000,
+    })
+    wav(tmp_path / "hold-3.wav", 2900)
+    doc["recordings"].append({
+        "path": "hold-3.wav", "mode": "UNKNOWN", "session_id": "hold-3",
         "device": "independent synthetic SDR", "frequency_hz": 145500000,
     })
     hold.write_text(json.dumps(doc))
