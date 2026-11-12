@@ -346,6 +346,11 @@ class MainWindow(QMainWindow):
         index = self.language_combo.findData(self.cfg.get("language", "pt"))
         self.language_combo.setCurrentIndex(max(0, index))
         h.addWidget(self.language_combo)
+        # Compact per-process CPU and resident RAM, matching the PT2VHF
+        # top-bar reference. Independent of receiver/DSP sampling.
+        from .resource_meter import ResourceMeter
+        self.resource_meter = ResourceMeter(self)
+        h.addWidget(self.resource_meter)
         self.utc_label = QLabel("")
         self.utc_label.setObjectName("utcLabel")
         h.addWidget(self.utc_label)
