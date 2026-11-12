@@ -264,7 +264,9 @@ def test_holdout_gate_requires_three_sessions_and_two_devices(tmp_path, monkeypa
     doc["recordings"][-1]["device"] = "independent synthetic SDR"
     hold.write_text(json.dumps(doc))
     diverse = gate.run(cal, hold, tmp_path, object())
-    assert diverse["decision"] == "HOLDOUT_EVALUATED"
+    assert diverse["decision"] == "HOLDOUT_INSUFFICIENT_CLASS_COVERAGE"
+    assert diverse["holdout_class_coverage_gate_passed"] is False
+    assert diverse["missing_known_classes_holdout"] == ["CW", "LSB", "NFM", "USB"]
     assert diverse["holdout_diversity_gate_passed"] is True
     assert diverse["distinct_holdout_devices"] == 2
     assert diverse["holdout_known_sessions"] == diverse["holdout_unknown_sessions"] == 2
@@ -497,6 +499,63 @@ def test_end_to_end_holdout_fails_when_one_sdr_accepts_unknown(tmp_path, monkeyp
     assert report["holdout_result"]["unknown_worst_device_false_accept_rate"] == 1.0
     assert report["decision"] == "HOLDOUT_FAILED"
     assert report["operationally_validated"] is False
+
+
+def test_holdout_requires_every_supported_known_mode_in_both_splits(tmp_path, monkeypatch):
+    """Synthetic-only: perfect AM cannot substitute for CW/NFM/USB/LSB."""
+    import scripts.iq_session_gate as gate
+    cal = manifest(tmp_path, "cal.json", "cal", 1200)
+    hold = manifest(tmp_path, "hold.json", "hold", 1700)
+    cal_doc, hold_doc = json.loads(cal.read_text()), json.loads(hold.read_text())
+    for i, label in enumerate(("CW", "NFM", "USB", "LSB")):
+        for prefix, doc, freq in (
+                ("cal", cal_doc, 3700 + 430 * i),
+                ("hold", hold_doc, 5700 + 430 * i)):
+            filename = f"{prefix}-{label.lower()}.wav"
+            wav(tmp_path / filename, freq)
+            doc["recordings"].append({
+                "path": filename, "mode": label, "session_id": f"{prefix}-0",
+                "device": "synthetic device", "frequency_hz": 145500000})
+    # Holdout must have 2 known and 2 UNKNOWN sessions, 2 SDRs in each.
+    for i, label in ((2, "AM"), (3, "UNKNOWN")):
+        filename = f"hold-extra-{i}.wav"
+        wav(tmp_path / filename, 8300 + 310 * i)
+        hold_doc["recordings"].append({
+            "path": filename, "mode": label, "session_id": f"hold-{i}",
+            "device": "second synthetic SDR", "frequency_hz": 145500000})
+    cal.write_text(json.dumps(cal_doc))
+    hold.write_text(json.dumps(hold_doc))
+
+    def perfect(rows, model, max_windows, *, accounting=None):
+        if accounting is not None:
+            accounting.update({"minimum_session_pipeline_coverage": 1.0,
+                               "pipeline_coverage": 1.0})
+        return [(label, label, .99, session, device)
+                for _, label, session, device in rows]
+
+    monkeypatch.setattr(gate, "observations", perfect)
+    complete = gate.run(cal, hold, tmp_path, object())
+    assert complete["decision"] == "HOLDOUT_EVALUATED"
+    assert complete["holdout_class_coverage_gate_passed"] is True
+    assert complete["required_known_classes"] == ["CW", "AM", "NFM", "USB", "LSB"]
+    assert complete["operationally_validated"] is False
+
+    cal_doc["recordings"] = [r for r in cal_doc["recordings"]
+                             if r["mode"] != "CW"]
+    cal.write_text(json.dumps(cal_doc))
+    missing_cal = gate.run(cal, hold, tmp_path, object())
+    assert missing_cal["decision"] == "HOLDOUT_INSUFFICIENT_CLASS_COVERAGE"
+    assert missing_cal["missing_known_classes_calibration"] == ["CW"]
+    assert missing_cal["missing_known_classes_holdout"] == []
+
+    hold_doc["recordings"] = [r for r in hold_doc["recordings"]
+                              if r["mode"] != "USB"]
+    hold.write_text(json.dumps(hold_doc))
+    missing_both = gate.run(cal, hold, tmp_path, object())
+    assert missing_both["decision"] == "HOLDOUT_INSUFFICIENT_CLASS_COVERAGE"
+    assert missing_both["missing_known_classes_calibration"] == ["CW"]
+    assert missing_both["missing_known_classes_holdout"] == ["USB"]
+    assert missing_both["operationally_validated"] is False
 
 
 def test_end_to_end_gate_rejects_missing_device_identity(tmp_path, monkeypatch):

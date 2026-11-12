@@ -69,3 +69,20 @@ offline, não uma aprovação para release. A revisão de RF real deve exigir
 cobertura explícita de CW/AM/NFM/USB/LSB e UNKNOWN, diversidade de sessões,
 SDRs, SNR e verificação independente dos rótulos. WFM permanece não validado.
 Os testes desta alteração usam apenas observações sintéticas.
+
+
+## Gate fail-closed para classes ausentes — 12/11/2026
+
+Um holdout com previsões perfeitas de AM e UNKNOWN, mas **sem CW, NFM, USB
+ou LSB**, não pode retornar `HOLDOUT_EVALUATED` como se todas as classes
+conhecidas tivessem sido examinadas. O gate agora exige **CW, AM, NFM,
+USB e LSB em ambos os manifestos** (calibração e holdout). A ausência de
+qualquer uma retorna `HOLDOUT_INSUFFICIENT_CLASS_COVERAGE` (exit 2)
+quando os demais limites forem satisfeitos. O relatório expõe apenas nomes
+de modos ausentes e `holdout_class_coverage_gate_passed`, sem IDs privados.
+
+**WFM permanece fora do contrato de RF a 48 kS/s**, não entra no conjunto
+obrigatório. Presença de rótulo não prova sua veracidade, nem garante
+recall, independência entre sessões ou qualidade RF; o gate continua offline,
+`operationally_validated=false`. Os testes desta alteração usam WAVs
+sintéticos e predições simuladas. Não é homologação nem autorização de merge.

@@ -16,6 +16,8 @@ from pt2vhf.dsp.iq_classifier import CLASSES, IQClassifier
 from scripts.evaluate_iq_recordings import read_manifest, read_windows
 
 THRESHOLDS = (0.80, 0.90, 0.95, 0.99, 0.999)
+# WFM is explicitly out of scope for the 48 kS/s RF validation contract.
+REQUIRED_KNOWN_CLASSES = tuple(c for c in CLASSES if c not in ("UNKNOWN", "WFM"))
 
 
 def digest(path):
@@ -264,6 +266,12 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
     diversity_ok = (holdout_sessions >= 4 and holdout_devices >= 2
                     and holdout_known_sessions >= 2 and holdout_unknown_sessions >= 2
                     and holdout_known_devices >= 2 and holdout_unknown_devices >= 2)
+    # A favorable AM-only holdout cannot be presented as evaluation of CW,
+    # NFM, USB or LSB. Check independent manifest labels in BOTH splits.
+    required = set(REQUIRED_KNOWN_CLASSES)
+    missing_calibration = sorted(required - {r[1] for r in cal})
+    missing_holdout = sorted(required - {r[1] for r in hold})
+    class_coverage_ok = not (missing_calibration or missing_holdout)
     result = {
         "scope": "Offline split-session diagnostic; RF authenticity not established",
         "decision": "NO_ACCEPTABLE_THRESHOLD" if best is None else "HOLDOUT_EVALUATED",
@@ -285,6 +293,10 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
         "min_distinct_holdout_devices": 2,
         "min_distinct_holdout_devices_per_population": 2,
         "holdout_diversity_gate_passed": diversity_ok,
+        "required_known_classes": list(REQUIRED_KNOWN_CLASSES),
+        "missing_known_classes_calibration": missing_calibration,
+        "missing_known_classes_holdout": missing_holdout,
+        "holdout_class_coverage_gate_passed": class_coverage_ok,
         "max_unknown_false_accept": max_far,
         "min_known_correct_coverage": min_coverage,
         "operationally_validated": False,
@@ -310,6 +322,8 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
         elif min(calibration_accounting["minimum_session_pipeline_coverage"],
                  holdout_accounting["minimum_session_pipeline_coverage"]) < min_pipeline_coverage:
             result["decision"] = "HOLDOUT_INSUFFICIENT_PIPELINE_COVERAGE"
+        elif not class_coverage_ok:
+            result["decision"] = "HOLDOUT_INSUFFICIENT_CLASS_COVERAGE"
     return result
 
 
