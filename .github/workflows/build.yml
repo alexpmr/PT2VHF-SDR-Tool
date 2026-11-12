@@ -64,7 +64,8 @@ jobs:
           python -X faulthandler scripts/probe_qt_native_exit.py --repeats 20 --scenarios $cases --exit-modes normal
           $candidate = $LASTEXITCODE
           Write-Host "P0 focused diagnostic (expected baseline failures): v0.13.2=$baseline candidate=$candidate"
-          # Observational only: the full matrix below enforces the native exit gate.
+          # The baseline is expected to fail; the candidate must pass all focused cases.
+          if ($candidate -ne 0) { throw "P0 candidate failed focused pan lifetime matrix" }
       - name: P0 - compare native Qt shutdown against v0.13.2
         run: |
           $PSNativeCommandUseErrorActionPreference = $false
@@ -73,7 +74,8 @@ jobs:
           python -X faulthandler scripts/probe_qt_native_exit.py --repeats 3 --frames 120
           $candidate = $LASTEXITCODE
           Write-Host "Native exit probe: v0.13.2=$baseline candidate=$candidate"
-          if ($baseline -ne 0 -or $candidate -ne 0) { throw "P0 native Qt shutdown probe failed" }
+          # Historical v0.13.2 failures are recorded but must not mask candidate validation.
+          if ($candidate -ne 0) { throw "P0 candidate native Qt shutdown probe failed" }
       - name: Smoke OTA portátil (helper, backup e falha segura)
         run: .\scripts\test_ota_windows.ps1
       - name: Versão
