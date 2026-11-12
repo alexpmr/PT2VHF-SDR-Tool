@@ -60,6 +60,7 @@ jobs:
           $data = Get-Content -LiteralPath $path -Raw
           if (-not $data.Contains("PT2VHF SDR Tool - Windows crash event summary")) { throw "WER summary invalid" }
           Remove-Item -LiteralPath $path -Force
+          .\\scripts\\test_windows_crash_evidence.ps1
       - uses: actions/checkout@v4
         with:
           ref: v0.13.2
