@@ -102,6 +102,29 @@ jobs:
           }
           Write-Host "Privacy: dump files stay on ephemeral runner; no artifact upload or release."
 
+  windows-qt-disposal-probe:
+    # One-time, independent A/B on the exact same suite. Remaining hidden Qt
+    # widgets were observed after pytest, but have not been proven causal.
+    # Do NOT modify the mandatory fail-closed windows-tests lane.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/iq-signal-classifier'
+    runs-on: windows-2022
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PT2VHF_CI_NATIVE_LIFECYCLE: "1"
+      PT2VHF_CI_QT_DISPOSE_AFTER_PYTEST: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dependências diagnósticas sem build neural
+        run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
+      - name: A/B Qt DeferredDelete no término do pytest (falhar se crash nativo)
+        run: python scripts/ci_windows_pytest.py
+
   # Runtime A/B (Python 3.11/3.12 x PySide6 6.9.3/6.11.3) retired after
   # all 8 isolated UI cases reproduced native crashes in CI #43177095139.
   # Preserve the evidence in docs; do not rerun this exhausted matrix on pushes.
