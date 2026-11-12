@@ -57,9 +57,9 @@ def test_retired_exit_probe_is_not_scheduled_or_used_to_build():
     workflow = (Path(__file__).resolve().parents[1] / ".github" /
                 "workflows" / "build.yml").read_text(encoding="utf-8")
     assert "\n  windows-exit-probe:" not in workflow
-    assert "\n  windows-qt-runtime-probe:" in workflow
-    job = workflow.split("\n  windows-qt-runtime-probe:", 1)[1].split(
-        "\n  windows-crash-isolation:", 1
+    assert "\n  windows-qt-runtime-probe:" not in workflow
+    job = workflow.split("\n  windows-file-probe:", 1)[1].split(
+        "\n  windows-case-probe:", 1
     )[0]
     assert "needs.windows-tests.result == 'failure'" in job
     assert "github.ref == 'refs/heads/feature/iq-signal-classifier'" in job
