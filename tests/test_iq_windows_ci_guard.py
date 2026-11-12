@@ -103,6 +103,9 @@ def test_pytest_runner_forwards_selection_and_preserves_exit(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["run_tests.py", "-k", "iq_"])
     # This unit test exercises hard-exit semantics even when the diagnostic
     # Windows CI matrix intentionally sets PT2VHF_TEST_EXIT_MODE=normal.
+    # Prevent the outer A/B CI environment from triggering Qt cleanup in a
+    # nested mocked runner while pytest is still executing.
+    monkeypatch.delenv("PT2VHF_CI_QT_DISPOSE_AFTER_PYTEST", raising=False)
     monkeypatch.setenv("PT2VHF_TEST_EXIT_MODE", "hard")
     monkeypatch.setattr(runner.os, "_exit", lambda code: seen.append(("exit", code)))
     runner.main()
@@ -143,6 +146,9 @@ def test_normal_shutdown_probe_returns_pytest_status_without_hard_exit(monkeypat
     import scripts.run_tests as runner
 
     seen = []
+    # Prevent the outer A/B CI environment from triggering Qt cleanup in a
+    # nested mocked runner while pytest is still executing.
+    monkeypatch.delenv("PT2VHF_CI_QT_DISPOSE_AFTER_PYTEST", raising=False)
     monkeypatch.setenv("PT2VHF_TEST_EXIT_MODE", "normal")
     monkeypatch.setitem(sys.modules, "pytest", types.SimpleNamespace(
         main=lambda args: seen.append(args) or 5
@@ -163,6 +169,9 @@ def test_invalid_shutdown_probe_mode_fails_closed(monkeypatch):
     import pytest
     import scripts.run_tests as runner
 
+    # Prevent the outer A/B CI environment from triggering Qt cleanup in a
+    # nested mocked runner while pytest is still executing.
+    monkeypatch.delenv("PT2VHF_CI_QT_DISPOSE_AFTER_PYTEST", raising=False)
     monkeypatch.setenv("PT2VHF_TEST_EXIT_MODE", "unexpected")
     monkeypatch.setitem(sys.modules, "pytest", types.SimpleNamespace(main=lambda args: 0))
     monkeypatch.setattr(sys, "argv", ["run_tests.py"])
