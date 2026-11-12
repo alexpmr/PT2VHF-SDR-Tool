@@ -42,7 +42,7 @@ try {
     $lines.Add('Event query unavailable or no matching events. Check Event Viewer manually.')
 }
 
-$matches = 0
+$eventCount = 0
 # Setup and Portable use different executable names; both must be recognized.
 $appPattern = '(?i)^PT2VHF-SDR-Tool(?:-Portable)?(?:\.exe)?$'
 $werPattern = '(?i)(?<![A-Za-z0-9_.-])PT2VHF-SDR-Tool(?:-Portable)?(?:\.exe)?(?![A-Za-z0-9_.-])'
@@ -62,18 +62,18 @@ foreach ($event in $events) {
         if ($code -notmatch '^(?:0x)?[0-9a-fA-F]{8}$') { $code = 'unknown' }
         $utc = $event.TimeCreated.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
         $lines.Add("UTC=$utc Event=1000 Application=$appName Module=$module Exception=$code")
-        $matches++
+        $eventCount++
     } elseif ($event.Id -eq 1001 -and $provider -eq 'Windows Error Reporting') {
         # Event 1001 has varying property layouts across Windows versions.
         # Match the application name in memory but never persist its message.
         if ([string]$event.Message -notmatch $werPattern) { continue }
         $utc = $event.TimeCreated.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
         $lines.Add("UTC=$utc Event=1001 WindowsErrorReporting=present (details omitted)")
-        $matches++
+        $eventCount++
     }
 }
 
-if ($matches -eq 0) {
+if ($eventCount -eq 0) {
     if ($querySucceeded) {
         $lines.Add('No PT2VHF SDR Tool crash events found among the retrieved events.')
     } else {
@@ -85,5 +85,5 @@ if ($folder -and -not (Test-Path -LiteralPath $folder)) {
     New-Item -ItemType Directory -Path $folder -Force | Out-Null
 }
 $lines | Set-Content -LiteralPath $OutputFile -Encoding UTF8
-Write-Output "P0-WER-SUMMARY saved=$OutputFile events=$matches"
+Write-Output "P0-WER-SUMMARY saved=$OutputFile events=$eventCount"
 Write-Output 'Review the file before sharing. The existing pt2vhf-sdr.log must be reviewed separately.'
