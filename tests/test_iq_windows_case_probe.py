@@ -66,18 +66,18 @@ def test_probe_rejects_invalid_inputs():
             probe.probe_cases(seconds, modes)
 
 
-def test_case_probe_workflow_is_experimental_and_no_installer():
+def test_exhausted_qpa_case_probe_is_retired_without_weakening_windows_gate():
+    """QPA minimal/offscreen reproduced the same native crashes; avoid costly repeats."""
     from pathlib import Path
     workflow = (Path(__file__).resolve().parents[1] / ".github" /
                 "workflows" / "build.yml").read_text(encoding="utf-8")
-    job = workflow.split("\n  windows-case-probe:", 1)[1].split("\n  windows-exe:", 1)[0]
-    assert "needs: windows-file-probe" in job
-    assert "needs.windows-file-probe.result == 'failure'" in job
-    assert "github.ref == 'refs/heads/feature/iq-signal-classifier'" in job
-    assert "python -m scripts.ci_windows_case_probe --timeout-seconds 180 --exit-mode hard" in job
-    # QPA is the single new experimental variable. The normal Windows lane
-    # must remain offscreen and fail closed; this diagnostic is not QA approval.
-    assert "QT_QPA_PLATFORM: minimal" in job
-    assert "QT_QPA_PLATFORM: offscreen" not in job
-    assert "gh release create" not in job
-    assert "pyinstaller" not in job.lower()
+    assert "\n  windows-case-probe:" not in workflow
+    assert "QPA minimal/offscreen" in workflow
+    windows_tests = workflow.split("\n  windows-tests:", 1)[1].split("\n  windows-crash-isolation:", 1)[0]
+    assert "QT_QPA_PLATFORM: offscreen" in windows_tests
+    assert "python scripts/ci_windows_pytest.py" in windows_tests
+    assert "if: failure()" in windows_tests
+    windows_exe = workflow.split("\n  windows-exe:", 1)[1]
+    assert "github.ref == 'refs/heads/main'" in windows_exe
+    assert "gh release create" not in windows_tests
+    assert "pyinstaller" not in windows_tests.lower()
