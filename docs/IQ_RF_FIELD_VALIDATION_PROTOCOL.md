@@ -100,6 +100,25 @@ O parâmetro `--max-windows` seleciona até 100 janelas IQ **não sobrepostas e 
 
 Revisar matriz de confusão, recall por classe (em especial CW/AM), erros de alta confiança, curva de aceitação de UNKNOWN, cobertura de sinais conhecidos, acurácia média por sessão e latência/uso de CPU medidos separadamente. O script calcula um intervalo exploratório de confiança por bootstrap de sessões (descrito abaixo), mas **não** calcula latência nem uso de CPU operacional: medir esses indicadores separadamente. A matriz de confusão e o recall utilizam a decisão efetiva do classificador, inclusive o limiar configurado para UNKNOWN; a curva de aceitação aplica cada limiar de forma independente sobre as probabilidades brutas. Não confundir as duas políticas.
 
+## Gate adicional por SDR — revisão de 12/11/2026
+
+A taxa de falsa aceitação UNKNOWN agregada e a média por sessão podem ocultar
+falha concentrada em um SDR quando outro dispositivo contribui muitas sessões.
+O avaliador de limiar experimental passa a registrar, **sem nomes de dispositivos
+no JSON público**, a maior taxa de falsa aceitação UNKNOWN por SDR e a menor
+cobertura correta de sinais conhecidos por SDR. Para aprovar o limiar, esses
+piores casos também precisam satisfazer os limites configurados, além das
+métricas globais e por sessão. O gate fim a fim exige identidade de SDR
+associada a cada observação; quatro campos sem dispositivo continuam aceitos
+somente nas funções unitárias legadas de cálculo.
+
+**Importante:** essas taxas são descritivas, não limites superiores de confiança.
+Duas sessões com poucas janelas por SDR podem ser insuficientes para estimar
+o risco; nomes de SDR fornecidos pelo manifesto não demonstram hardware
+independente. A auditoria deve confirmar dispositivos físicos e sessões
+externamente, estratificar por SNR e família OOD, e reportar contagens por
+dispositivo sem expor IDs pessoais. Nenhuma execução sintética é homologação RF.
+
 ## Portões para revisão do PR
 
 - Documentar origem, proveniência e conferência independente de rótulos; validar que o dataset não entrou no treinamento.
