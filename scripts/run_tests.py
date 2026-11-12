@@ -22,6 +22,12 @@ def main():
     result = pytest.main(["-q", *sys.argv[1:]])
     if probe is not None:
         probe("after-pytest")
+    if os.environ.get("PT2VHF_CI_QT_DISPOSE_AFTER_PYTEST") == "1":
+        # Opt-in diagnostic only; never used by regular CI or release.
+        from ci_native_lifecycle import dispose_qt_top_levels
+        dispose_qt_top_levels()
+        if probe is not None:
+            probe("after-qt-disposal")
     sys.stdout.flush()
     sys.stderr.flush()
     # Diagnostic-only alternative: compare ordinary Python/Qt shutdown with
