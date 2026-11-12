@@ -53,7 +53,7 @@ jobs:
         run: |
           $dumpDir = Join-Path $env:RUNNER_TEMP "pt2vhf-native-dumps"
           New-Item -ItemType Directory -Force -Path $dumpDir | Out-Null
-          $key = "HKCU:\\Software\\Microsoft\\Windows\\Windows Error Reporting\\LocalDumps\\python.exe"
+          $key = "HKCU:\Software\Microsoft\Windows\Windows Error Reporting\LocalDumps\python.exe"
           New-Item -Path $key -Force | Out-Null
           New-ItemProperty -Path $key -Name DumpFolder -PropertyType ExpandString -Value $dumpDir -Force | Out-Null
           New-ItemProperty -Path $key -Name DumpType -PropertyType DWord -Value 1 -Force | Out-Null
@@ -78,7 +78,7 @@ jobs:
           $start = [datetime]::Parse((Get-Content (Join-Path $env:RUNNER_TEMP "pt2vhf-wer-start.txt") -Raw))
           try {
             $events = @(Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000,1001; StartTime=$start} -ErrorAction Stop |
-              Where-Object { $_.Message -match '(?i)python(\\.exe)?|pt2vhf' } | Select-Object -First 8)
+              Where-Object { $_.Message -match '(?i)python(\.exe)?|pt2vhf' } | Select-Object -First 8)
             if ($events.Count -eq 0) { Write-Host "WER: no matching Application Error / Windows Error Reporting events" }
             foreach ($event in $events) {
               Write-Host ("WER event ID={0} time={1}" -f $event.Id, $event.TimeCreated.ToString("o"))
