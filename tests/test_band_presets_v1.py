@@ -89,8 +89,17 @@ def test_new_915_button_added_once_to_old_user_preferences(tmp_path):
 
 
 def test_checkbox_states_are_explicit_in_dark_theme():
-    for state in ("QCheckBox::indicator {", "QCheckBox::indicator:checked {",
-                  "QCheckBox::indicator:disabled {"):
+    # Disabled styling is intentionally state-specific: a single
+    # :disabled selector would mask the distinction between checked/unchecked.
+    for state in (
+        "QCheckBox::indicator {",
+        "QCheckBox::indicator:unchecked {",
+        "QCheckBox::indicator:checked {",
+        "QCheckBox::indicator:unchecked:disabled {",
+        "QCheckBox::indicator:checked:disabled {",
+    ):
         assert state in STYLE
-    assert "border: 2px solid #91a6b9" in STYLE
-    assert "background: #f0b44a" in STYLE
+    assert "border: 2px solid #a8bfd1" in STYLE  # visible unchecked border
+    assert "background: #f0b44a" in STYLE  # visible checked fill
+    assert "border: 2px solid #657481" in STYLE  # unchecked disabled
+    assert "background: #9c7e3e" in STYLE  # checked disabled
