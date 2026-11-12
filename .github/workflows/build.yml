@@ -51,6 +51,8 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Testes no Windows
         run: python scripts/run_tests.py
+      - name: P0 - native Qt shutdown probe in isolated Windows processes
+        run: python -X faulthandler scripts/probe_qt_native_exit.py --repeats 3 --frames 120
       - name: Smoke OTA portátil (helper, backup e falha segura)
         run: .\scripts\test_ota_windows.ps1
       - name: Versão
