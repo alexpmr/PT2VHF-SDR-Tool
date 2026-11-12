@@ -23,11 +23,17 @@ def main():
     if probe is not None:
         probe("after-pytest")
     if os.environ.get("PT2VHF_CI_QT_DISPOSE_AFTER_PYTEST") == "1":
-        # Opt-in diagnostic only; never used by regular CI or release.
-        from ci_native_lifecycle import dispose_qt_top_levels
-        dispose_qt_top_levels()
-        if probe is not None:
-            probe("after-qt-disposal")
+        # A few regression tests invoke this runner *inside* the active pytest
+        # process with a mocked pytest.main(). Never dispose the live suite's
+        # Qt objects from those nested calls. Only the outer CI process may
+        # perform this experimental teardown after pytest has fully returned.
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            print("CI-QT-DISPOSAL skipped=nested-pytest-runner", flush=True)
+        else:
+            from ci_native_lifecycle import dispose_qt_top_levels
+            dispose_qt_top_levels()
+            if probe is not None:
+                probe("after-qt-disposal")
     sys.stdout.flush()
     sys.stderr.flush()
     # Diagnostic-only alternative: compare ordinary Python/Qt shutdown with
