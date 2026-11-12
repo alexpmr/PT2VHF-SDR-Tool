@@ -52,3 +52,20 @@ Issue de rastreamento: https://github.com/alexpmr/PT2VHF-SDR-Tool/issues/8
 
 - **12/11/2026, Windows CI [#43173761088](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43173761088), job `131032966734`:** na matriz de desconexões individuais, `waterfall-empty-no-pan-signals` terminou **0/3 falhas nas duas bases** (v0.13.2 e PR #9), enquanto o controle `waterfall-empty` falhou **3/3 na v0.13.2 e 1/3 no PR #9**. Desconectar somente clique, região, timeout do timer ou event filter **não eliminou consistentemente** `0xC0000374`. Os cenários `waterfall-deferred`, `waterfall-empty-deferred` e `waterfall-empty-explicit-delete` também terminaram sem falhas nesta amostra. **Hipótese mais específica, ainda não comprovada:** as duas conexões `sigRangeChangedManually.connect(lambda *_: self._pan_timer.start(350))` podem criar ciclos de referências Python/Qt que atrasam a destruição dos QObjects até a finalização do interpretador. A amostra de 3 execuções é insuficiente; o comportamento também está presente em v0.13.2 e não explica necessariamente o encerramento espontâneo em uso da v0.13.3. O job Windows falhou no gate P0, antes de empacotar Setup/Portable ou testar OTA.
 - **Próxima discriminação, commits [`460a248`](https://github.com/alexpmr/PT2VHF-SDR-Tool/commit/460a2483780e34026833fdd029926566b61de0d4) e [`f354d29`](https://github.com/alexpmr/PT2VHF-SDR-Tool/commit/f354d29baf3056cfdea73c37388c066b0df76aa8):** teste focalizado de **20 repetições por cenário e por base Windows**, com saída normal, compara controle, desconexão de ambos os sinais de pan, desconexão isolada do espectro, desconexão isolada do waterfall e reconexão de callbacks via `weakref` (sem capturar `self` fortemente). O teste é apenas diagnóstico e não altera a aplicação distribuída. **Resultados ainda pendentes.** A próxima decisão técnica deve exigir comparação A/B, preferencialmente dump WER/WinDbg com pilha nativa, e logs da ocorrência real.
+
+
+## 12/11/2026 — 20x A/B e mitigação experimental de ownership Qt (PR #9)
+
+- [Windows CI #43181275371](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43181275371), job `131057585328`, testou **20 subprocessos por cenário e por base** com saída normal, sem SDR físico. Resultados (falhas `0xC0000374`):
+
+  | Cenário | v0.13.2 | PR #9 antes da mitigação |
+  |---|---:|---:|
+  | Waterfall padrão, sem frames | 10/20 | 12/20 |
+  | Desconectar os dois sinais de pan | 0/20 | 0/20 |
+  | Desconectar só o sinal do espectro | 11/20 | 15/20 |
+  | Desconectar só o sinal do waterfall | 10/20 | 9/20 |
+  | Substituir ambos os callbacks por `weakref` | 0/20 | 0/20 |
+
+- Isso fornece evidência mais forte de que **ambos** os callbacks originais `lambda *_: self._pan_timer.start(350)` contribuem para ciclos de referências Qt/Python associados à corrupção de heap **no encerramento**. O CI Linux passou; o Windows foi bloqueado corretamente no gate P0. Ainda não há dump nativo que comprove o mecanismo interno da corrupção, nem vínculo com o fechamento espontâneo durante uso real na v0.13.3.
+- **Mudança experimental somente no PR #9:** commit [`68e6461`](https://github.com/alexpmr/PT2VHF-SDR-Tool/commit/68e6461d038078ed5860829aa1ceff838ea18d33) troca os dois callbacks fortes por uma função que captura apenas `weakref.ref(self._pan_timer)`. Não altera a API de pan nem a duração de debounce (350 ms). Commit [`849a20d`](https://github.com/alexpmr/PT2VHF-SDR-Tool/commit/849a20d64c36601e7c58974e14f5dd394d39d3cb) acrescenta teste de regressão de ambos os sinais. Commit [`1377d2f`](https://github.com/alexpmr/PT2VHF-SDR-Tool/commit/1377d2fe33fc46fc90fcbd710067dbcfda33d216) exige **zero falhas no candidato** e trata as falhas históricas da v0.13.2 como controle observacional, permitindo que o candidato alcance os testes Windows Setup/Portable/OTA **somente se passar no gate**. O job PR não publica release.
+- **Ainda NÃO é correção validada da regressão em uso.** Aguardar novo CI Windows, testes prolongados com hardware SDR e os logs `pt2vhf-sdr.log` / WER do usuário. Não fazer merge, release nem alteração no site enquanto P0 estiver aberto. v0.13.2 continua no catálogo OTA.
