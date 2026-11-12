@@ -74,6 +74,10 @@ def test_case_probe_workflow_is_experimental_and_no_installer():
     assert "needs: windows-file-probe" in job
     assert "needs.windows-file-probe.result == 'failure'" in job
     assert "github.ref == 'refs/heads/feature/iq-signal-classifier'" in job
-    assert "python -m scripts.ci_windows_case_probe" in job
+    assert "python -m scripts.ci_windows_case_probe --timeout-seconds 180 --exit-mode hard" in job
+    # QPA is the single new experimental variable. The normal Windows lane
+    # must remain offscreen and fail closed; this diagnostic is not QA approval.
+    assert "QT_QPA_PLATFORM: minimal" in job
+    assert "QT_QPA_PLATFORM: offscreen" not in job
     assert "gh release create" not in job
     assert "pyinstaller" not in job.lower()
