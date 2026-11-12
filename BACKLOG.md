@@ -5,6 +5,14 @@
 - **Condição P0 de estabilidade:** não publicar v1.0.0, nem reativar v0.13.3 no site, até investigar e corrigir o encerramento inesperado registrado na issue #8; manter recomendação pública provisória da v0.13.2. IA IQ/ONNX continua experimental no PR #2 até RF real homologado.
 - **Implementação:** versão `1.0.0` preparada apenas na branch `feature/splash-v1.0`; sem tag, release, merge ou alteração do catálogo da hospedagem antes de QA Windows/Linux e estabilidade de bancada.
 
+## P1 — medidor compacto de recursos no cabeçalho superior (12/11/2026)
+- **Referência visual:** imagem enviada pelo usuário, bloco pequeno e escuro, duas linhas **CPU** e **RAM**, percentagem com uma casa decimal, consumo de memória em **MB**, etiquetas em ciano, valores claros e indicador verde, sem ocupar a área principal do LCD/waterfall.
+- **Escopo:** medir **somente o processo PT2VHF SDR Tool**, não a CPU/RAM de todo o Windows; mostrar tooltip explicando a origem. CPU normalizada pela capacidade total dos núcleos lógicos, RAM = memória física residente (working set/RSS; no macOS o fallback nativo informa pico de RSS).
+- **Posição:** lado direito do cabeçalho superior, entre o seletor de idioma e a hora UTC, sem retirar funções existentes. Deve seguir o cabeçalho quando o modo apresentação o oculta.
+- **Atualização/eficiência:** coleta leve em intervalo de **2 segundos**, sem serviço externo, rede, dependência adicional nem thread de sondagem. Sem dados disponíveis, exibir travessão, não um valor fictício; limitar CPU a 0–100%.
+- **Implementação candidata:** `pt2vhf/resource_monitor.py` (CPU via relógio de CPU e tempo real; RSS via API nativa Windows, /proc no Linux e fallback macOS) e `pt2vhf/ui/resource_meter.py` (componente Qt compacto). Integrado a `MainWindow._build_header` na branch `feature/splash-v1.0`.
+- **Aceite:** testes de cálculo, dados ausentes, renderização Qt, posição no cabeçalho e atualização de valores; conferir visualmente em monitor pequeno e com SDR real, inclusive se o processo ultrapassar 1 GB de RAM. **Estado:** implementação e testes adicionados ao PR #10; CI e homologação visual pendentes. Não liberar v1.0.0 enquanto a regressão P0 de encerramento espontâneo não estiver resolvida.
+
 ## P1 — splash de abertura com banner PT2VHF (12/11/2026)
 - **Referência:** copiar a experiência do splash do `alexpmr/PT2VHF-Sat-Tool` **v1.7.2** (`sat_tool/app.py`, `show_official_site_notice`).
 - **Imagem:** arquivo do usuário *Powered by www.PT2VHF.com* com sete aplicativos (APRS Client for PC/Android, SAT Tool, QSL Manager, SDR Tool, Mesh Analyzer, Prop Tool HF e Prog Tool), convertido offline para JPEG **1200 × 675 px**, sem cortes. Armazenar em `pt2vhf/assets/branding/welcome-banner.jpg`.
