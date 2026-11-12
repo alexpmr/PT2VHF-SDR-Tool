@@ -17,7 +17,7 @@ def main():
     import pytest
     probe = None
     if os.environ.get("PT2VHF_CI_NATIVE_LIFECYCLE") == "1":
-        from scripts.ci_native_lifecycle import report as probe
+        from ci_native_lifecycle import report as probe
         probe("before-pytest")
     result = pytest.main(["-q", *sys.argv[1:]])
     if probe is not None:
