@@ -105,3 +105,33 @@ def test_shutdown_watchdog_is_not_based_on_stopped_qt_timer():
     chunk = source[idx:idx + 900]
     assert "threading.Timer(20.0, lambda: os._exit(0))" in chunk
     assert "QTimer.singleShot(8000" not in chunk
+
+
+def test_ui_only_closes_after_helper_ack(qt_lifecycle, monkeypatch):
+    from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton, QWidget
+    from pt2vhf.ui.assist_panels import UpdateController
+
+    parent = QWidget()
+    button = QPushButton(parent)
+    controller = UpdateController(parent, button)
+    called = []
+    messages = []
+    controller.win.quit_for_update = lambda: called.append("quit")
+    monkeypatch.setattr(QMessageBox, "critical",
+                        lambda *_args: messages.append(_args[-1]))
+    try:
+        controller._on_helper_ack("PowerShell failed")
+        assert called == []
+        assert messages and "PowerShell failed" in messages[0]
+        controller._on_helper_ack("")
+        assert called == ["quit"]
+    finally:
+        parent.close()
+
+
+def test_helper_startup_runs_off_qt_event_loop():
+    code = (Path(__file__).resolve().parents[1] /
+            "pt2vhf/ui/assist_panels.py").read_text(encoding="utf-8")
+    assert "threading.Thread(target=start_helper" in code
+    assert "self._helper_ack.emit" in code
+    assert "self._helper_ack.connect(self._on_helper_ack)" in code
