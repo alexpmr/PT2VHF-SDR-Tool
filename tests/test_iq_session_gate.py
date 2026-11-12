@@ -593,3 +593,45 @@ def test_worst_known_class_accepts_two_correctly_covered_modes():
     assert selected is not None
     assert selected["known_worst_class_session_macro_coverage"] == 1.0
     assert selected["known_classes_observed"] == 2
+
+
+def test_class_device_cell_blocks_masked_cw_failure():
+    """Synthetic: CW fails on SDR-B but both class and SDR marginal rates pass.
+
+    This cross-product guard prevents a Simpson-like false pass. It measures
+    only observed cells; missing class/SDR combinations still require RF QA.
+    """
+    known = ([("CW", "CW", .99, f"cw-a-{i}", "sdr-a") for i in range(10)]
+             + [("CW", "AM", .99, "cw-b-failed", "sdr-b")]
+             + [("AM", "AM", .99, f"am-b-{i}", "sdr-b") for i in range(20)])
+    unknown = [("UNKNOWN", "UNKNOWN", .99, "noise-a", "sdr-a"),
+               ("UNKNOWN", "UNKNOWN", .99, "noise-b", "sdr-b")]
+    rows = known + unknown
+    observed = rates(rows, .95)
+    assert observed["known_worst_class_session_macro_coverage"] == pytest.approx(10 / 11)
+    assert observed["known_worst_device_correct_coverage"] == pytest.approx(20 / 21)
+    assert observed["known_worst_class_device_correct_coverage"] == 0.0
+    assert observed["known_class_device_cells_observed"] == 3
+    assert observed["unknown_worst_device_false_accept_rate"] == 0.0
+    chosen, _ = select(rows, max_far=.10, min_coverage=.50)
+    assert chosen is None
+    assert "sdr-a" not in json.dumps(observed)
+    assert "sdr-b" not in json.dumps(observed)
+    assert "cw-b-failed" not in json.dumps(observed)
+
+
+def test_class_device_cell_control_and_legacy_rows():
+    """Synthetic control: fully correct observed cells pass; legacy rate API stays safe."""
+    rows = [("CW", "CW", .99, "cw-a", "sdr-a"),
+            ("CW", "CW", .99, "cw-b", "sdr-b"),
+            ("AM", "AM", .99, "am-a", "sdr-a"),
+            ("AM", "AM", .99, "am-b", "sdr-b"),
+            ("UNKNOWN", "UNKNOWN", .99, "noise-a", "sdr-a"),
+            ("UNKNOWN", "UNKNOWN", .99, "noise-b", "sdr-b")]
+    chosen, _ = select(rows, max_far=.10, min_coverage=.50)
+    assert chosen is not None
+    assert chosen["known_worst_class_device_correct_coverage"] == 1.0
+    assert chosen["known_class_device_cells_observed"] == 4
+    legacy = rates([row[:4] for row in rows], .95)
+    assert legacy["known_worst_class_device_correct_coverage"] is None
+    assert legacy["known_class_device_cells_observed"] is None
