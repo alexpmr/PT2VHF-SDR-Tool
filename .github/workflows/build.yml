@@ -51,6 +51,48 @@ jobs:
       - name: Testes Windows / Qt offscreen (falhar se houver crash nativo)
         run: python scripts/ci_windows_pytest.py
 
+  windows-qt-runtime-probe:
+    # Experimental-only hypothesis: compare Python and PySide6 runtime versions
+    # after the main Windows suite fails. Two isolated UI cases, hard exit,
+    # native-crash detection fail-closed. Never builds or publishes binaries.
+    needs: windows-tests
+    if: ${{ always() && needs.windows-tests.result == 'failure' && github.ref == 'refs/heads/feature/iq-signal-classifier' }}
+    runs-on: windows-2022
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+        pyside-version: ["6.9.3", "6.11.3"]
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install diagnostic runtime (no installer)
+        run: python -m pip install numpy scipy "PySide6==${{ matrix.pyside-version }}" pyqtgraph pytest "sgp4>=2.23"
+      - name: Record runtime versions
+        run: python -c "import sys, PySide6, pytest; print(sys.version); print('PySide6', PySide6.__version__); print('pytest', pytest.__version__)"
+      - name: Isolate both UI cases and reject native crashes
+        shell: pwsh
+        env:
+          PT2VHF_TEST_EXIT_MODE: hard
+        run: |
+          $failed = 0
+          foreach ($case in @(
+            "tests/test_v010_ui.py::test_main_navigation_and_lcd_band_theme",
+            "tests/test_v050_ui.py::test_reconnects_receiver_on_start"
+          )) {
+            Write-Host "RUNTIME-PROBE $case"
+            python scripts/ci_windows_pytest.py $case
+            if ($LASTEXITCODE -ne 0) { $failed = 1 }
+          }
+          if ($failed -ne 0) { throw "Windows native crash or pytest failure in runtime probe" }
+
   windows-crash-isolation:
     # Diagnostic only: if the complete Windows suite fails, run independent
     # IQ/non-IQ and hard/normal exit modes distinguish test scope from Qt teardown.
@@ -157,71 +199,6 @@ jobs:
       - name: Isolar cada caso UI em processo Windows com hard e normal exit
         run: python -m scripts.ci_windows_case_probe --timeout-seconds 180 --exit-mode both
 
-  windows-exit-probe:
-    # Experimental-only follow-up: compare bare Python, Qt and MainWindow
-    # shutdown without pytest after isolated UI cases reproduce native crashes.
-    needs: windows-case-probe
-    if: ${{ always() && needs.windows-case-probe.result == 'failure' && github.ref == 'refs/heads/feature/iq-signal-classifier' }}
-    runs-on: windows-2022
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    env:
-      QT_QPA_PLATFORM: offscreen
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Dependencias de diagnostico Qt (sem instalador)
-        run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph "sgp4>=2.23"
-      - name: Comparar encerramento nativo sem pytest
-        run: python -m scripts.ci_windows_exit_probe --timeout-seconds 90
-
-  windows-qt-teardown-probe:
-    # Diagnostic-only: standalone Qt/MainWindow exit was clean but pytest UI
-    # cases crashed. Compare existing session fixture teardown with skip mode.
-    # Red result is expected when a native crash is reproduced; never a release gate.
-    needs: windows-case-probe
-    if: ${{ always() && needs.windows-case-probe.result == 'failure' && github.ref == 'refs/heads/feature/iq-signal-classifier' }}
-    runs-on: windows-2022
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    env:
-      QT_QPA_PLATFORM: offscreen
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Dependencias do probe de teardown (sem instalador)
-        run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
-      - name: Comparar cleanup Qt da fixture com quatro casos de UI
-        run: python -m scripts.ci_windows_qt_teardown_probe --timeout-seconds 180
-
-
-  windows-exit-mechanism-probe:
-    # Diagnostic only: all 16 delay variants reproduced crashes in CI #412.
-    # Compare CRT hard exit, normal exit and Win32 TerminateProcess to isolate
-    # shutdown mechanism. TerminateProcess is NOT a workaround or QA pass.
-    needs: windows-qt-teardown-probe
-    if: ${{ always() && needs.windows-qt-teardown-probe.result == 'failure' && github.ref == 'refs/heads/feature/iq-signal-classifier' }}
-    runs-on: windows-2022
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    env:
-      QT_QPA_PLATFORM: offscreen
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Dependencias do probe de mecanismo de saida (sem instalador)
-        run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
-      - name: Comparar encerramento CRT, normal e TerminateProcess
-        run: python -m scripts.ci_windows_exit_mechanism_probe --timeout-seconds 180
 
   windows-exe:
     # Manual e commit [build-windows] SOMENTE na main; branch experimental nao gera instaladores.
