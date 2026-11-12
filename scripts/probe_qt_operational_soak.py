@@ -32,7 +32,20 @@ def child(seconds: int, source_root: Path) -> int:
     from PySide6.QtCore import QObject, QPointF, Qt, QTimer
     from PySide6.QtWidgets import QApplication
     from types import SimpleNamespace
+    from pt2vhf.ui import waterfall as waterfall_module
     from pt2vhf.ui.waterfall import SpectrumWaterfall
+
+    # Guard against accidentally testing the candidate module in a baseline
+    # subprocess: a green result is meaningless if the source ref is wrong.
+    actual_source = Path(waterfall_module.__file__).resolve()
+    expected_source = (source_root / "pt2vhf" / "ui" / "waterfall.py").resolve()
+    if actual_source != expected_source:
+        print(
+            f"SOAK-SOURCE-MISMATCH expected={expected_source} actual={actual_source}",
+            flush=True,
+        )
+        return 4
+    print(f"SOAK-SOURCE path={actual_source}", flush=True)
 
     class Harness(QObject):
         def __init__(self, app):
@@ -178,8 +191,10 @@ def parent(seconds: int, repeats: int, timeout: int, source_root: Path) -> int:
                 r"SOAK-READY ticks=(\d+) clicks=(\d+) pans=(\d+) elapsed=([\d.]+)",
                 proc.stdout,
             )
+            source_marker = f"SOAK-SOURCE path={(source_root / 'pt2vhf' / 'ui' / 'waterfall.py').resolve()}"
             valid = (
                 proc.returncode == 0 and marker is not None
+                and source_marker in proc.stdout
                 and int(marker.group(1)) >= seconds * 5
                 and int(marker.group(2)) > 0
                 and int(marker.group(3)) > 0
