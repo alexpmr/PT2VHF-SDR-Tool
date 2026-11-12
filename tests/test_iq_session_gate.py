@@ -508,3 +508,29 @@ def test_end_to_end_gate_rejects_missing_device_identity(tmp_path, monkeypatch):
     monkeypatch.setattr(gate, "observations", legacy_observations)
     with pytest.raises(ValueError, match="Device metadata required"):
         gate.run(cal, hold, tmp_path, object())
+
+
+def test_worst_known_class_blocks_cw_failure_masked_by_am_sessions():
+    """Synthetic-only: aggregate and device averages cannot conceal failed CW."""
+    rows = [("AM", "AM", .99, f"am-{i}", "sdr-a") for i in range(20)]
+    rows += [("CW", "AM", .99, "cw-failed", "sdr-a"),
+             ("UNKNOWN", "UNKNOWN", .99, "unknown", "sdr-a")]
+    measured = rates(rows, .95)
+    assert measured["known_session_macro_coverage"] == pytest.approx(20 / 21)
+    assert measured["known_worst_device_correct_coverage"] == pytest.approx(20 / 21)
+    assert measured["known_worst_class_session_macro_coverage"] == 0.0
+    assert measured["known_classes_observed"] == 2
+    selected, _ = select(rows, max_far=.10, min_coverage=.50)
+    assert selected is None
+    assert "cw-failed" not in json.dumps(measured)
+
+
+def test_worst_known_class_accepts_two_correctly_covered_modes():
+    """Synthetic control: class-level guard accepts correctly covered CW and AM."""
+    rows = [("AM", "AM", .99, "am-session", "sdr-a"),
+            ("CW", "CW", .99, "cw-session", "sdr-b"),
+            ("UNKNOWN", "UNKNOWN", .99, "noise-session", "sdr-b")]
+    selected, _ = select(rows, max_far=.10, min_coverage=.50)
+    assert selected is not None
+    assert selected["known_worst_class_session_macro_coverage"] == 1.0
+    assert selected["known_classes_observed"] == 2

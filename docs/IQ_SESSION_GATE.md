@@ -50,3 +50,22 @@ externamente, maior diversidade e análise de incerteza por sessão.
 
 Testes usam apenas WAV sintético e predições simuladas. Nenhuma medição RF
 real ou taxa de acerto operacional foi produzida por esta mudança.
+
+## Proteção por classe conhecida — 12/11/2026
+
+A cobertura média de sinais conhecidos, inclusive por sessão e por SDR, pode
+ocultar uma classe com recall zero (por exemplo, CW falhando enquanto muitas
+sessões AM são corretamente reconhecidas no mesmo equipamento). O gate
+experimental agora calcula `known_worst_class_session_macro_coverage`: para
+cada classe conhecida **observada**, calcula a fração de acertos aceitos em
+cada sessão e depois a média entre sessões; o mínimo entre as classes deve
+satisfazer `--min-known-coverage`. O relatório inclui
+`known_classes_observed` sem identificadores de sessão ou dispositivo.
+
+**Limite importante:** o mínimo só considera classes presentes no conjunto.
+A ausência de CW, AM ou outra classe necessária **não** é prova de desempenho
+nessa classe, e `HOLDOUT_EVALUATED` continua sendo apenas um diagnóstico
+offline, não uma aprovação para release. A revisão de RF real deve exigir
+cobertura explícita de CW/AM/NFM/USB/LSB e UNKNOWN, diversidade de sessões,
+SDRs, SNR e verificação independente dos rótulos. WFM permanece não validado.
+Os testes desta alteração usam apenas observações sintéticas.

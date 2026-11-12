@@ -182,6 +182,13 @@ def rates(rows, threshold):
             sessions.setdefault(item[3], []).append(item)
         return sum(sum(event(x) for x in group) / len(group)
                    for group in sessions.values()) / len(sessions)
+    # Per-class session macro: a large AM/NFM corpus must not conceal
+    # zero CW coverage. Missing classes require separate RF QA.
+    class_labels = {r[0] for r in known}
+    worst_class_session_coverage = min(
+        macro([r for r in known if r[0] == label],
+              lambda r: accepted(r) and r[0] == r[1])
+        for label in class_labels)
     return {
         "threshold": threshold,
         "known_correct_coverage": sum(accepted(r) and r[0] == r[1] for r in known) / len(known),
@@ -189,6 +196,8 @@ def rates(rows, threshold):
         "unknown_false_accept_rate": sum(accepted(r) for r in unknown) / len(unknown),
         "known_session_macro_coverage":
             macro(known, lambda r: accepted(r) and r[0] == r[1]),
+        "known_worst_class_session_macro_coverage": worst_class_session_coverage,
+        "known_classes_observed": len(class_labels),
         "unknown_session_macro_false_accept":
             macro(unknown, accepted),
         # Device-level worst case prevents many sessions from one good SDR
@@ -212,6 +221,7 @@ def acceptable(r, max_far, min_coverage):
                 r["unknown_session_macro_false_accept"],
                 r["unknown_worst_device_false_accept_rate"] or 0.0) <= max_far
             and r["known_session_macro_coverage"] >= min_coverage
+            and r["known_worst_class_session_macro_coverage"] >= min_coverage
             and (r["known_worst_device_correct_coverage"] is None or
                  r["known_worst_device_correct_coverage"] >= min_coverage))
 
