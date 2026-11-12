@@ -460,3 +460,51 @@ def test_iq_device_metadata_required_and_consistent_for_threshold_gate():
     legacy = rates([row[:4] for row in rows], .95)
     assert legacy["unknown_worst_device_false_accept_rate"] is None
     assert legacy["known_worst_device_correct_coverage"] is None
+
+
+def test_end_to_end_holdout_fails_when_one_sdr_accepts_unknown(tmp_path, monkeypatch):
+    """Synthetic holdout: global/session FAR 50% can pass a 60% budget,
+    but a device with 100% false acceptance must still fail.
+    """
+    import scripts.iq_session_gate as gate
+    cal = manifest(tmp_path, "cal.json", "cal", 1200)
+    hold = manifest(tmp_path, "hold.json", "hold", 1700)
+    doc = json.loads(hold.read_text())
+    for index, label in ((2, "AM"), (3, "UNKNOWN")):
+        filename = f"hold-{index}.wav"
+        wav(tmp_path / filename, 2300 + index * 170)
+        doc["recordings"].append({
+            "path": filename, "mode": label, "session_id": f"hold-{index}",
+            "device": "second synthetic SDR", "frequency_hz": 145500000,
+        })
+    hold.write_text(json.dumps(doc))
+
+    def fake_observations(rows, model, max_windows, *, accounting=None):
+        if accounting is not None:
+            accounting.update({"minimum_session_pipeline_coverage": 1.0,
+                               "pipeline_coverage": 1.0})
+        return [(label,
+                 "AM" if label == "UNKNOWN" and session == "hold-3" else label,
+                 .99, session, device)
+                for _, label, session, device in rows]
+
+    monkeypatch.setattr(gate, "observations", fake_observations)
+    report = gate.run(cal, hold, tmp_path, object(),
+                      max_far=.60, min_coverage=.50)
+    assert report["holdout_diversity_gate_passed"] is True
+    assert report["holdout_result"]["unknown_false_accept_rate"] == .50
+    assert report["holdout_result"]["unknown_session_macro_false_accept"] == .50
+    assert report["holdout_result"]["unknown_worst_device_false_accept_rate"] == 1.0
+    assert report["decision"] == "HOLDOUT_FAILED"
+    assert report["operationally_validated"] is False
+
+
+def test_end_to_end_gate_rejects_missing_device_identity(tmp_path, monkeypatch):
+    import scripts.iq_session_gate as gate
+    cal = manifest(tmp_path, "cal.json", "cal", 1200)
+    hold = manifest(tmp_path, "hold.json", "hold", 1700)
+    def legacy_observations(rows, model, max_windows, *, accounting=None):
+        return [(label, label, .99, session) for _, label, session, _ in rows]
+    monkeypatch.setattr(gate, "observations", legacy_observations)
+    with pytest.raises(ValueError, match="Device metadata required"):
+        gate.run(cal, hold, tmp_path, object())
