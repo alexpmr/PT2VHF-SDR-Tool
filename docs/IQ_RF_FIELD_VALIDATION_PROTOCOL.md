@@ -119,6 +119,23 @@ independente. A auditoria deve confirmar dispositivos físicos e sessões
 externamente, estratificar por SNR e família OOD, e reportar contagens por
 dispositivo sem expor IDs pessoais. Nenhuma execução sintética é homologação RF.
 
+## Cobertura cruzada de modos por SDR no holdout (12/11/2026)
+
+Além de exigir CW/AM/NFM/USB/LSB no conjunto global, o gate offline
+agora exige **cada uma dessas cinco classes e UNKNOWN em cada SDR declarado
+no holdout**. A ausência de uma combinação modo × SDR reprova com
+`HOLDOUT_INSUFFICIENT_CLASS_DEVICE_COVERAGE`, mesmo quando as médias de
+acerto e as taxas de rejeição observadas são perfeitas. O JSON expõe somente
+o número de combinações esperadas e ausentes, sem nomes dos equipamentos.
+A calibração continua exigindo todas as classes globalmente; a cobertura
+cruzada é requisito específico do holdout independente.
+
+**Limites:** presença não significa representatividade estatística.
+Uma única janela por combinação ainda é insuficiente para estimar recall
+ou FAR com confiança. As identidades dos SDRs, a independência dos
+rótulos e a origem RF precisam ser auditadas externamente. Esta mudança
+foi testada com dados sintéticos e não constitui homologação RF.
+
 ## Portões para revisão do PR
 
 - Documentar origem, proveniência e conferência independente de rótulos; validar que o dataset não entrou no treinamento.
