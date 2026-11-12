@@ -202,6 +202,7 @@ class UpdateController(QObject):
     _checked = Signal(object, str, bool)
     _progress = Signal(int, int)
     _downloaded = Signal(object, str)
+    _helper_ack = Signal(str)  # thread-safe handshake result; UI remains responsive
 
     def __init__(self, window, button: QPushButton):
         super().__init__(window)
@@ -216,6 +217,7 @@ class UpdateController(QObject):
         self._checked.connect(self._on_checked)
         self._progress.connect(self._on_progress)
         self._downloaded.connect(self._on_downloaded)
+        self._helper_ack.connect(self._on_helper_ack)
         self.btn.setText("Verificar atualizações")
         self.btn.setToolTip(f"Versão instalada {__version__} · verificar versões em www.pt2vhf.com e atualizar")
         self.btn.clicked.connect(self.on_button)
@@ -368,11 +370,28 @@ class UpdateController(QObject):
             if not self._silent:
                 QMessageBox.warning(self.win, "Atualização", err)
             return
-        try:
-            updater.apply(path, self.kind, self.available.version)
-        except updater.UpdateError as e:
-            QMessageBox.critical(self.win, "Atualização não aplicada", str(e))
+        self.btn.setText("Instalador baixado · iniciando auxiliar OTA…")
+        # PowerShell may require several seconds for Defender to scan it.
+        # Never block the Qt event loop while waiting for the helper ACK.
+        version = self.available.version
+
+        def start_helper():
+            try:
+                updater.apply(path, self.kind, version)
+            except (updater.UpdateError, OSError) as exc:
+                self._helper_ack.emit(str(exc))
+            else:
+                self._helper_ack.emit("")
+
+        threading.Thread(target=start_helper, name="sdr-ota-helper", daemon=True).start()
+
+    def _on_helper_ack(self, error: str):
+        if error:
+            self.btn.setText("Falha ao iniciar instalador · tentar novamente")
+            QMessageBox.critical(self.win, "Atualização não aplicada", error)
             return
+        # This Qt slot only executes after PowerShell wrote READY to the
+        # unique acknowledgement file; never close on mere Popen success.
         self.win.quit_for_update()
 
     # ------------------------------------------------------------ resultado da anterior
