@@ -101,6 +101,9 @@ def test_pytest_runner_forwards_selection_and_preserves_exit(monkeypatch):
         main=lambda args: seen.append(args) or 0
     ))
     monkeypatch.setattr(sys, "argv", ["run_tests.py", "-k", "iq_"])
+    # This unit test exercises hard-exit semantics even when the diagnostic
+    # Windows CI matrix intentionally sets PT2VHF_TEST_EXIT_MODE=normal.
+    monkeypatch.setenv("PT2VHF_TEST_EXIT_MODE", "hard")
     monkeypatch.setattr(runner.os, "_exit", lambda code: seen.append(("exit", code)))
     runner.main()
     assert seen == [["-q", "-k", "iq_"], ("exit", 0)]
