@@ -13,7 +13,7 @@
 
 A branch `fix/crash-diagnostics-v0133` instrumenta a próxima build de diagnóstico, **não a v0.13.3 já instalada**. A instrumentação grava localmente:
 
-- `%APPDATA%\PT2VHF-SDR-Tool\crash-diagnostics.log`: hora UTC, PID, versão Python, início, encerramento limpo, exceções sem tratamento e traces nativos de `faulthandler` (inclusive all_threads).
+- `%APPDATA%\PT2VHF-SDR-Tool\crash-diagnostics.log`: hora UTC, PID, versão Python, início, aviso de saída Qt, retorno do event loop, exceções sem tratamento e traces nativos de `faulthandler` (inclusive all_threads).
 - `%APPDATA%\PT2VHF-SDR-Tool\pt2vhf-sdr.log`: log operacional preexistente quando a versão Windows é empacotada sem console.
 - Rotação após 2 MiB, mantendo uma cópia `.1`. **Não há telemetria automática, upload ou exposição pública de logs**.
 
@@ -104,3 +104,19 @@ Issue de rastreamento: https://github.com/alexpmr/PT2VHF-SDR-Tool/issues/8
 - **Empacotamento e OTA simulados:** Windows Setup/Portable, autotestes e smokes `OTA_PORTABLE_SMOKE`, `OTA_PORTABLE_FAILURE_SMOKE`, `OTA_SETUP_SMOKE`, `OTA_SETUP_FAILURE_SMOKE` passaram. Isso **não** substitui atualização OTA real em máquinas de usuários nem ensaio de resistência com SDR/USB/áudio físico. Nenhuma release foi publicada.
 - **Contenção conferida no repositório:** `PT2VHF-Site/main/updates.json` anuncia somente **v0.13.2** para SDR, com Setup SHA-256 `dcb313680493a23fd12de7ab4495082a2a2da21d8ca09a075e4a43637595c0a4` e Portable SHA-256 `f8b63fc28b3afde1cc830cf752787c9a88e72386852eccfcf73b0065c6e66fe1`. Os endpoints públicos não puderam ser reconfirmados nesta execução (timeout); **não afirmar validação ao vivo**.
 - **Bloqueio P0:** sem `%APPDATA%\\PT2VHF-SDR-Tool\\pt2vhf-sdr.log` da ocorrência, módulo/código WER, reprodução no mesmo SDR físico e soak prolongado, a causa raiz da falha em produção segue **desconhecida**. Não fazer merge, release v0.13.4 ou reativar v0.13.3 no site/OTA. IA IQ/ONNX continua isolada no PR #2.
+
+
+## 12/11/2026 — correção da semântica dos marcadores de encerramento
+
+O callback `QApplication.aboutToQuit` era registrado como `CLEAN-EXIT`, embora
+`aboutToQuit` aconteça **antes** da destruição final de objetos Qt/Python.
+Isto podia gerar um falso diagnóstico de saída limpa justamente no cenário de
+corrupção de heap `0xC0000374` observado durante o teardown. A instrumentação
+do PR #9 agora grava `QT-ABOUT-TO-QUIT` e, após `app.exec()` retornar,
+`QT-LOOP-RETURN code=N`. **Nenhum desses marcadores prova que o processo
+terminou normalmente**; a evidência definitiva requer o exit code observado
+externamente e/ou Windows Error Reporting (WER), com módulo e código da falha.
+Ausência de `QT-LOOP-RETURN` não identifica sozinha a causa. Esta alteração
+melhora a fidelidade do diagnóstico, **não corrige** o encerramento espontâneo
+relatado na v0.13.3. O CI de validação desta alteração deve ser conferido antes
+de qualquer conclusão sobre a própria instrumentação.

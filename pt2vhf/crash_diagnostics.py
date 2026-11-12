@@ -89,9 +89,14 @@ def enable() -> Path | None:
     return path
 
 
-def mark_clean_exit() -> None:
-    """A missing CLEAN-EXIT marker suggests an abrupt termination, not its cause."""
-    _write("CLEAN-EXIT Qt event loop finished")
+def mark_qt_quit_requested() -> None:
+    """Qt is about to quit; native teardown can still fail afterward."""
+    _write("QT-ABOUT-TO-QUIT (not proof of a clean process exit)")
+
+
+def mark_qt_loop_return(code: int) -> None:
+    """Record the event-loop status without claiming successful native shutdown."""
+    _write(f"QT-LOOP-RETURN code={int(code)} (native teardown not verified)")
 
 
 def mark_update_exit() -> None:

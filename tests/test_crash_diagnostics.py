@@ -1,6 +1,7 @@
 """Local crash-log diagnostics: deterministic tests, no native crash required."""
 from __future__ import annotations
 
+import io
 import sys
 import threading
 
@@ -29,13 +30,16 @@ def test_local_crash_log_contains_lifecycle_and_exception(tmp_path, monkeypatch)
             typ, value, tb = sys.exc_info()
             sys.excepthook(typ, value, tb)
         diag.mark_update_exit()
-        diag.mark_clean_exit()
+        diag.mark_qt_quit_requested()
+        diag.mark_qt_loop_return(0)
         data = path.read_text(encoding="utf-8")
         assert "START pid=" in data
         assert "UNHANDLED RuntimeError" in data
         assert "synthetic-crash-example" in data
         assert "UPDATE-EXIT requested" in data
-        assert "CLEAN-EXIT" in data
+        assert "QT-ABOUT-TO-QUIT" in data
+        assert "QT-LOOP-RETURN code=0" in data
+        assert "CLEAN-EXIT" not in data
     finally:
         sys.excepthook = old_sys_hook
         threading.excepthook = old_thread_hook
@@ -86,3 +90,18 @@ def test_failed_native_handler_does_not_leave_stale_handle(tmp_path, monkeypatch
         assert diag._handle is None
     finally:
         sys.excepthook, threading.excepthook = old_sys, old_thread
+
+
+def test_qt_lifecycle_markers_do_not_claim_clean_native_exit(monkeypatch):
+    """Even app.exec() returning zero cannot certify C++/Qt teardown."""
+    output = io.StringIO()
+    monkeypatch.setattr(diag, "_handle", output)
+    diag.mark_qt_quit_requested()
+    diag.mark_qt_loop_return(0)
+    diag.mark_qt_loop_return(17)
+    data = output.getvalue()
+    assert "QT-ABOUT-TO-QUIT" in data
+    assert "QT-LOOP-RETURN code=0" in data
+    assert "QT-LOOP-RETURN code=17" in data
+    assert "native teardown not verified" in data
+    assert "CLEAN-EXIT" not in data
