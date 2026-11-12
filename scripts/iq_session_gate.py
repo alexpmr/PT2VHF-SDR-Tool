@@ -178,6 +178,18 @@ def rates(rows, threshold):
         if has_devices else None)
     unknown_device_far = (
         device_rates(unknown, accepted) if has_devices else None)
+    # A class can fail completely on one SDR while class-only and device-only
+    # averages both pass (Simpson-like masking). Audit each observed
+    # (known class, SDR) cell independently; no device IDs leave the report.
+    class_device_coverage = None
+    if has_devices:
+        cells = {}
+        for item in known:
+            cells.setdefault((item[0], item[4]), []).append(item)
+        class_device_coverage = [
+            sum(accepted(item) and item[0] == item[1] for item in cell) / len(cell)
+            for cell in cells.values()
+        ]
     def macro(part, event):
         sessions = {}
         for item in part:
@@ -206,6 +218,10 @@ def rates(rows, threshold):
         # masking an OOD failure on a different SDR. Device IDs stay private.
         "known_worst_device_correct_coverage": (
             min(known_device_coverage) if known_device_coverage is not None else None),
+        "known_worst_class_device_correct_coverage": (
+            min(class_device_coverage) if class_device_coverage is not None else None),
+        "known_class_device_cells_observed": (
+            len(class_device_coverage) if class_device_coverage is not None else None),
         "unknown_worst_device_false_accept_rate": (
             max(unknown_device_far) if unknown_device_far is not None else None),
         "known_devices": len(known_device_coverage) if has_devices else None,
@@ -225,7 +241,9 @@ def acceptable(r, max_far, min_coverage):
             and r["known_session_macro_coverage"] >= min_coverage
             and r["known_worst_class_session_macro_coverage"] >= min_coverage
             and (r["known_worst_device_correct_coverage"] is None or
-                 r["known_worst_device_correct_coverage"] >= min_coverage))
+                 r["known_worst_device_correct_coverage"] >= min_coverage)
+            and (r["known_worst_class_device_correct_coverage"] is None or
+                 r["known_worst_class_device_correct_coverage"] >= min_coverage))
 
 
 def select(rows, max_far=.10, min_coverage=.50):
