@@ -23,7 +23,9 @@ def summarize(text: str, limit: int = 24) -> tuple[bool, list[str]]:
     for line in text.splitlines():
         match = _FRAME.search(line)
         if match:
-            frames.append(match.group(1))
+            # CDB often appends a code offset (+0xNN); omit all offsets.
+            symbol = re.sub(r"\\+0x[0-9a-fA-F]+$", "", match.group(1))
+            frames.append(symbol)
             if len(frames) == limit:
                 break
     return found, frames
