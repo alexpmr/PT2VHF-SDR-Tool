@@ -68,6 +68,10 @@ def install_kind(exe_path: Path | None = None, frozen: bool | None = None) -> st
     frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
     if not frozen:
         return "source"
+    if sys.platform != "win32":
+        # Native Linux/macOS bundles must never execute a Windows .exe.
+        # Updates remain manual until an OS-specific updater is tested.
+        return "manual"
     exe = (exe_path or Path(sys.executable)).resolve()
     if (exe.parent / "portable.flag").exists() or exe.stem.casefold().endswith("-portable"):
         return "portable"
