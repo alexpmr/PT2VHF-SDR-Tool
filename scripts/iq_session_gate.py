@@ -182,13 +182,23 @@ def rates(rows, threshold):
     # averages both pass (Simpson-like masking). Audit each observed
     # (known class, SDR) cell independently; no device IDs leave the report.
     class_device_coverage = None
+    class_device_session_coverage = None
     if has_devices:
         cells = {}
+        session_cells = {}
         for item in known:
             cells.setdefault((item[0], item[4]), []).append(item)
+            session_cells.setdefault((item[0], item[4], item[3]), []).append(item)
         class_device_coverage = [
             sum(accepted(item) and item[0] == item[1] for item in cell) / len(cell)
             for cell in cells.values()
+        ]
+        # Window-weighted class x SDR rates can hide one completely failed
+        # capture session behind many windows from another session in the
+        # same cell. A session is the independent unit, not an IQ window.
+        class_device_session_coverage = [
+            sum(accepted(item) and item[0] == item[1] for item in cell) / len(cell)
+            for cell in session_cells.values()
         ]
     def macro(part, event):
         sessions = {}
@@ -196,6 +206,15 @@ def rates(rows, threshold):
             sessions.setdefault(item[3], []).append(item)
         return sum(sum(event(x) for x in group) / len(group)
                    for group in sessions.values()) / len(sessions)
+    # A single UNKNOWN session with 100% false acceptance must not be
+    # diluted by many quiet sessions or by a window-weighted SDR aggregate.
+    unknown_session_groups = {}
+    for item in unknown:
+        unknown_session_groups.setdefault(item[3], []).append(item)
+    unknown_worst_session_far = max(
+        sum(accepted(item) for item in group) / len(group)
+        for group in unknown_session_groups.values()
+    )
     # Per-class session macro: a large AM/NFM corpus must not conceal
     # zero CW coverage. Missing classes require separate RF QA.
     class_labels = {r[0] for r in known}
@@ -214,6 +233,7 @@ def rates(rows, threshold):
         "known_classes_observed": len(class_labels),
         "unknown_session_macro_false_accept":
             macro(unknown, accepted),
+        "unknown_worst_session_false_accept_rate": unknown_worst_session_far,
         # Device-level worst case prevents many sessions from one good SDR
         # masking an OOD failure on a different SDR. Device IDs stay private.
         "known_worst_device_correct_coverage": (
@@ -222,6 +242,12 @@ def rates(rows, threshold):
             min(class_device_coverage) if class_device_coverage is not None else None),
         "known_class_device_cells_observed": (
             len(class_device_coverage) if class_device_coverage is not None else None),
+        "known_worst_class_device_session_correct_coverage": (
+            min(class_device_session_coverage)
+            if class_device_session_coverage is not None else None),
+        "known_class_device_session_cells_observed": (
+            len(class_device_session_coverage)
+            if class_device_session_coverage is not None else None),
         "unknown_worst_device_false_accept_rate": (
             max(unknown_device_far) if unknown_device_far is not None else None),
         "known_devices": len(known_device_coverage) if has_devices else None,
@@ -237,13 +263,16 @@ def rates(rows, threshold):
 def acceptable(r, max_far, min_coverage):
     return (max(r["unknown_false_accept_rate"],
                 r["unknown_session_macro_false_accept"],
+                r["unknown_worst_session_false_accept_rate"],
                 r["unknown_worst_device_false_accept_rate"] or 0.0) <= max_far
             and r["known_session_macro_coverage"] >= min_coverage
             and r["known_worst_class_session_macro_coverage"] >= min_coverage
             and (r["known_worst_device_correct_coverage"] is None or
                  r["known_worst_device_correct_coverage"] >= min_coverage)
             and (r["known_worst_class_device_correct_coverage"] is None or
-                 r["known_worst_class_device_correct_coverage"] >= min_coverage))
+                 r["known_worst_class_device_correct_coverage"] >= min_coverage)
+            and (r["known_worst_class_device_session_correct_coverage"] is None or
+                 r["known_worst_class_device_session_correct_coverage"] >= min_coverage))
 
 
 def select(rows, max_far=.10, min_coverage=.50):
