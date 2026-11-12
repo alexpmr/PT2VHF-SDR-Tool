@@ -41,8 +41,16 @@ def child(seconds: int, source_root: Path) -> int:
             self.widget.step = 12_500
             self.widget.set_vfo(145_500_000, -6_000, 6_000)
             self.widget.show()
+            # The v0.13.2 baseline has no centerTuneRequested signal:
+            # double-click resets zoom instead of tuning. Exercise the shared
+            # single-click path on both versions and check the distinct
+            # double-click contracts without treating API mismatch as a crash.
             self.requests = []
-            self.widget.centerTuneRequested.connect(self.requests.append)
+            self.center_requests = []
+            self.widget.tuneRequested.connect(self.requests.append)
+            self.has_center_tune = hasattr(self.widget, "centerTuneRequested")
+            if self.has_center_tune:
+                self.widget.centerTuneRequested.connect(self.center_requests.append)
             self.ticks = 0
             self.clicks = 0
             self.pans = 0
@@ -84,14 +92,35 @@ def child(seconds: int, source_root: Path) -> int:
                     before = len(self.requests)
                     event = SimpleNamespace(
                         button=lambda: Qt.LeftButton,
-                        double=lambda: True,
+                        double=lambda: False,
                         scenePos=lambda: point,
                     )
                     self.widget._clicked(event)
                     if len(self.requests) != before + 1:
-                        raise AssertionError("Waterfall double-click was not delivered")
+                        raise AssertionError("Waterfall single-click was not delivered")
                     if abs(self.requests[-1] - frequency) > 1:
-                        raise AssertionError("Waterfall tuned the wrong frequency")
+                        raise AssertionError("Waterfall single-click tuned the wrong frequency")
+
+                    # Send the same double-click on both builds. The old
+                    # version resets zoom; the candidate emits a center-tune
+                    # signal. Neither behavior is a native crash.
+                    before_single = len(self.requests)
+                    before_center = len(self.center_requests)
+                    double_event = SimpleNamespace(
+                        button=lambda: Qt.LeftButton,
+                        double=lambda: True,
+                        scenePos=lambda: point,
+                    )
+                    self.widget._clicked(double_event)
+                    if len(self.requests) != before_single:
+                        raise AssertionError("Double-click unexpectedly emitted single tune")
+                    if self.has_center_tune:
+                        if len(self.center_requests) != before_center + 1:
+                            raise AssertionError("Double-click center-tune not delivered")
+                        if abs(self.center_requests[-1] - frequency) > 1:
+                            raise AssertionError("Double-click center-tuned wrong frequency")
+                    elif len(self.center_requests) != before_center:
+                        raise AssertionError("Legacy double-click emitted center tune")
                     self.widget.set_vfo(frequency, -6_000, 6_000)
                     self.widget.center_on_vfo()
                     self.clicks += 1
