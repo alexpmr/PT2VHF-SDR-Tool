@@ -4,7 +4,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
-from ..resource_monitor import ProcessResourceSampler, process_rss_bytes
+from ..resource_monitor import ProcessResourceSampler
 
 
 class ResourceMeter(QFrame):
