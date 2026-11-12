@@ -58,12 +58,18 @@ def test_nonzero_timeout_and_invalid_options_fail_closed(monkeypatch):
             probe.probe(seconds, modes)
 
 
-def test_workflow_is_experimental_only_and_never_builds():
+def test_retired_exit_mechanism_job_stays_disabled_and_replacement_is_safe():
+    """The historical probe script remains testable but no longer runs on each CI."""
     workflow = (Path(__file__).resolve().parents[1] / ".github" /
                 "workflows" / "build.yml").read_text(encoding="utf-8")
-    job = workflow.split("\n  windows-exit-mechanism-probe:", 1)[1].split("\n  windows-exe:", 1)[0]
-    assert "needs: windows-qt-teardown-probe" in job
+    assert "\n  windows-exit-mechanism-probe:" not in workflow
+    assert "\n  windows-qt-runtime-probe:" in workflow
+    job = workflow.split("\n  windows-qt-runtime-probe:", 1)[1].split(
+        "\n  windows-crash-isolation:", 1
+    )[0]
+    assert "needs: windows-tests" in job
+    assert "needs.windows-tests.result == 'failure'" in job
     assert "github.ref == 'refs/heads/feature/iq-signal-classifier'" in job
-    assert "python -m scripts.ci_windows_exit_mechanism_probe" in job
+    assert "scripts/ci_windows_pytest.py" in job
     assert "pyinstaller" not in job.lower()
     assert "gh release create" not in job
