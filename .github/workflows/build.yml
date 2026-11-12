@@ -72,6 +72,18 @@ jobs:
           # Synthetic Qt only: does not replace a prolonged real-SDR hardware soak.
           python -X faulthandler scripts/probe_qt_native_exit.py --repeats 100 --scenarios waterfall-empty waterfall --exit-modes normal
           if ($LASTEXITCODE -ne 0) { throw "P0 candidate failed 100x Windows native shutdown soak" }
+      - name: P0 - continuous Qt operational soak (synthetic, in-use)
+        run: |
+          # Continuous event-loop workload (frames, pan, double-click, VFO).
+          # Baseline is informational: known native shutdown corruption predates v0.13.3.
+          # Candidate must survive both 45-second sessions AND normal process teardown.
+          $PSNativeCommandUseErrorActionPreference = $false
+          python -X faulthandler scripts/probe_qt_operational_soak.py --source-root baseline-v0132 --seconds 45 --repeats 1
+          $baseline = $LASTEXITCODE
+          python -X faulthandler scripts/probe_qt_operational_soak.py --seconds 45 --repeats 2
+          $candidate = $LASTEXITCODE
+          Write-Host "P0 continuous Qt soak: v0.13.2=$baseline candidate=$candidate"
+          if ($candidate -ne 0) { throw "P0 candidate failed continuous operational Qt soak" }
       - name: P0 - compare native Qt shutdown against v0.13.2
         run: |
           $PSNativeCommandUseErrorActionPreference = $false
