@@ -224,7 +224,7 @@ class UpdateController(QObject):
 
     # ------------------------------------------------------------ consulta
     def check(self, manual: bool = False):
-        if self.kind == "source" and not manual:
+        if self.kind in ("source", "manual") and not manual:
             return
 
         def run():
@@ -256,14 +256,16 @@ class UpdateController(QObject):
                 QMessageBox.information(self.win, "Atualizações",
                                         f"Você já está na versão mais recente ({__version__}).")
             return
-        if self.kind == "source":
+        if self.kind in ("source", "manual"):
             self.btn.setText(f"Versão {info.version} disponível · atualização manual")
-            self.btn.setToolTip("O aplicativo iniciado pelo código-fonte não instala EXE automaticamente.")
+            self.btn.setToolTip("Linux/macOS ou código-fonte: atualização manual pela plataforma correta.")
             if manual:
-                QMessageBox.information(
-                    self.win, "Atualização pelo código-fonte",
-                    f"A versão {info.version} está disponível, mas esta execução usa código-fonte. "
-                    "Atualize o projeto pelo seu gerenciador de versões; não há EXE para substituir.")
+                method = ("Esta execução usa código-fonte; atualize pelo gerenciador de versões."
+                          if self.kind == "source" else
+                          "Este pacote Linux/macOS não executa instaladores Windows. "
+                          "Baixe manualmente o pacote da sua plataforma em www.pt2vhf.com/sdr.")
+                QMessageBox.information(self.win, "Atualização manual",
+                                        f"Nova versão {info.version} disponível. {method}")
             return
         if info.file is None:
             # IMPORTANT: never silently launch the browser as an OTA substitute.
