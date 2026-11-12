@@ -1,5 +1,11 @@
 # Backlog — PT2VHF SDR Tool
 
+## P1 — caixas de seleção desmarcadas invisíveis no tema escuro (12/11/2026)
+- **Falha relatada com captura de tela:** checkboxes de **NB, NR e demais opções** quase desaparecem quando não selecionados; o estado marcado fica visível, mas a borda escura do desmarcado se confunde com o fundo do painel.
+- **Correção candidata:** `STYLE` global de `pt2vhf/ui/main_window.py` define explicitamente `QCheckBox::indicator:unchecked` com borda clara de 2 px, interior contrastante, estado hover laranja e estilos separados para marcado/desabilitado. A regra abrange painéis de áudio, decodificadores e configurações, inclusive versões Windows/Linux/macOS.
+- **Teste:** `tests/test_checkbox_dark_theme.py` verifica seletores QSS para estados marcado/desmarcado/desabilitado e alternância Qt. Necessária conferência visual em Windows real (tema escuro, DPI 100/125/150%) e nos demais sistemas para homologar contraste e marca de seleção.
+- **Status:** correção implementada no PR #10 para v1.0.0; CI e validação visual ainda pendentes. O bloqueio P0 de encerramento inesperado impede release pública.
+
 ## P1 — pacotes Linux .deb/.tgz e macOS .app/.dmg (12/11/2026)
 - **Distribuição solicitada:** além de Windows Setup/Portable, gerar e verificar **Linux x86_64 e ARM64** em formatos `.deb` e `.tgz`, e **macOS Apple Silicon (arm64) e Intel (x86_64)** em formatos `.app` (dentro de `.app.tgz`) e `.dmg`, com instalação independente e ícone.
 - **Implementação:** `packaging/pt2vhf_unix.spec` produz binário nativo de cada plataforma com o splash original embutido; `packaging/package_unix.py` gera pacotes Debian, tarball portátil, bundle macOS e imagem DMG, com SHA-256; workflow `.github/workflows/qa-v1-platforms.yml` executa QA Windows/Linux/macOS em runners nativos e só empacota se o banner real estiver commitado.
