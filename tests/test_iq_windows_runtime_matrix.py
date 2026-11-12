@@ -23,7 +23,7 @@ def test_exhausted_windows_runtime_matrix_is_retired():
 def test_windows_file_probe_remains_fail_closed_and_experimental_only():
     workflow = _workflow()
     probe = workflow.split("\n  windows-file-probe:", 1)[1].split(
-        "\n  windows-case-probe:", 1
+        "\n  windows-exe:", 1
     )[0]
     assert "needs: windows-tests" in probe
     assert "needs.windows-tests.result == 'failure'" in probe
