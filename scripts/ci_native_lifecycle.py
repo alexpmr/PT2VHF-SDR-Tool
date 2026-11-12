@@ -114,16 +114,20 @@ def dispose_qt_top_levels() -> tuple[int, int]:
     if app is None:
         return 0, 0
     widgets = list(app.topLevelWidgets())
+    print(f"CI-QT-DISPOSAL phase=begin widgets={len(widgets)}", flush=True)
     failed = 0
     for widget in widgets:
         try:
             widget.deleteLater()
         except (RuntimeError, AttributeError, TypeError):
             failed += 1
+    print(f"CI-QT-DISPOSAL phase=deleteLater-queued failed={failed}", flush=True)
     try:
         core_module.QCoreApplication.sendPostedEvents(
             None, core_module.QEvent.DeferredDelete)
+        print("CI-QT-DISPOSAL phase=deferred-events-sent", flush=True)
         app.processEvents()
+        print("CI-QT-DISPOSAL phase=events-processed", flush=True)
     except (RuntimeError, AttributeError, TypeError):
         failed += 1
     print(f"CI-QT-DISPOSAL attempted={len(widgets)} failed={failed}",
