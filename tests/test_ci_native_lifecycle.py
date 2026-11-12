@@ -101,3 +101,18 @@ def test_nested_pytest_runner_cannot_trigger_outer_qt_disposal(monkeypatch, caps
     monkeypatch.setattr(sys, "argv", ["run_tests.py"])
     assert run_tests.main() == 0
     assert "CI-QT-DISPOSAL skipped=nested-pytest-runner" in capsys.readouterr().out
+
+
+def test_exhausted_qt_disposal_ab_is_not_scheduled_on_pushes():
+    """No repeated native abort experiment; mandatory Windows gate remains."""
+    from pathlib import Path
+
+    workflow = (Path(__file__).resolve().parents[1] /
+                ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+    assert "\n  windows-qt-disposal-probe:" not in workflow
+    assert "PT2VHF_CI_QT_DISPOSE_AFTER_PYTEST" not in workflow
+    mandatory = workflow.split("\n  windows-tests:", 1)[1].split(
+        "\n  windows-crash-isolation:", 1
+    )[0]
+    assert "run: python scripts/ci_windows_pytest.py" in mandatory
+    assert "PT2VHF_CI_NATIVE_LIFECYCLE" in mandatory
