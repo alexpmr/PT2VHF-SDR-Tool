@@ -20,7 +20,7 @@ BANNER_NAME = "welcome-banner.jpg"
 
 def banner_path() -> Path:
     """Works in source, setuptools installs, and PyInstaller onefile/onedir."""
-    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
     return root / "pt2vhf" / "assets" / "branding" / BANNER_NAME
 
 
