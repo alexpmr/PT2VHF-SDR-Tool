@@ -55,6 +55,16 @@ jobs:
         with:
           ref: v0.13.2
           path: baseline-v0132
+      - name: P0 - focused pan callback lifetime A/B (20 repeats per case)
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $cases = @("waterfall-empty", "waterfall-empty-no-pan-signals", "waterfall-empty-no-spec-pan-signal", "waterfall-empty-no-wf-pan-signal", "waterfall-empty-pan-weakrefs")
+          python -X faulthandler scripts/probe_qt_native_exit.py --source-root baseline-v0132 --repeats 20 --scenarios $cases --exit-modes normal
+          $baseline = $LASTEXITCODE
+          python -X faulthandler scripts/probe_qt_native_exit.py --repeats 20 --scenarios $cases --exit-modes normal
+          $candidate = $LASTEXITCODE
+          Write-Host "P0 focused diagnostic (expected baseline failures): v0.13.2=$baseline candidate=$candidate"
+          # Observational only: the full matrix below enforces the native exit gate.
       - name: P0 - compare native Qt shutdown against v0.13.2
         run: |
           $PSNativeCommandUseErrorActionPreference = $false
