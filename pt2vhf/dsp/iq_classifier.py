@@ -51,8 +51,24 @@ class IQClassifier:
         samples = samples[start:start + SAMPLES].copy()
         original_rms = float(np.sqrt(np.mean(
             np.abs(samples.astype(np.complex128)) ** 2)))
-        samples -= samples.mean()
-        rms = float(np.sqrt(np.mean(np.abs(samples) ** 2)))
+        # Keep the existing float32 path for normal RF amplitudes: the
+        # experimental ONNX models were evaluated with that preprocessing.
+        # For *finite* but very large IQ, float32 squaring or centering can
+        # overflow to inf/NaN, turning valid RF into an all-zero tensor and
+        # potentially a fabricated high-confidence prediction. Recompute only
+        # that exceptional case in float64, before normalization.
+        raw = samples.copy()
+        with np.errstate(over="ignore", invalid="ignore"):
+            samples -= samples.mean()
+            rms = float(np.sqrt(np.mean(np.abs(samples) ** 2)))
+        if not np.isfinite(rms):
+            centered64 = raw.astype(np.complex128)
+            centered64 -= centered64.mean()
+            rms = float(np.sqrt(np.mean(np.abs(centered64) ** 2)))
+            if not np.isfinite(rms) or rms < max(1e-8, original_rms * 1e-5):
+                raise ValueError("No usable RF signal (DC-only or unresolved carrier)")
+            centered64 /= rms
+            return np.stack((centered64.real, centered64.imag), axis=0)[None].astype(np.float32)
         if rms < max(1e-8, original_rms * 1e-5):
             raise ValueError("No usable RF signal (DC-only or unresolved carrier)")
         samples /= rms
