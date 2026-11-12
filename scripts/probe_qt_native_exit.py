@@ -18,6 +18,16 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
+SCENARIOS = (
+    "bare", "graphics", "image", "waterfall-empty", "waterfall-empty-hidden",
+    "waterfall-empty-deferred", "waterfall-empty-disconnected",
+    "waterfall-empty-explicit-delete", "waterfall-empty-no-scene-click",
+    "waterfall-empty-no-region-signal", "waterfall-empty-no-pan-signals",
+    "waterfall-empty-no-spec-pan-signal", "waterfall-empty-no-wf-pan-signal",
+    "waterfall-empty-pan-weakrefs", "waterfall-empty-no-timer-signal",
+    "waterfall-empty-no-event-filter", "waterfall", "waterfall-deferred",
+)
+
 
 def child(scenario: str, exit_mode: str, frames: int, source_root: Path) -> int:
     sys.path.insert(0, str(source_root))
@@ -61,7 +71,8 @@ def child(scenario: str, exit_mode: str, frames: int, source_root: Path) -> int:
                       "waterfall-empty-disconnected", "waterfall-empty-explicit-delete",
                       "waterfall-empty-no-scene-click", "waterfall-empty-no-region-signal",
                       "waterfall-empty-no-pan-signals", "waterfall-empty-no-timer-signal",
-                      "waterfall-empty-no-event-filter"):
+                      "waterfall-empty-no-spec-pan-signal", "waterfall-empty-no-wf-pan-signal",
+                      "waterfall-empty-pan-weakrefs", "waterfall-empty-no-event-filter"):
         import numpy as np
         from pt2vhf.ui.waterfall import SpectrumWaterfall
 
@@ -95,6 +106,25 @@ def child(scenario: str, exit_mode: str, frames: int, source_root: Path) -> int:
         elif scenario == "waterfall-empty-no-pan-signals":
             widget.spec.getViewBox().sigRangeChangedManually.disconnect()
             widget.wf.getViewBox().sigRangeChangedManually.disconnect()
+        elif scenario == "waterfall-empty-no-spec-pan-signal":
+            widget.spec.getViewBox().sigRangeChangedManually.disconnect()
+        elif scenario == "waterfall-empty-no-wf-pan-signal":
+            widget.wf.getViewBox().sigRangeChangedManually.disconnect()
+        elif scenario == "waterfall-empty-pan-weakrefs":
+            # Preserve both pan connections but remove the strong lambda -> self
+            # ownership cycle. Diagnostic only, NOT a production fix.
+            import weakref
+            widget.spec.getViewBox().sigRangeChangedManually.disconnect()
+            widget.wf.getViewBox().sigRangeChangedManually.disconnect()
+            timer_ref = weakref.ref(widget._pan_timer)
+
+            def schedule_pan(*_args):
+                timer = timer_ref()
+                if timer is not None:
+                    timer.start(350)
+
+            widget.spec.getViewBox().sigRangeChangedManually.connect(schedule_pan)
+            widget.wf.getViewBox().sigRangeChangedManually.connect(schedule_pan)
         elif scenario == "waterfall-empty-no-timer-signal":
             widget._pan_timer.timeout.disconnect(widget._pan_check)
             widget._pan_timer.stop()
@@ -127,7 +157,8 @@ def child(scenario: str, exit_mode: str, frames: int, source_root: Path) -> int:
     return 0  # Ordinary Python/Qt interpreter shutdown is also tested.
 
 
-def parent(repeats: int, frames: int, timeout: int, source_root: Path) -> int:
+def parent(repeats: int, frames: int, timeout: int, source_root: Path,
+           scenarios: tuple[str, ...], exit_modes: tuple[str, ...]) -> int:
     failures = []
     env = dict(os.environ)
     env["QT_QPA_PLATFORM"] = "offscreen"
@@ -135,14 +166,8 @@ def parent(repeats: int, frames: int, timeout: int, source_root: Path) -> int:
     env["PT2VHF_NO_STARTUP_DIALOGS"] = "1"
     env["PT2VHF_NO_AUTOCONNECT"] = "1"
     env["PYTHONPATH"] = str(source_root) + os.pathsep + env.get("PYTHONPATH", "")
-    for scenario in ("bare", "graphics", "image", "waterfall-empty",
-                     "waterfall-empty-hidden", "waterfall-empty-deferred",
-                     "waterfall-empty-disconnected", "waterfall-empty-explicit-delete",
-                     "waterfall-empty-no-scene-click", "waterfall-empty-no-region-signal",
-                     "waterfall-empty-no-pan-signals", "waterfall-empty-no-timer-signal",
-                     "waterfall-empty-no-event-filter",
-                     "waterfall", "waterfall-deferred"):
-        for exit_mode in ("normal", "hard"):
+    for scenario in scenarios:
+        for exit_mode in exit_modes:
             for attempt in range(1, repeats + 1):
                 cmd = [
                     sys.executable, "-X", "faulthandler", str(Path(__file__).resolve()),
@@ -176,13 +201,11 @@ def parent(repeats: int, frames: int, timeout: int, source_root: Path) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--child", action="store_true")
-    parser.add_argument("--scenario", choices=("bare", "graphics", "image", "waterfall-empty",
-                                             "waterfall-empty-hidden", "waterfall-empty-deferred",
-                                             "waterfall-empty-disconnected", "waterfall-empty-explicit-delete",
-                                             "waterfall-empty-no-scene-click", "waterfall-empty-no-region-signal",
-                                             "waterfall-empty-no-pan-signals", "waterfall-empty-no-timer-signal",
-                                             "waterfall-empty-no-event-filter",
-                                             "waterfall", "waterfall-deferred"), default="bare")
+    parser.add_argument("--scenario", choices=SCENARIOS, default="bare")
+    parser.add_argument("--scenarios", nargs="+", choices=SCENARIOS, default=None,
+                        help="Run only these scenarios (parent mode)")
+    parser.add_argument("--exit-modes", nargs="+", choices=("normal", "hard"), default=None,
+                        help="Run only these shutdown modes (parent mode)")
     parser.add_argument("--exit-mode", choices=("normal", "hard"), default="normal")
     parser.add_argument("--frames", type=int, default=120)
     parser.add_argument("--repeats", type=int, default=3)
@@ -197,7 +220,9 @@ def main() -> int:
         parser.error(f"Invalid source root: {source_root}")
     if args.child:
         return child(args.scenario, args.exit_mode, args.frames, source_root)
-    return parent(args.repeats, args.frames, args.timeout, source_root)
+    return parent(args.repeats, args.frames, args.timeout, source_root,
+                  tuple(args.scenarios or SCENARIOS),
+                  tuple(args.exit_modes or ("normal", "hard")))
 
 
 if __name__ == "__main__":
