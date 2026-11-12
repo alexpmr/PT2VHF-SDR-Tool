@@ -196,3 +196,12 @@ def test_exhausted_windows_diagnostics_require_manual_opt_in():
         "\n  windows-crash-isolation:", 1)[0]
     assert "run: python scripts/ci_windows_pytest.py" in main_job
     assert "inputs.diagnose_windows" not in main_job
+
+def test_experimental_ci_cancels_only_superseded_branch_pushes():
+    """Branch push cancellation must not cancel main or PR verification."""
+    from pathlib import Path
+    workflow = (Path(__file__).resolve().parents[1] /
+                ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+    header = workflow.split("\nconcurrency:\n", 1)[1].split("\njobs:\n", 1)[0]
+    assert "group: ${{ github.workflow }}-${{ github.ref }}" in header
+    assert "cancel-in-progress: ${{ github.ref == 'refs/heads/feature/iq-signal-classifier' }}" in header
