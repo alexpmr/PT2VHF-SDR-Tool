@@ -85,3 +85,19 @@ def test_opt_in_qt_disposal_handles_absent_qt(monkeypatch):
     import sys
     monkeypatch.setitem(sys.modules, "PySide6.QtWidgets", None)
     assert census.dispose_qt_top_levels() == (0, 0)
+
+
+def test_nested_pytest_runner_cannot_trigger_outer_qt_disposal(monkeypatch, capsys):
+    """The A/B env must never delete live widgets from mocked runner tests."""
+    import sys
+    from types import SimpleNamespace
+    from scripts import run_tests
+
+    monkeypatch.setenv("PT2VHF_CI_QT_DISPOSE_AFTER_PYTEST", "1")
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "nested-runner (call)")
+    monkeypatch.setenv("PT2VHF_TEST_EXIT_MODE", "normal")
+    monkeypatch.delenv("PT2VHF_CI_NATIVE_LIFECYCLE", raising=False)
+    monkeypatch.setitem(sys.modules, "pytest", SimpleNamespace(main=lambda args: 0))
+    monkeypatch.setattr(sys, "argv", ["run_tests.py"])
+    assert run_tests.main() == 0
+    assert "CI-QT-DISPOSAL skipped=nested-pytest-runner" in capsys.readouterr().out
