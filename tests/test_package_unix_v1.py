@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import platform
 import sys
 import tarfile
@@ -9,7 +10,13 @@ from pathlib import Path
 
 import pytest
 
-from packaging import package_unix as pkg
+# The repository packaging/ directory is not the third-party 'packaging'
+# Python package. Load our script explicitly to avoid a name collision.
+SCRIPT = Path(__file__).resolve().parents[1] / "packaging" / "package_unix.py"
+SPEC = importlib.util.spec_from_file_location("pt2vhf_package_unix", SCRIPT)
+assert SPEC and SPEC.loader
+pkg = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(pkg)
 
 
 def test_unix_architectures_and_version():
