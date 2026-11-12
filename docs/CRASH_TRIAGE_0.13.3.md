@@ -24,6 +24,8 @@ Para a v0.13.3 atual, coletar o log operacional acima e **Monitor de Confiabilid
 - `tests/test_crash_diagnostics.py`: startup, anotação de encerramento, registro de exceções, rotação do log e ausência de falha na interface pela instrumentação.
 - `tests/test_waterfall_click_to_tune.py`: 120 ciclos de atualização IQ sintética, duplo clique, VFO e centralização em Qt, mantendo zoom.
 - CI deve executar Linux Qt e o Windows x64 completo com Setup, Portable, smoke OTA e selftests.
+- Probe P0 adicional no Windows: `python -X faulthandler scripts/probe_qt_native_exit.py --repeats 3 --frames 120`. Ele cria subprocessos separados para Qt mínimo e waterfall sintético, testa saída Python normal **e** `os._exit`, confere o código real de término (incluindo `0xC0000005`/`0xC0000374`) e imprime o stderr do processo. Não usa hardware SDR, não cria release e não atribui automaticamente a falha da produção a Qt. Se falhar, comparar primeiro o mesmo probe nas tags v0.13.2 e v0.13.3 e coletar WER/dump antes de alterar o runtime.
+- Atenção: `scripts/run_tests.py` usa `os._exit` após o pytest para evitar finalizadores Python/Qt. Um resumo `N passed` não prova que a finalização nativa é segura; por isso o probe independente verifica **exit code** e diferencia saída normal e abrupta.
 - A aprovação de CI com sinais sintéticos **não equivale a ensaio de resistência com RTL-SDR/rtl_tcp/SoapySDR físico**. Exigir comparação A/B e reprodução em bancada.
 
 ## Hipóteses a investigar — não confirmadas
