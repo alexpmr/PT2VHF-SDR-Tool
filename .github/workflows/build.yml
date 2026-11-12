@@ -188,6 +188,12 @@ jobs:
           $p = Start-Process -FilePath "$dir\PT2VHF-SDR-Tool.exe" -ArgumentList "--selftest" -Wait -PassThru
           Get-Content "$env:TEMP\pt2vhf-sdr-selftest.log"
           if ($p.ExitCode -ne 0) { throw "Programa instalado falhou no autoteste" }
+      - name: P0 - packaged GUI crash diagnostics (Portable + Setup, synthetic simulator)
+        run: |
+          .\scripts\test_packaged_crash_diagnostics.ps1 -Executables @(
+            "dist\PT2VHF-SDR-Tool-Portable.exe",
+            (Join-Path $env:LOCALAPPDATA "Programs\PT2VHF SDR Tool\PT2VHF-SDR-Tool.exe")
+          )
       - name: Smoke OTA Setup real (instalação, restart e falha segura)
         run: .\scripts\test_ota_setup_windows.ps1 -Version "${{ steps.ver.outputs.version }}"
       - name: Pacotes finais e SHA-256
