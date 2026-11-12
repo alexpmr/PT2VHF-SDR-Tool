@@ -114,6 +114,28 @@ jobs:
           PT2VHF_TEST_EXIT_MODE: hard
         run: python scripts/ci_windows_crash_shard.py --index ${{ matrix.shard }} --count 2
 
+  windows-file-probe:
+    # Diagnostic-only follow-up after native Windows crash; per-file isolation.
+    # Never builds an installer or publishes releases.
+    needs: windows-tests
+    if: ${{ always() && needs.windows-tests.result == 'failure' && github.ref == 'refs/heads/feature/iq-signal-classifier' }}
+    runs-on: windows-2022
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PT2VHF_TEST_EXIT_MODE: hard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dependências do diagnóstico por arquivo (sem instalador)
+        run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
+      - name: Isolar cada arquivo não-IQ em processo Windows independente
+        run: python -m scripts.ci_windows_file_probe --timeout-seconds 180
+
   windows-exe:
     # Manual e commit [build-windows] SOMENTE na main; branch experimental nao gera instaladores.
     if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.build_windows) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build-windows]')))
