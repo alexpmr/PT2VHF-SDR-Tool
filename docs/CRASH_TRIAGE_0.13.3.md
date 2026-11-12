@@ -120,3 +120,30 @@ Ausência de `QT-LOOP-RETURN` não identifica sozinha a causa. Esta alteração
 melhora a fidelidade do diagnóstico, **não corrige** o encerramento espontâneo
 relatado na v0.13.3. O CI de validação desta alteração deve ser conferido antes
 de qualquer conclusão sobre a própria instrumentação.
+
+
+## Coleta local simplificada do Windows (sem instalar nova versão)
+
+O script `scripts/collect_windows_crash_evidence.ps1` pode ser executado
+no Windows com PowerShell 5.1 ou posterior, sem privilégios de administrador.
+Ele consulta os eventos 1000 (Application Error) e 1001 (Windows Error
+Reporting) dos últimos sete dias e salva somente horário UTC, identificador
+do evento, nome do executável, módulo de falha e código de exceção quando
+disponíveis. Não coleta caminhos completos, nomes de usuário, dumps, mensagens
+integrais de eventos, configurações nem envia informações à internet.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\collect_windows_crash_evidence.ps1 -Days 7
+```
+
+Saída padrão: `%TEMP%\PT2VHF-SDR-WER-summary.txt`. Revisar antes de
+compartilhar. Eventos 1001 variam entre versões do Windows e podem não
+conter campos estruturados suficientes: nesses casos o script registra
+somente a presença do evento. A ausência de eventos não comprova
+ausência de falha; o Monitor de Confiabilidade (`perfmon /rel`) continua
+sendo alternativa. Para análise de causa raiz, o arquivo existente
+`%APPDATA%\PT2VHF-SDR-Tool\pt2vhf-sdr.log` também é necessário
+(revisar e remover dados privados antes de compartilhar).
+
+O coletor **não altera** a v0.13.3 instalada, não ativa a instrumentação
+do PR #9 e não é uma correção do incidente.
