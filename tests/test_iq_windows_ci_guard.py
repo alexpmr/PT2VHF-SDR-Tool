@@ -169,3 +169,30 @@ def test_invalid_shutdown_probe_mode_fails_closed(monkeypatch):
     monkeypatch.setattr(runner.os, "_exit", lambda code: None)
     with pytest.raises(ValueError, match="PT2VHF_TEST_EXIT_MODE"):
         runner.main()
+
+
+def test_exhausted_windows_diagnostics_require_manual_opt_in():
+    """Synthetic CI policy: no repeated costly Windows matrix on ordinary pushes."""
+    from pathlib import Path
+
+    workflow = (Path(__file__).resolve().parents[1] /
+                ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+    assert "      diagnose_windows:" in workflow
+    assert '        default: false' in workflow.split("      diagnose_windows:", 1)[1].split(
+        "\n\n", 1)[0]
+    for job, end in (
+        ("windows-crash-isolation", "windows-file-probe"),
+        ("windows-file-probe", "windows-exe"),
+    ):
+        block = workflow.split(f"\n  {job}:", 1)[1].split(f"\n  {end}:", 1)[0]
+        assert "needs: windows-tests" in block
+        assert "needs.windows-tests.result == 'failure'" in block
+        assert "github.event_name == 'workflow_dispatch'" in block
+        assert "inputs.diagnose_windows == true" in block
+        assert "github.ref == 'refs/heads/feature/iq-signal-classifier'" in block
+        assert "gh release create" not in block
+    # Mandatory Windows gate remains active on every PR/experimental push.
+    main_job = workflow.split("\n  windows-tests:", 1)[1].split(
+        "\n  windows-crash-isolation:", 1)[0]
+    assert "run: python scripts/ci_windows_pytest.py" in main_job
+    assert "inputs.diagnose_windows" not in main_job
