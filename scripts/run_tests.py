@@ -25,6 +25,16 @@ def main():
         return int(result)
     if exit_mode != "hard":
         raise ValueError("PT2VHF_TEST_EXIT_MODE must be 'hard' or 'normal'")
+    # Experimental CI timing probe only: determine whether native background
+    # activity at pytest shutdown is time-sensitive. Default remains zero.
+    delay_raw = os.environ.get("PT2VHF_TEST_EXIT_DELAY_MS", "0")
+    if delay_raw not in {"0", "250", "1000", "2000"}:
+        raise ValueError("PT2VHF_TEST_EXIT_DELAY_MS must be 0, 250, 1000 or 2000")
+    if delay_raw != "0":
+        import time
+        time.sleep(int(delay_raw) / 1000)
+        sys.stdout.flush()
+        sys.stderr.flush()
     os._exit(int(result))
 
 
