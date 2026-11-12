@@ -10,7 +10,7 @@ O script rejeita sessões presentes em ambos os conjuntos, WAV repetidos por cam
 
 **Integridade dos rótulos por sessão (11/11/2026):** o gate agora rejeita manifestos em que um mesmo `session_id` contenha simultaneamente gravações rotuladas como sinal conhecido e `UNKNOWN`, mesmo quando o conjunto possui outros IDs de sessão suficientes para passar na contagem anterior. Esse agrupamento misto introduzia pseudorreplicação na estimativa macro por sessão e contrariava a exigência de sessões separadas. Diferentes modos *conhecidos* podem continuar no mesmo ID quando a proveniência justificar, mas a independência RF e os rótulos ainda exigem conferência externa. Dois testes exclusivamente sintéticos cobrem calibração e holdout.
 
-O holdout exige **pelo menos três sessões independentes e dois dispositivos SDR distintos** antes de devolver `HOLDOUT_EVALUATED`. Se os limites empíricos forem satisfeitos, mas faltar diversidade, a decisão será `HOLDOUT_INSUFFICIENT_DIVERSITY` (código de saída 2). `holdout_diversity_gate_passed` registra esse portão separadamente. Os metadados declarados no manifesto **não provam** independência nem origem RF; é necessária conferência humana.
+O holdout exige **pelo menos quatro sessões independentes**, sendo **duas de sinais conhecidos e duas UNKNOWN**, com **dois dispositivos SDR distintos em cada população** antes de devolver `HOLDOUT_EVALUATED`. Se os limites empíricos forem satisfeitos, mas faltar diversidade, a decisão será `HOLDOUT_INSUFFICIENT_DIVERSITY` (código de saída 2). `holdout_diversity_gate_passed` registra esse portão separadamente. Os metadados declarados no manifesto **não provam** independência nem origem RF; é necessária conferência humana.
 
 As taxas são apresentadas tanto por janela quanto como média entre sessões. O mecanismo exige um limite empírico de falsa aceitação de UNKNOWN e cobertura mínima de sinais conhecidos; se não houver limiar, devolve NO_ACCEPTABLE_THRESHOLD. Se o holdout falhar, devolve HOLDOUT_FAILED. Não seleciona outro limiar com base no holdout.
 
@@ -29,3 +29,24 @@ Os totais são amostrais (até `--max-windows` por WAV); a cobertura de janelas 
 ## Contrato de probabilidades do gate (11/11/2026)
 
 O gate exige as sete classes esperadas, pontuações finitas em [0, 1] e soma de probabilidades igual a 1 com tolerância absoluta de 0,0001 para arredondamento. Pontuações arbitrárias ou não normalizadas não podem definir limiares de UNKNOWN. O classificador ONNX atual aplica softmax; essa checagem é defesa adicional para artefatos ou stubs incorretos. Os testes são exclusivamente sintéticos e não demonstram desempenho RF.
+
+
+## Diversidade específica de UNKNOWN no holdout (12/11/2026)
+
+Uma contagem global de três sessões e dois SDRs podia retornar
+`HOLDOUT_EVALUATED` mesmo quando **todo UNKNOWN vinha de uma única sessão
+e um único equipamento**. Isso torna a taxa de falsa aceitação de UNKNOWN
+especialmente frágil, ainda que existam milhares de janelas correlacionadas.
+
+O gate agora exige **pelo menos duas sessões independentes de sinais
+conhecidos e duas sessões UNKNOWN**, com **dois SDRs distintos em cada
+população**. O relatório apresenta separadamente
+`holdout_known_sessions`, `holdout_unknown_sessions`,
+`holdout_known_devices` e `holdout_unknown_devices`. Caso contrário,
+a decisão é `HOLDOUT_INSUFFICIENT_DIVERSITY` e o comando retorna código 2.
+Esses mínimos são **guardas metodológicos de pesquisa**, não metas de
+homologação RF. Para homologação, ainda são necessários rótulos verificados
+externamente, maior diversidade e análise de incerteza por sessão.
+
+Testes usam apenas WAV sintético e predições simuladas. Nenhuma medição RF
+real ou taxa de acerto operacional foi produzida por esta mudança.
