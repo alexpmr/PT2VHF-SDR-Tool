@@ -17,8 +17,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def child(scenario: str, exit_mode: str, frames: int) -> int:
-    sys.path.insert(0, str(ROOT))
+def child(scenario: str, exit_mode: str, frames: int, source_root: Path) -> int:
+    sys.path.insert(0, str(source_root))
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     os.environ["PT2VHF_NO_STARTUP_DIALOGS"] = "1"
     os.environ["PT2VHF_NO_AUTOCONNECT"] = "1"
@@ -64,21 +64,21 @@ def child(scenario: str, exit_mode: str, frames: int) -> int:
     return 0  # Ordinary Python/Qt interpreter shutdown is also tested.
 
 
-def parent(repeats: int, frames: int, timeout: int) -> int:
+def parent(repeats: int, frames: int, timeout: int, source_root: Path) -> int:
     failures = []
     env = dict(os.environ)
     env["QT_QPA_PLATFORM"] = "offscreen"
     env["PYTHONFAULTHANDLER"] = "1"
     env["PT2VHF_NO_STARTUP_DIALOGS"] = "1"
     env["PT2VHF_NO_AUTOCONNECT"] = "1"
-    env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(source_root) + os.pathsep + env.get("PYTHONPATH", "")
     for scenario in ("bare", "waterfall"):
         for exit_mode in ("normal", "hard"):
             for attempt in range(1, repeats + 1):
                 cmd = [
                     sys.executable, "-X", "faulthandler", str(Path(__file__).resolve()),
                     "--child", "--scenario", scenario, "--exit-mode", exit_mode,
-                    "--frames", str(frames),
+                    "--frames", str(frames), "--source-root", str(source_root),
                 ]
                 try:
                     proc = subprocess.run(
@@ -112,12 +112,17 @@ def main() -> int:
     parser.add_argument("--frames", type=int, default=120)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--timeout", type=int, default=90)
+    parser.add_argument("--source-root", type=Path, default=ROOT,
+                        help="Repository root whose pt2vhf package is exercised")
     args = parser.parse_args()
     if args.frames < 1 or args.repeats < 1 or args.timeout < 1:
         parser.error("frames, repeats and timeout must be positive")
+    source_root = args.source_root.resolve()
+    if not (source_root / "pt2vhf" / "ui" / "waterfall.py").is_file():
+        parser.error(f"Invalid source root: {source_root}")
     if args.child:
-        return child(args.scenario, args.exit_mode, args.frames)
-    return parent(args.repeats, args.frames, args.timeout)
+        return child(args.scenario, args.exit_mode, args.frames, source_root)
+    return parent(args.repeats, args.frames, args.timeout, source_root)
 
 
 if __name__ == "__main__":
