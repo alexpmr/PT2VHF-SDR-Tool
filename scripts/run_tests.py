@@ -15,7 +15,13 @@ import sys
 
 def main():
     import pytest
+    probe = None
+    if os.environ.get("PT2VHF_CI_NATIVE_LIFECYCLE") == "1":
+        from scripts.ci_native_lifecycle import report as probe
+        probe("before-pytest")
     result = pytest.main(["-q", *sys.argv[1:]])
+    if probe is not None:
+        probe("after-pytest")
     sys.stdout.flush()
     sys.stderr.flush()
     # Diagnostic-only alternative: compare ordinary Python/Qt shutdown with
@@ -35,6 +41,8 @@ def main():
         time.sleep(int(delay_raw) / 1000)
         sys.stdout.flush()
         sys.stderr.flush()
+    if probe is not None:
+        probe("before-hard-exit")
     os._exit(int(result))
 
 
