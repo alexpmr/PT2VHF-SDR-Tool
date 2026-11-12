@@ -58,7 +58,10 @@ def child(scenario: str, exit_mode: str, frames: int, source_root: Path) -> int:
         del widget
     elif scenario in ("waterfall-empty", "waterfall", "waterfall-deferred",
                       "waterfall-empty-deferred", "waterfall-empty-hidden",
-                      "waterfall-empty-disconnected", "waterfall-empty-explicit-delete"):
+                      "waterfall-empty-disconnected", "waterfall-empty-explicit-delete",
+                      "waterfall-empty-no-scene-click", "waterfall-empty-no-region-signal",
+                      "waterfall-empty-no-pan-signals", "waterfall-empty-no-timer-signal",
+                      "waterfall-empty-no-event-filter"):
         import numpy as np
         from pt2vhf.ui.waterfall import SpectrumWaterfall
 
@@ -82,6 +85,20 @@ def child(scenario: str, exit_mode: str, frames: int, source_root: Path) -> int:
             widget.wf.getViewBox().sigRangeChangedManually.disconnect()
             widget._pan_timer.timeout.disconnect(widget._pan_check)
             widget._pan_timer.stop()
+            widget.glw.viewport().removeEventFilter(widget)
+        # Individual disconnections isolate the source of possible Qt/Python
+        # ownership cycles. These probes are NOT changes to production teardown.
+        if scenario == "waterfall-empty-no-scene-click":
+            widget.glw.scene().sigMouseClicked.disconnect(widget._clicked)
+        elif scenario == "waterfall-empty-no-region-signal":
+            widget.region.sigRegionChangeFinished.disconnect(widget._region_changed)
+        elif scenario == "waterfall-empty-no-pan-signals":
+            widget.spec.getViewBox().sigRangeChangedManually.disconnect()
+            widget.wf.getViewBox().sigRangeChangedManually.disconnect()
+        elif scenario == "waterfall-empty-no-timer-signal":
+            widget._pan_timer.timeout.disconnect(widget._pan_check)
+            widget._pan_timer.stop()
+        elif scenario == "waterfall-empty-no-event-filter":
             widget.glw.viewport().removeEventFilter(widget)
         widget.close()
         if scenario == "waterfall-empty-explicit-delete":
@@ -121,6 +138,9 @@ def parent(repeats: int, frames: int, timeout: int, source_root: Path) -> int:
     for scenario in ("bare", "graphics", "image", "waterfall-empty",
                      "waterfall-empty-hidden", "waterfall-empty-deferred",
                      "waterfall-empty-disconnected", "waterfall-empty-explicit-delete",
+                     "waterfall-empty-no-scene-click", "waterfall-empty-no-region-signal",
+                     "waterfall-empty-no-pan-signals", "waterfall-empty-no-timer-signal",
+                     "waterfall-empty-no-event-filter",
                      "waterfall", "waterfall-deferred"):
         for exit_mode in ("normal", "hard"):
             for attempt in range(1, repeats + 1):
@@ -159,6 +179,9 @@ def main() -> int:
     parser.add_argument("--scenario", choices=("bare", "graphics", "image", "waterfall-empty",
                                              "waterfall-empty-hidden", "waterfall-empty-deferred",
                                              "waterfall-empty-disconnected", "waterfall-empty-explicit-delete",
+                                             "waterfall-empty-no-scene-click", "waterfall-empty-no-region-signal",
+                                             "waterfall-empty-no-pan-signals", "waterfall-empty-no-timer-signal",
+                                             "waterfall-empty-no-event-filter",
                                              "waterfall", "waterfall-deferred"), default="bare")
     parser.add_argument("--exit-mode", choices=("normal", "hard"), default="normal")
     parser.add_argument("--frames", type=int, default=120)
