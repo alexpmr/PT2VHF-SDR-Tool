@@ -179,8 +179,9 @@ jobs:
         run: python -m scripts.ci_windows_file_probe --timeout-seconds 180
 
   windows-case-probe:
-    # Experimental follow-up: two individual UI files reproduced native crashes.
-    # Runs only after file-level probe fails; never generates installers or releases.
+    # One-time QPA hypothesis: compare Qt minimal against the previously failing
+    # offscreen platform, keeping the same isolated UI cases and hard exit.
+    # Runs only after file-level probe fails; never builds installers or releases.
     needs: windows-file-probe
     if: ${{ always() && needs.windows-file-probe.result == 'failure' && github.ref == 'refs/heads/feature/iq-signal-classifier' }}
     runs-on: windows-2022
@@ -188,7 +189,7 @@ jobs:
     permissions:
       contents: read
     env:
-      QT_QPA_PLATFORM: offscreen
+      QT_QPA_PLATFORM: minimal
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -196,8 +197,8 @@ jobs:
           python-version: "3.12"
       - name: Dependências do diagnóstico por caso (sem instalador)
         run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
-      - name: Isolar cada caso UI em processo Windows com hard e normal exit
-        run: python -m scripts.ci_windows_case_probe --timeout-seconds 180 --exit-mode both
+      - name: Comparar Qt minimal em casos UI isolados (hard exit; diagnóstico)
+        run: python -m scripts.ci_windows_case_probe --timeout-seconds 180 --exit-mode hard
 
 
   windows-exe:
