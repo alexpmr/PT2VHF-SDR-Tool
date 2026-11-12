@@ -66,6 +66,12 @@ jobs:
           Write-Host "P0 focused diagnostic (expected baseline failures): v0.13.2=$baseline candidate=$candidate"
           # The baseline is expected to fail; the candidate must pass all focused cases.
           if ($candidate -ne 0) { throw "P0 candidate failed focused pan lifetime matrix" }
+      - name: P0 - extended Windows Qt shutdown soak (100x, candidate only)
+        run: |
+          # Process-level exit status catches native heap corruption after pytest finishes.
+          # Synthetic Qt only: does not replace a prolonged real-SDR hardware soak.
+          python -X faulthandler scripts/probe_qt_native_exit.py --repeats 100 --scenarios waterfall-empty waterfall --exit-modes normal
+          if ($LASTEXITCODE -ne 0) { throw "P0 candidate failed 100x Windows native shutdown soak" }
       - name: P0 - compare native Qt shutdown against v0.13.2
         run: |
           $PSNativeCommandUseErrorActionPreference = $false
