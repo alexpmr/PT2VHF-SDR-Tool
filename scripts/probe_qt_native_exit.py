@@ -4,7 +4,7 @@ Runs a Qt/pyqtgraph teardown isolation matrix in *separate* child processes,
 with ordinary Python shutdown and with os._exit.  Unlike pytest's in-process
 summary, the parent checks the actual Windows process exit status.
 The matrix separates Qt, GraphicsLayout, ImageItem, SDR waterfall initialization,
-full synthetic updates and explicit deferred QObject cleanup. It does not
+full synthetic updates, hidden widget and explicit deferred QObject cleanup. It does not
 exercise physical SDR drivers or prove the production crash.
 """
 from __future__ import annotations
@@ -56,14 +56,16 @@ def child(scenario: str, exit_mode: str, frames: int, source_root: Path) -> int:
         app.processEvents()
         widget.close()
         del widget
-    elif scenario in ("waterfall-empty", "waterfall", "waterfall-deferred"):
+    elif scenario in ("waterfall-empty", "waterfall", "waterfall-deferred",
+                      "waterfall-empty-deferred", "waterfall-empty-hidden"):
         import numpy as np
         from pt2vhf.ui.waterfall import SpectrumWaterfall
 
         widget = SpectrumWaterfall()
         widget.set_vfo(145_500_000, -6_000, 6_000)
-        widget.show()
-        for index in range(0 if scenario == "waterfall-empty" else frames):
+        if scenario != "waterfall-empty-hidden":
+            widget.show()
+        for index in range(0 if scenario.startswith("waterfall-empty") else frames):
             widget.add_line(
                 np.full(512, -90 - index % 12, dtype=np.float32),
                 145_500_000, 200_000,
@@ -71,7 +73,7 @@ def child(scenario: str, exit_mode: str, frames: int, source_root: Path) -> int:
             if index % 4 == 0:
                 app.processEvents()
         widget.close()
-        if scenario == "waterfall-deferred":
+        if scenario in ("waterfall-deferred", "waterfall-empty-deferred"):
             # Diagnostic only: force QObject deferred deletes while Qt lives.
             widget.deleteLater()
             QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
@@ -100,7 +102,9 @@ def parent(repeats: int, frames: int, timeout: int, source_root: Path) -> int:
     env["PT2VHF_NO_STARTUP_DIALOGS"] = "1"
     env["PT2VHF_NO_AUTOCONNECT"] = "1"
     env["PYTHONPATH"] = str(source_root) + os.pathsep + env.get("PYTHONPATH", "")
-    for scenario in ("bare", "graphics", "image", "waterfall-empty", "waterfall", "waterfall-deferred"):
+    for scenario in ("bare", "graphics", "image", "waterfall-empty",
+                     "waterfall-empty-hidden", "waterfall-empty-deferred",
+                     "waterfall", "waterfall-deferred"):
         for exit_mode in ("normal", "hard"):
             for attempt in range(1, repeats + 1):
                 cmd = [
@@ -135,7 +139,9 @@ def parent(repeats: int, frames: int, timeout: int, source_root: Path) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--child", action="store_true")
-    parser.add_argument("--scenario", choices=("bare", "graphics", "image", "waterfall-empty", "waterfall", "waterfall-deferred"), default="bare")
+    parser.add_argument("--scenario", choices=("bare", "graphics", "image", "waterfall-empty",
+                                             "waterfall-empty-hidden", "waterfall-empty-deferred",
+                                             "waterfall", "waterfall-deferred"), default="bare")
     parser.add_argument("--exit-mode", choices=("normal", "hard"), default="normal")
     parser.add_argument("--frames", type=int, default=120)
     parser.add_argument("--repeats", type=int, default=3)
