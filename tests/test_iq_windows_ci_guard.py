@@ -214,3 +214,23 @@ def test_experimental_ci_cancels_only_superseded_branch_pushes():
     header = workflow.split("\nconcurrency:\n", 1)[1].split("\njobs:\n", 1)[0]
     assert "group: ${{ github.workflow }}-${{ github.ref }}" in header
     assert "cancel-in-progress: ${{ github.ref == 'refs/heads/feature/iq-signal-classifier' }}" in header
+
+
+def test_one_time_native_debugger_probe_is_retired_without_weakening_windows_gate():
+    """CDB gave no verified stack; do not reinstall it on every push."""
+    from pathlib import Path
+
+    workflow = (Path(__file__).resolve().parents[1] /
+                ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+    assert "\n  windows-native-stack-probe:" not in workflow
+    mandatory = workflow.split("\n  windows-tests:", 1)[1].split(
+        "\n  windows-crash-isolation:", 1
+    )[0]
+    assert "run: python scripts/ci_windows_pytest.py" in mandatory
+    assert "if: failure()" in mandatory
+    assert "CI_NATIVE_LIFECYCLE" in mandatory
+    assert "actions/upload-artifact" not in mandatory
+    assert "gh release create" not in mandatory
+    # Experimental push/PR verification must still be enabled.
+    assert "github.event_name == 'pull_request'" in mandatory
+    assert "refs/heads/feature/iq-signal-classifier" in mandatory
