@@ -67,7 +67,7 @@ def process_rss_bytes() -> int | None:
 
 
 class ProcessResourceSampler:
-    """Amos­tragem não bloqueante da CPU e RSS deste aplicativo."""
+    """Amostragem não bloqueante da CPU e RSS deste aplicativo."""
 
     def __init__(self, *, clock=time.monotonic, cpu_clock=time.process_time,
                  cpu_count=None, rss_reader=process_rss_bytes):
