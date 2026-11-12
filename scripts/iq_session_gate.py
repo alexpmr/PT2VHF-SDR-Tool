@@ -122,7 +122,7 @@ def observations(rows, model, max_windows, *, accounting=None):
                                 rel_tol=0.0, abs_tol=1e-4):
                 raise ValueError("Model probabilities are not normalized")
             predicted = max(scores, key=scores.get)
-            data.append((label, predicted, scores[predicted], session))
+            data.append((label, predicted, scores[predicted], session, _device))
             found += 1
         selected_total += stats["selected"]
         silent_total += stats["skipped_silence"]
@@ -155,8 +155,27 @@ def rates(rows, threshold):
     unknown = [r for r in rows if r[0] == "UNKNOWN"]
     if not known or not unknown:
         raise ValueError("Both known and UNKNOWN observations are required")
+    # Legacy four-field rows are accepted by standalone threshold unit tests.
+    # The end-to-end RF gate requires a fifth field: the SDR device identity.
+    device_fields = [len(r) == 5 for r in rows]
+    if any(device_fields) and not all(device_fields):
+        raise ValueError("Inconsistent IQ observation device metadata")
+    if any(len(r) not in (4, 5) for r in rows):
+        raise ValueError("Expected four or five IQ observation fields")
+    has_devices = all(device_fields)
     def accepted(r):
         return r[1] != "UNKNOWN" and r[2] >= threshold
+    def device_rates(part, event):
+        groups = {}
+        for item in part:
+            groups.setdefault(item[4], []).append(item)
+        return [sum(event(x) for x in group) / len(group)
+                for group in groups.values()]
+    known_device_coverage = (
+        device_rates(known, lambda r: accepted(r) and r[0] == r[1])
+        if has_devices else None)
+    unknown_device_far = (
+        device_rates(unknown, accepted) if has_devices else None)
     def macro(part, event):
         sessions = {}
         for item in part:
@@ -172,6 +191,15 @@ def rates(rows, threshold):
             macro(known, lambda r: accepted(r) and r[0] == r[1]),
         "unknown_session_macro_false_accept":
             macro(unknown, accepted),
+        # Device-level worst case prevents many sessions from one good SDR
+        # masking an OOD failure on a different SDR. Device IDs stay private.
+        "known_worst_device_correct_coverage": (
+            min(known_device_coverage) if known_device_coverage is not None else None),
+        "unknown_worst_device_false_accept_rate": (
+            max(unknown_device_far) if unknown_device_far is not None else None),
+        "known_devices": len(known_device_coverage) if has_devices else None,
+        "unknown_devices": len(unknown_device_far) if has_devices else None,
+        "device_ids_excluded": True,
         "known_windows": len(known),
         "unknown_windows": len(unknown),
         "known_sessions": len({r[3] for r in known}),
@@ -181,8 +209,11 @@ def rates(rows, threshold):
 
 def acceptable(r, max_far, min_coverage):
     return (max(r["unknown_false_accept_rate"],
-                r["unknown_session_macro_false_accept"]) <= max_far
-            and r["known_session_macro_coverage"] >= min_coverage)
+                r["unknown_session_macro_false_accept"],
+                r["unknown_worst_device_false_accept_rate"] or 0.0) <= max_far
+            and r["known_session_macro_coverage"] >= min_coverage
+            and (r["known_worst_device_correct_coverage"] is None or
+                 r["known_worst_device_correct_coverage"] >= min_coverage))
 
 
 def select(rows, max_far=.10, min_coverage=.50):
@@ -204,9 +235,11 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
         raise ValueError("Invalid minimum pipeline coverage")
     cal, hold = audit(cal_manifest, hold_manifest, root)
     calibration_accounting = {}
-    best, curve = select(observations(cal, model, max_windows,
-                                      accounting=calibration_accounting),
-                         max_far, min_coverage)
+    calibration_observations = observations(
+        cal, model, max_windows, accounting=calibration_accounting)
+    if any(len(row) != 5 for row in calibration_observations):
+        raise ValueError("Device metadata required for IQ calibration gate")
+    best, curve = select(calibration_observations, max_far, min_coverage)
     holdout_sessions = len({r[2] for r in hold})
     holdout_devices = len({r[3] for r in hold})
     # Aggregate diversity alone can hide a single UNKNOWN session or a
@@ -245,14 +278,19 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
         "max_unknown_false_accept": max_far,
         "min_known_correct_coverage": min_coverage,
         "operationally_validated": False,
-        "limitations": ("Windows of the same session are correlated. Session-macro rates "
-                        "are descriptive, not confidence intervals. True RF provenance, "
-                        "labels and out-of-device validation require external evidence."),
+        "limitations": ("Windows of the same session are correlated. Session/device "
+                        "worst-case rates are descriptive, not confidence intervals. "
+                        "Device names in manifests require external identity verification. "
+                        "True RF provenance, labels and out-of-device validation "
+                        "require external evidence."),
     }
     if best:
         holdout_accounting = {}
-        holdout = rates(observations(hold, model, max_windows,
-                                     accounting=holdout_accounting), best["threshold"])
+        holdout_observations = observations(
+            hold, model, max_windows, accounting=holdout_accounting)
+        if any(len(row) != 5 for row in holdout_observations):
+            raise ValueError("Device metadata required for IQ holdout gate")
+        holdout = rates(holdout_observations, best["threshold"])
         result["holdout_result"] = holdout
         result["holdout_pipeline"] = holdout_accounting
         if not acceptable(holdout, max_far, min_coverage):
