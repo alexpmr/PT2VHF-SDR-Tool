@@ -715,6 +715,8 @@ class MainWindow(QMainWindow):
                 selected = select_direct_sampling_mode(self.engine.vfo, fs,
                                                        configured, preferred)
                 if selected != configured:
+                    if configured in (1, 2) and not selected:
+                        self.cfg["hf_direct_sampling_mode"] = configured
                     self._set_rtl_sampling_state(selected)
                     if configured and not selected:
                         self.statusBar().showMessage(
@@ -855,6 +857,8 @@ class MainWindow(QMainWindow):
         chosen = select_direct_sampling_mode(freq, src.sample_rate, current, preferred)
         if chosen == current:
             return
+        if current in (1, 2) and chosen == 0:
+            self.cfg["hf_direct_sampling_mode"] = current
         src.set_direct_sampling(chosen)
         self._set_rtl_sampling_state(chosen)
         self.statusBar().showMessage(
