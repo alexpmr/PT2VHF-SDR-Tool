@@ -51,8 +51,19 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Testes no Windows
         run: python scripts/run_tests.py
-      - name: P0 - native Qt shutdown probe in isolated Windows processes
-        run: python -X faulthandler scripts/probe_qt_native_exit.py --repeats 3 --frames 120
+      - uses: actions/checkout@v4
+        with:
+          ref: v0.13.2
+          path: baseline-v0132
+      - name: P0 - compare native Qt shutdown against v0.13.2
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          python -X faulthandler scripts/probe_qt_native_exit.py --source-root baseline-v0132 --repeats 3 --frames 120
+          $baseline = $LASTEXITCODE
+          python -X faulthandler scripts/probe_qt_native_exit.py --repeats 3 --frames 120
+          $candidate = $LASTEXITCODE
+          Write-Host "Native exit probe: v0.13.2=$baseline candidate=$candidate"
+          if ($baseline -ne 0 -or $candidate -ne 0) { throw "P0 native Qt shutdown probe failed" }
       - name: Smoke OTA portátil (helper, backup e falha segura)
         run: .\scripts\test_ota_windows.ps1
       - name: Versão
