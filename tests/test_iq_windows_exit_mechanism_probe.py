@@ -65,7 +65,7 @@ def test_retired_exit_mechanism_job_stays_disabled_and_replacement_is_safe():
     assert "\n  windows-exit-mechanism-probe:" not in workflow
     assert "\n  windows-qt-runtime-probe:" not in workflow
     job = workflow.split("\n  windows-file-probe:", 1)[1].split(
-        "\n  windows-case-probe:", 1
+        "\n  windows-exe:", 1
     )[0]
     assert "needs: windows-tests" in job
     assert "needs.windows-tests.result == 'failure'" in job
