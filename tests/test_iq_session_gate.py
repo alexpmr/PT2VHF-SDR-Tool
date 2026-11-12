@@ -523,6 +523,14 @@ def test_holdout_requires_every_supported_known_mode_in_both_splits(tmp_path, mo
         hold_doc["recordings"].append({
             "path": filename, "mode": label, "session_id": f"hold-{i}",
             "device": "second synthetic SDR", "frequency_hz": 145500000})
+    # Complete the held-out class x SDR matrix, not just aggregate labels.
+    # All additional known captures share the second SDR's known session.
+    for i, label in enumerate(("CW", "NFM", "USB", "LSB")):
+        filename = f"hold-second-{label.lower()}.wav"
+        wav(tmp_path / filename, 9400 + i * 210)
+        hold_doc["recordings"].append({
+            "path": filename, "mode": label, "session_id": "hold-2",
+            "device": "second synthetic SDR", "frequency_hz": 145500000})
     cal.write_text(json.dumps(cal_doc))
     hold.write_text(json.dumps(hold_doc))
 
@@ -539,6 +547,28 @@ def test_holdout_requires_every_supported_known_mode_in_both_splits(tmp_path, mo
     assert complete["holdout_class_coverage_gate_passed"] is True
     assert complete["required_known_classes"] == ["CW", "AM", "NFM", "USB", "LSB"]
     assert complete["operationally_validated"] is False
+    assert complete["holdout_class_device_coverage_gate_passed"] is True
+    assert complete["required_holdout_class_device_cells"] == 12
+    assert complete["missing_holdout_class_device_cells"] == 0
+
+    # Every class exists globally and both SDRs have KNOWN/UNKNOWN, yet CW
+    # is absent on SDR-B. Previously this incorrectly returned EVALUATED.
+    hold_doc["recordings"] = [
+        row for row in hold_doc["recordings"]
+        if not (row["mode"] == "CW" and row["device"] == "second synthetic SDR")
+    ]
+    hold.write_text(json.dumps(hold_doc))
+    missing_cell = gate.run(cal, hold, tmp_path, object())
+    assert missing_cell["holdout_class_coverage_gate_passed"] is True
+    assert missing_cell["holdout_diversity_gate_passed"] is True
+    assert missing_cell["holdout_class_device_coverage_gate_passed"] is False
+    assert missing_cell["missing_holdout_class_device_cells"] == 1
+    assert missing_cell["decision"] == "HOLDOUT_INSUFFICIENT_CLASS_DEVICE_COVERAGE"
+    assert "second synthetic SDR" not in json.dumps(missing_cell)
+    hold_doc["recordings"].append({
+        "path": "hold-second-cw.wav", "mode": "CW", "session_id": "hold-2",
+        "device": "second synthetic SDR", "frequency_hz": 145500000})
+    hold.write_text(json.dumps(hold_doc))
 
     cal_doc["recordings"] = [r for r in cal_doc["recordings"]
                              if r["mode"] != "CW"]
