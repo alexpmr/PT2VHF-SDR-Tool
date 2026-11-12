@@ -72,17 +72,24 @@ jobs:
           # Synthetic Qt only: does not replace a prolonged real-SDR hardware soak.
           python -X faulthandler scripts/probe_qt_native_exit.py --repeats 100 --scenarios waterfall-empty waterfall --exit-modes normal
           if ($LASTEXITCODE -ne 0) { throw "P0 candidate failed 100x Windows native shutdown soak" }
-      - name: P0 - continuous Qt operational soak (synthetic, in-use)
+      - uses: actions/checkout@v4
+        with:
+          ref: v0.13.3
+          path: baseline-v0133
+      - name: P0 - continuous Qt operational soak (v0.13.2 / v0.13.3 / candidate)
         run: |
-          # Continuous event-loop workload (frames, pan, double-click, VFO).
-          # Baseline is informational: known native shutdown corruption predates v0.13.3.
-          # Candidate must survive both 45-second sessions AND normal process teardown.
+          # Same 45-second synthetic workload on both released tags and candidate.
+          # Historical runs are diagnostic only: native shutdown corruption exists in v0.13.2.
+          # Candidate must survive both sessions and normal process teardown.
           $PSNativeCommandUseErrorActionPreference = $false
           python -X faulthandler scripts/probe_qt_operational_soak.py --source-root baseline-v0132 --seconds 45 --repeats 1
-          $baseline = $LASTEXITCODE
+          $baseline132 = $LASTEXITCODE
+          python -X faulthandler scripts/probe_qt_operational_soak.py --source-root baseline-v0133 --seconds 45 --repeats 2
+          $baseline133 = $LASTEXITCODE
           python -X faulthandler scripts/probe_qt_operational_soak.py --seconds 45 --repeats 2
           $candidate = $LASTEXITCODE
-          Write-Host "P0 continuous Qt soak: v0.13.2=$baseline candidate=$candidate"
+          Write-Host "P0 continuous Qt soak: v0.13.2=$baseline132 v0.13.3=$baseline133 candidate=$candidate"
+          # A nonzero historical status does not establish a field crash root cause.
           if ($candidate -ne 0) { throw "P0 candidate failed continuous operational Qt soak" }
       - name: P0 - compare native Qt shutdown against v0.13.2
         run: |
