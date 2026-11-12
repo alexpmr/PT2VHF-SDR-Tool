@@ -41,3 +41,10 @@ Este ajuste reduz custo e ruído do CI, mas **não prova estabilidade Windows**
 nem resolve AMD/Intel, OOD/UNKNOWN, CW/AM, latência ou RF real. Resultados
 anteriores não devem ser contados como novas medições. Se surgir um novo
 padrão de falha, documentar a hipótese e habilitar a coleta manual dirigida.
+
+
+Para reduzir execução redundante de commits intermediários, o workflow cancela
+**apenas** runs de push anteriores da mesma branch experimental quando chega
+um novo commit. Não cancela jobs da `main` nem verificações de evento PR.
+Uma execução cancelada não fornece resultado QA; somente o CI do HEAD final
+pode ser usado como evidência.
