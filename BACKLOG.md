@@ -1,5 +1,18 @@
 # Backlog — PT2VHF SDR Tool
 
+## P0 — próximo lançamento público: v1.0.0 (solicitação de 12/11/2026)
+- **Versionamento obrigatório:** a próxima release pública do **PT2VHF SDR Tool** deverá se chamar **1.0** (tag e metadados SemVer **`v1.0.0`**, exibição pode ser **v1.0**). Não criar v0.13.4 como próxima versão pública. Preservar histórico antigo e a rota de migração OTA de 0.13.x.
+- **Condição P0 de estabilidade:** não publicar v1.0.0, nem reativar v0.13.3 no site, até investigar e corrigir o encerramento inesperado registrado na issue #8; manter recomendação pública provisória da v0.13.2. IA IQ/ONNX continua experimental no PR #2 até RF real homologado.
+- **Implementação:** versão `1.0.0` preparada apenas na branch `feature/splash-v1.0`; sem tag, release, merge ou alteração do catálogo da hospedagem antes de QA Windows/Linux e estabilidade de bancada.
+
+## P1 — splash de abertura com banner PT2VHF (12/11/2026)
+- **Referência:** copiar a experiência do splash do `alexpmr/PT2VHF-Sat-Tool` **v1.7.2** (`sat_tool/app.py`, `show_official_site_notice`).
+- **Imagem:** arquivo do usuário *Powered by www.PT2VHF.com* com sete aplicativos (APRS Client for PC/Android, SAT Tool, QSL Manager, SDR Tool, Mesh Analyzer, Prop Tool HF e Prog Tool), convertido offline para JPEG **1200 × 675 px**, sem cortes. Armazenar em `pt2vhf/assets/branding/welcome-banner.jpg`.
+- **Comportamento:** substituir o aviso textual atual pelo banner completo, clicável para `https://www.pt2vhf.com`; rodapé com link, botão **Fechar**, contador discreto `⏱ 10 s` e barra laranja decrescente, fechamento automático após 10 s ou imediato pelo botão.
+- **Compatibilidade:** manter a política de abertura já existente em `MainWindow._wire` (agendamento de 1800 ms e respeito a `PT2VHF_NO_STARTUP_DIALOGS`), seguido pelo aviso da última atualização; não interferir nos modos `--selftest` e `--screenshot`.
+- **Pacotes:** JPEG obrigatório em todas as distribuições Python/setuptools e PyInstaller, incluindo Windows Setup/Portátil e builds futuros Linux/macOS. `pt2vhf.spec` deve falhar se o asset não estiver presente; verificar o arquivo em ambos os executáveis no CI.
+- **QA:** testes Qt de clique, escala proporcional, temporização e fechamento; smoke de empacotamento e screenshot real com o banner. **Estado:** código/testes e preparação da release na branch `feature/splash-v1.0`; upload do JPEG para GitHub, CI e homologação ainda pendentes. Não declarar concluído apenas com layout implementado.
+
 ## P1 — duplo clique no waterfall: sintonizar e centralizar (11/11/2026)
 - **Solicitação:** dois cliques sobre um ponto válido do waterfall devem **sintonizar o VFO naquela frequência e centralizar essa frequência na área visível**, mantendo o nível atual de zoom. Isso deve atualizar LCD, passband e marcadores sem mudar o modo nem alterar indevidamente a frequência central RF do dispositivo.
 - **Comportamento anterior:** `SpectrumWaterfall._clicked()` executava `reset_zoom()` para todo duplo clique, sem emitir sintonia. Por isso o comando não sintonizava nem centralizava a frequência selecionada.
