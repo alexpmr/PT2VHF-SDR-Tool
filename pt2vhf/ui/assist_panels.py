@@ -390,26 +390,8 @@ class UpdateController(QObject):
                                 "www.pt2vhf.com/sdr ou tente de novo pelo botão de versão.")
 
 
+
 def show_welcome(parent):
-    """Anúncio de abertura (padrão dos programas PT2VHF): convite às demais aplicações e ao site."""
-    from PySide6.QtWidgets import QDialog, QDialogButtonBox
-    dlg = QDialog(parent)
-    dlg.setWindowTitle("PT2VHF SDR Tool")
-    lay = QVBoxLayout(dlg)
-    title = QLabel("Feito por radioamadores, para radioamadores")
-    title.setStyleSheet("font-size:18px;font-weight:700")
-    text = QLabel("Obrigado por usar o PT2VHF SDR Tool! Conheça também as outras aplicações gratuitas "
-                  "desenvolvidas para a comunidade: APRS Client, APRS Android, Prop Tool, Mesh Analyzer, "
-                  "Sat Tool, Prog Tool, QSL Manager e mais. Downloads e atualizações oficiais somente pelo site.")
-    text.setWordWrap(True)
-    link = QLabel('<a href="https://www.pt2vhf.com" style="color:#6cc7ff;font-weight:700">www.PT2VHF.com</a>')
-    link.setOpenExternalLinks(True)
-    bb = QDialogButtonBox()
-    close = bb.addButton("Fechar", QDialogButtonBox.RejectRole)
-    close.setDefault(True)
-    bb.rejected.connect(dlg.reject)
-    for w in (title, text, link):
-        lay.addWidget(w)
-    lay.addWidget(bb)
-    dlg.setMinimumWidth(520)
-    dlg.exec()
+    """Keep the original startup policy; replace only the welcome dialog."""
+    from .welcome_splash import show_splash
+    show_splash(parent)
