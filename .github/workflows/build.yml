@@ -157,6 +157,27 @@ jobs:
       - name: Isolar cada caso UI em processo Windows com hard e normal exit
         run: python -m scripts.ci_windows_case_probe --timeout-seconds 180 --exit-mode both
 
+  windows-exit-probe:
+    # Experimental-only follow-up: compare bare Python, Qt and MainWindow
+    # shutdown without pytest after isolated UI cases reproduce native crashes.
+    needs: windows-case-probe
+    if: ${{ always() && needs.windows-case-probe.result == 'failure' && github.ref == 'refs/heads/feature/iq-signal-classifier' }}
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dependencias de diagnostico Qt (sem instalador)
+        run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph "sgp4>=2.23"
+      - name: Comparar encerramento nativo sem pytest
+        run: python -m scripts.ci_windows_exit_probe --timeout-seconds 90
+
   windows-exe:
     # Manual e commit [build-windows] SOMENTE na main; branch experimental nao gera instaladores.
     if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.build_windows) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build-windows]')))
