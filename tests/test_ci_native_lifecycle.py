@@ -40,3 +40,48 @@ def test_report_never_breaks_suite_if_probe_fails(monkeypatch, capsys):
     monkeypatch.setattr(census, "snapshot", fail)
     census.report("before-hard-exit")
     assert "unavailable=RuntimeError" in capsys.readouterr().out
+
+
+def test_opt_in_qt_disposal_requests_deferred_delete_only(monkeypatch, capsys):
+    import sys
+    from types import SimpleNamespace
+
+    class FakeWidget:
+        def __init__(self, fails=False):
+            self.fails = fails
+            self.called = False
+
+        def deleteLater(self):
+            self.called = True
+            if self.fails:
+                raise RuntimeError("stale native widget")
+
+    widgets = [FakeWidget(), FakeWidget(fails=True)]
+    processed = []
+    class FakeApplication:
+        def topLevelWidgets(self):
+            return widgets
+        def processEvents(self):
+            processed.append("process-events")
+
+    app = FakeApplication()
+    fake_widgets = SimpleNamespace(QApplication=SimpleNamespace(instance=lambda: app))
+    fake_core = SimpleNamespace(
+        QCoreApplication=SimpleNamespace(
+            sendPostedEvents=lambda target, kind: processed.append((target, kind))),
+        QEvent=SimpleNamespace(DeferredDelete=52),
+    )
+    monkeypatch.setitem(sys.modules, "PySide6.QtWidgets", fake_widgets)
+    monkeypatch.setitem(sys.modules, "PySide6.QtCore", fake_core)
+    attempted, failed = census.dispose_qt_top_levels()
+
+    assert (attempted, failed) == (2, 1)
+    assert all(w.called for w in widgets)
+    assert processed == [(None, 52), "process-events"]
+    assert "CI-QT-DISPOSAL attempted=2 failed=1" in capsys.readouterr().out
+
+
+def test_opt_in_qt_disposal_handles_absent_qt(monkeypatch):
+    import sys
+    monkeypatch.setitem(sys.modules, "PySide6.QtWidgets", None)
+    assert census.dispose_qt_top_levels() == (0, 0)
