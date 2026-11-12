@@ -146,6 +146,28 @@ def list_devices() -> list[str]:
         return []
 
 
+DIRECT_HF_MAX_HZ = 28_800_000.0
+TUNER_MIN_HZ = 24_000_000.0
+
+
+def select_direct_sampling_mode(freq_hz: float, sample_rate: int, current_mode: int,
+                                hf_preference: int = 0) -> int:
+    """Select tuner for VHF/UHF and the previously chosen direct path for HF.
+
+    Direct sampling only covers the low-HF path, NOT the R820T/R828D tuner.
+    The return is purely a policy decision: never pretend a generic dongle
+    supports direct HF wiring unless the user previously selected an I/Q path.
+    """
+    mode = int(current_mode)
+    preferred = int(hf_preference)
+    center = float(freq_hz) + (sample_rate / 8 if sample_rate >= 900_000 else 0)
+    if center > DIRECT_HF_MAX_HZ:
+        return 0
+    if center < TUNER_MIN_HZ and preferred in (1, 2):
+        return preferred
+    return mode
+
+
 def tuning_range(tuner: str, blog_lib: bool, direct_sampling: int, product: str = "") -> tuple[float, float]:
     """Faixa sintonizável (Hz) conforme o sintonizador e a biblioteca."""
     if direct_sampling:
