@@ -563,8 +563,7 @@ class MainWindow(QMainWindow):
         rp.gainChanged.connect(lambda g: self._src_call("set_gain", g, cfg="gain"))
         rp.ppmChanged.connect(lambda v: self._src_call("set_ppm", v, cfg="ppm"))
         rp.biasTeeChanged.connect(lambda v: self._src_call("set_bias_tee", v, cfg="bias_tee"))
-        rp.directSamplingChanged.connect(lambda v: (self._src_call("set_direct_sampling", v, cfg="direct_sampling"),
-                                                    self._refresh_band_keys()))
+        rp.directSamplingChanged.connect(self._direct_sampling_selected)
 
         mp.modeChanged.connect(self.choose_mode)
         mp.bandwidthChanged.connect(self.set_bandwidth)
@@ -708,8 +707,20 @@ class MainWindow(QMainWindow):
             elif name == "RTL-SDR":
                 src = RtlSdrSource(fs, center, opts["device_index"], opts["gain"], opts["ppm"])
                 src.set_bias_tee(self.cfg["bias_tee"]) if self.cfg["bias_tee"] else None
-                if self.cfg["direct_sampling"]:
-                    src.set_direct_sampling(self.cfg["direct_sampling"])
+                # R820T VHF/UHF and the direct HF I/Q path are mutually
+                # exclusive. A saved HF mode must not disable 145/433 MHz.
+                from ..sources.rtlsdr_source import select_direct_sampling_mode
+                configured = int(self.cfg.get("direct_sampling", 0))
+                preferred = int(self.cfg.get("hf_direct_sampling_mode", configured))
+                selected = select_direct_sampling_mode(self.engine.vfo, fs,
+                                                       configured, preferred)
+                if selected != configured:
+                    self._set_rtl_sampling_state(selected)
+                    if configured and not selected:
+                        self.statusBar().showMessage(
+                            "Amostragem direta desativada: VHF/UHF usa o sintonizador R820T.", 10000)
+                if selected:
+                    src.set_direct_sampling(selected)
             elif name == "rtl_tcp":
                 src = RtlTcpSource(fs, center, opts["host"], opts["port"], opts["gain"], opts["ppm"])
                 self.cfg["rtl_tcp_host"], self.cfg["rtl_tcp_port"] = opts["host"], opts["port"]
@@ -796,6 +807,61 @@ class MainWindow(QMainWindow):
         from ..sources import rtl_driver
         QMessageBox.information(self, "Diagnóstico do RTL-SDR", rtl_driver.diagnose())
 
+    def _set_rtl_sampling_state(self, mode: int):
+        """Keep the saved active mode and selector synchronized, without recursion."""
+        mode = int(mode)
+        self.cfg["direct_sampling"] = mode
+        combo = self.rx_panel.direct
+        was_blocked = combo.blockSignals(True)
+        try:
+            combo.setCurrentIndex(mode)
+        finally:
+            combo.blockSignals(was_blocked)
+        self._refresh_band_keys()
+
+    def _direct_sampling_selected(self, mode: int):
+        """Honor manual I/Q preference, but never force HF direct mode in VHF/UHF."""
+        mode = int(mode)
+        if mode not in (0, 1, 2):
+            return
+        self.cfg["hf_direct_sampling_mode"] = mode
+        src = self.engine.source
+        if (mode and src is not None and src.name == "RTL-SDR"
+                and self.engine.vfo + (src.sample_rate / 8 if src.sample_rate >= 900_000 else 0)
+                > 28_800_000):
+            self._set_rtl_sampling_state(0)
+            if getattr(src, "direct_sampling", 0):
+                src.set_direct_sampling(0)
+            self.statusBar().showMessage(
+                "Amostragem direta é para HF; acima de 28,8 MHz, R820T usa o sintonizador. "
+                "Preferência HF preservada.", 10000)
+            return
+        self._src_call("set_direct_sampling", mode, cfg="direct_sampling")
+        self._refresh_band_keys()
+
+    def _auto_rtl_sampling(self, freq: float):
+        """Switch I/Q direct sampling off before tuning 145/433 MHz.
+
+        Preserve an explicitly selected HF branch for future return below 24 MHz.
+        Both mode and frequency commands are queued in order by RtlSdrSource.
+        """
+        src = self.engine.source
+        if src is None or src.name != "RTL-SDR":
+            return
+        from ..sources.rtlsdr_source import select_direct_sampling_mode
+        current = int(getattr(src, "direct_sampling", 0))
+        preferred = int(self.cfg.get("hf_direct_sampling_mode",
+                                     self.cfg.get("direct_sampling", 0)))
+        chosen = select_direct_sampling_mode(freq, src.sample_rate, current, preferred)
+        if chosen == current:
+            return
+        src.set_direct_sampling(chosen)
+        self._set_rtl_sampling_state(chosen)
+        self.statusBar().showMessage(
+            "RTL-SDR: sintonizador VHF/UHF ativado."
+            if chosen == 0 else "RTL-SDR: amostragem direta HF ativada.",
+            6000)
+
     def _src_call(self, method, value, cfg=None):
         if cfg:
             self.cfg[cfg] = value
@@ -864,8 +930,9 @@ class MainWindow(QMainWindow):
         self._sync_views()
 
     def _freq_supported(self, freq: float) -> bool:
-        """Recusa (com aviso, sem travar) frequências que o dongle não alcança."""
+        """Recusa frequências inacessíveis, após alternar o modo correto do RTL."""
         src = self.engine.source
+        self._auto_rtl_sampling(freq)
         fs = self.engine.sample_rate
         if src is None or abs(freq - src.center_freq) < fs / 2 * 0.9:
             return True
@@ -931,7 +998,22 @@ class MainWindow(QMainWindow):
         mid = (band.start + band.end) / 2
         src = self.engine.source
         if src is not None:
-            return src.check_freq(mid) or ""
+            problem = src.check_freq(mid) or ""
+            if problem and getattr(src, "name", "") == "RTL-SDR":
+                # Bands remain selectable when the receiver can switch its
+                # input path at tune-time (e.g. 70 cm while HF direct is active).
+                from ..sources.rtlsdr_source import select_direct_sampling_mode, tuning_range, library_info
+                current = int(getattr(src, "direct_sampling", 0))
+                preferred = int(self.cfg.get("hf_direct_sampling_mode",
+                                             self.cfg.get("direct_sampling", 0)))
+                wanted = select_direct_sampling_mode(mid, src.sample_rate, current, preferred)
+                if wanted != current:
+                    lo, hi = tuning_range(getattr(src, "tuner", ""),
+                                          library_info().get("blog", False), wanted,
+                                          getattr(src, "product", ""))
+                    if lo <= mid <= hi:
+                        return ""
+            return problem
         source = self.rx_panel.source.currentText()
         if source == "Simulador":
             return ""
@@ -942,10 +1024,17 @@ class MainWindow(QMainWindow):
             if not device or not str(device)[:1].isdigit():
                 return "Faixa desconhecida: conecte ou selecione o SDR."
             v4 = "V4" in device.upper()
-            low, high = tuning_range("R828D" if v4 else "R820T", v4,
-                                     int(self.cfg.get("direct_sampling", 0)), device)
+            # Inactive but available tuner bands must not be greyed out by a
+            # previously saved HF direct-sampling setting.
+            low, high = tuning_range("R828D" if v4 else "R820T", v4, 0, device)
             if low <= mid <= high:
                 return ""
+            preferred = int(self.cfg.get("hf_direct_sampling_mode",
+                                         self.cfg.get("direct_sampling", 0)))
+            if preferred in (1, 2):
+                hf_low, hf_high = tuning_range("R820T", False, preferred, device)
+                if hf_low <= mid <= hf_high:
+                    return ""
             return f"{band.name}: fora da faixa do SDR ({low / 1e6:g}–{high / 1e6:g} MHz)."
         return "Conecte a fonte para identificar a faixa de recepção."
 
