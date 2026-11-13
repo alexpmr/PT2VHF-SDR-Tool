@@ -92,6 +92,35 @@ def test_converter_rejects_invalid_sidecar(tmp_path,condition):
     assert not dst.exists()
 
 
+@pytest.mark.parametrize("schema", [1, 2])
+@pytest.mark.parametrize("field,bad,expected", [
+    ("schema_version", True, "Invalid/incomplete"),
+    ("center_hz", True, "Invalid center frequency"),
+    ("sample_rate_hz", True, "sample rate/frame count mismatch"),
+    ("written_frames", False, "sample rate/frame count mismatch"),
+    ("center_change_count", False, "interruptions"),
+    ("sample_rate_change_count", False, "interruptions"),
+    ("dropped_iq_blocks_during_capture", False, "interruptions"),
+    ("source_drop_counter_resets", False, "interruptions"),
+    ("invalid_reasons", {}, "interruptions"),
+    ("invalid_reasons", "", "interruptions"),
+    ("invalid_reasons", None, "interruptions"),
+    ("invalid_reasons", 0, "interruptions"),
+])
+def test_converter_rejects_ambiguous_sidecar_types_fail_closed(
+        tmp_path, schema, field, bad, expected):
+    """Synthetic schema regression: Python bool == int must not certify RF continuity."""
+    source, dest = tmp_path / "raw.wav", tmp_path / "channel.wav"
+    make_wav(source)
+    capture = metadata(source)
+    report = capture.report(24000) if schema == 1 else capture.final_report(24000)
+    report[field] = bad
+    write_sidecar(source, report)
+    with pytest.raises(ValueError, match=expected):
+        convert(source, dest, None, 145501000)
+    assert not dest.exists()
+
+
 def test_legacy_wav_requires_manual_center(tmp_path):
     src,dst=tmp_path/"raw.wav",tmp_path/"channel.wav"
     make_wav(src)
