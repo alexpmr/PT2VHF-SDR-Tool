@@ -34,6 +34,14 @@ def cpu_vendor(model):
 def compare_reports(a, b):
     if not a.get("steps") or len(a["steps"]) != len(b.get("steps", [])):
         raise ValueError("Probe step counts differ or are empty")
+    # A report claiming four requested steps must actually contain four.
+    # Otherwise two equally truncated reports could produce a false green
+    # cross-vendor first-step comparison despite missing optimizer steps.
+    for report in (a, b):
+        requested = report.get("requested_steps")
+        if (type(requested) is not int or not 1 <= requested <= 66
+                or len(report["steps"]) != requested):
+            raise ValueError("Probe requested_steps does not match complete step count")
     matches = {key: a[key] == b[key] for key in GLOBAL}
     first_conv_comparison = None
     second_conv_comparison = None
