@@ -517,3 +517,65 @@ def test_sqrt_oracle_metadata_drift_blocks_false_cross_vendor_pass(
     assert result["adam_sqrt_oracle_comparison"]["native_exact_match"] is True
     assert result["adam_sqrt_oracle_comparison"][match_field] is False
     assert result["conclusion"] == "NUMERICAL_DIVERGENCE"
+
+
+@pytest.mark.parametrize("corruption", [
+    "equal_hashes_but_mismatch",
+    "different_hashes_but_zero_mismatches",
+    "missing_first_mismatch",
+    "incorrect_ulp_witness",
+    "invalid_hex_witness",
+])
+def test_identically_corrupt_adam_sqrt_reports_never_pass_cross_vendor(corruption):
+    """Two matching but impossible diagnostic reports are not CPU evidence."""
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    for report in (a, b):
+        witness = report["steps"][0]["float64_first_step"]["adam_sqrt_oracle"]
+        if corruption == "different_hashes_but_zero_mismatches":
+            witness["native_sha256"] = "b" * 64
+        else:
+            witness["mismatch_count"] = 1
+            witness["max_ulp_error"] = 1
+            if corruption != "equal_hashes_but_mismatch":
+                witness["native_sha256"] = "b" * 64
+            if corruption in ("incorrect_ulp_witness", "invalid_hex_witness"):
+                witness["first_mismatch"] = {
+                    "tensor_index": 0, "flat_index": 0,
+                    "native_hex": "0x1.0000000000001p+0",
+                    "oracle_hex": "0x1.0000000000000p+0",
+                    "ulp_error": 2 if corruption == "incorrect_ulp_witness" else 1,
+                }
+                if corruption == "invalid_hex_witness":
+                    witness["first_mismatch"]["native_hex"] = "not-a-float"
+    result = compare_reports(a, b)
+    evidence = result["adam_sqrt_oracle_comparison"]
+    assert evidence["reference_internal_consistency"] is False
+    assert evidence["independent_internal_consistency"] is False
+    assert result["conclusion"] == "NUMERICAL_DIVERGENCE"
+
+
+def test_consistent_adam_sqrt_mismatch_witness_is_not_a_false_metadata_error():
+    """A genuine one-ULP native/oracle difference can be internally coherent.
+
+    The reports are synthetic fixtures; agreement still does not certify a
+    complete v4 training replay or any RF performance.
+    """
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    for report in (a, b):
+        witness = report["steps"][0]["float64_first_step"]["adam_sqrt_oracle"]
+        witness.update({
+            "native_sha256": "b" * 64,
+            "mismatch_count": 1,
+            "max_ulp_error": 1,
+            "first_mismatch": {
+                "tensor_index": 0, "flat_index": 0,
+                "native_hex": "0x1.0000000000001p+0",
+                "oracle_hex": "0x1.0000000000000p+0",
+                "ulp_error": 1,
+            },
+        })
+    result = compare_reports(a, b)
+    evidence = result["adam_sqrt_oracle_comparison"]
+    assert evidence["reference_internal_consistency"] is True
+    assert evidence["independent_internal_consistency"] is True
+    assert result["conclusion"] == "FIRST_STEPS_MATCH_CROSS_CPU_NOT_FULL_REPLAY"
