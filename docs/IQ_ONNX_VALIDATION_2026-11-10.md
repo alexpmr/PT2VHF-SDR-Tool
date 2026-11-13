@@ -153,3 +153,36 @@ A suíte Linux reportou **381 passed / 2 failed / 2 skipped**; a suíte Windows 
 - O job `windows-qt-disposal-probe` foi **aposentado** após o A/B válido para não repetir custo nem provocar novos abortos automaticamente. O guard Windows obrigatório permanece **fail-closed**. Próxima hipótese útil requer pilha nativa/módulo por depurador ou isolamento de propriedade/tempo de vida de objetos, sem publicar dumps ou dados de memória. Evitar novas matrizes Python/PySide6/QPA e não mascarar a falha com `TerminateProcess`.
 
 **Sem alteração dos gates:** AMD × Intel v4, OOD/UNKNOWN, CW/AM, CPU/latência e RF real com rótulos independentes continuam pendentes. Não houve treinamento pesado, merge, alteração na `main`, instalador neural ou publicação no site.
+
+
+## Diagnóstico v4 entre fabricantes de CPU — revisão 12/11/2026, 23h BRT
+
+**Hipótese metodológica:** o comparador de quatro passos distinguia apenas
+`cpu_model` por string. Duas máquinas Intel com modelos diferentes poderiam
+receber `FIRST_STEPS_MATCH_CROSS_CPU_NOT_FULL_REPLAY` e exit 0, embora
+não representassem a comparação **AMD × Intel** requerida. Além disso,
+`cpu_capability` era coletado pelo probe mas não integrava a checagem de
+paridade de ambiente, permitindo que backends CPU distintos fossem tratados
+como comparáveis.
+
+**Correção experimental:** `scripts/compare_iq_cpu_step.py` agora registra
+`reference_cpu_vendor`, `independent_cpu_vendor` e `cross_vendor_tested`.
+O sucesso limitado a quatro passos requer fabricantes reconhecidos e
+diferentes (AMD e Intel). Modelos distintos do mesmo fabricante resultam em
+`SAME_VENDOR_ONLY_INCONCLUSIVE`; fabricante não reconhecido resulta em
+`CPU_VENDOR_UNKNOWN_INCONCLUSIVE`. Ambos retornam exit 3, sem falso
+resultado positivo. Divergência de `cpu_capability` agora resulta em
+`ENVIRONMENT_MISMATCH` (exit 2). Foram acrescentados testes sintéticos
+de classificação de fabricantes, controle positivo e negativos de ambiente.
+
+**Custo/escopo:** o workflow `iq-cpu-step-diagnostic.yml` passou a exigir
+`workflow_dispatch` explícito, pois dois runners `ubuntu-latest` não
+garantem um par AMD/Intel. A suíte regular continua testando o comparador.
+Não executar nova reprodução de 22 épocas nem novos probes caros sem acesso
+a dois hosts com fabricantes comprovados e hipótese numérica específica.
+
+**Limites:** a inferência do fabricante pelo nome informado pelo sistema
+não é atestado de hardware; os dados podem ser mascarados por VM. Mesmo um
+match de quatro passos AMD/Intel não comprova reprodução integral de 22
+épocas nem qualidade ONNX/RF. A divergência v4 permanece **não resolvida**.
+Não houve captura RF real, treinamento, merge ou publicação neural.
