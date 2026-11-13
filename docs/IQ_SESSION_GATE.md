@@ -172,3 +172,24 @@ O gate agora calcula também `unknown_worst_device_session_false_accept_rate` e 
 **Falha demonstrada apenas por teste sintético:** uma sessão com 19 janelas UNKNOWN corretas no SDR-A e uma falsa aceitação no SDR-B tinha taxa agregada por sessão de 5%; outras 19 janelas corretas do SDR-B reduziam sua taxa agregada por dispositivo a 5%. Ambas ficavam abaixo do limite ilustrativo de 10%, apesar de a célula SDR-B × sessão apresentar **100%** de falsa aceitação. O novo critério reprova esse caso. Um controle com todas as janelas UNKNOWN corretamente rejeitadas permanece elegível. A API de taxas com linhas legadas sem metadados de SDR retorna `null` para essas novas métricas; não simula identidade de dispositivo.
 
 Esse teste não constitui medição de RF real, não resolve a identificabilidade CW versus portadora, não substitui rótulos independentes nem comprova estabilidade Windows. As células podem conter janelas temporalmente correlacionadas; limites estatísticos e cobertura de sessões/dispositivos continuam obrigatórios antes de qualquer promoção operacional.
+
+## Cobertura de inferência por SDR × sessão (12/11/2026)
+
+**Hipótese falsificável, exclusivamente sintética:** quando o mesmo identificador
+de sessão abrange mais de um SDR, a cobertura de inferência agregada por sessão
+pode esconder um SDR que quase nunca produz janelas inferíveis. Exemplo de
+regressão: SDR-A com 100/100 janelas inferidas e SDR-B com 1/10 na mesma
+sessão geram cobertura agregada de 101/110 (91,8%), acima do mínimo padrão
+de 80%, embora o SDR-B tenha apenas 10%.
+
+O gate agora registra `minimum_device_session_pipeline_coverage` e
+`device_session_cells` na calibração e no holdout, **sem divulgar IDs**.
+A aprovação exige que a cobertura mínima seja atingida tanto por sessão
+quanto por combinação **SDR × sessão**; caso contrário, a decisão é
+`HOLDOUT_INSUFFICIENT_PIPELINE_COVERAGE` (exit 2). A cobertura global
+continua sendo exibida apenas como estatística descritiva. Os testes cobrem
+a regressão de contagem e o bloqueio fim a fim, incluindo controle positivo.
+
+Essas contagens dependem de identidades declaradas no manifesto, não provam
+autenticidade RF, independência entre dispositivos ou desempenho do modelo.
+Não houve coleta RF real, treinamento nem autorização para release neural.
