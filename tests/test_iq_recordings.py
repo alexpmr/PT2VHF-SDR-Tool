@@ -468,3 +468,48 @@ def test_offline_mode_consistency_with_softmax_and_unknown_gate(
         assert report["per_class_recall"]["AM"] == (
             1.0 if effective_mode == "AM" else 0.0
         )
+
+
+@pytest.mark.parametrize(("gate", "top_score", "effective_mode", "expected_error"), [
+    (0.8, 1.0, "UNKNOWN", "configured confidence gate"),
+    (0.8, 0.7, "AM", "configured confidence gate"),
+    (0.8, 0.7, "UNKNOWN", None),
+    (0.8, 1.0, "AM", None),
+    (1.0, 1.0, "AM", None),
+    (1.0, 0.7, "UNKNOWN", None),
+    (float("nan"), 1.0, "AM", "Invalid classifier confidence threshold"),
+    (True, 1.0, "AM", "Invalid classifier confidence threshold"),
+    (np.complex64(0.8 + 0.1j), 1.0, "AM", "Invalid classifier confidence threshold"),
+    (-0.1, 1.0, "AM", "Invalid classifier confidence threshold"),
+    (1.1, 1.0, "AM", "Invalid classifier confidence threshold"),
+])
+def test_offline_configured_confidence_gate_is_consistent(
+    tmp_path, gate, top_score, effective_mode, expected_error
+):
+    """Synthetic: an exposed classifier gate must agree with effective mode.
+
+    UNKNOWN above a configured gate must not be counted as a neural rejection;
+    a known mode below the gate must not inflate accepted-class accuracy.
+    """
+    make_wav(tmp_path / "a.wav")
+
+    class Stub:
+        min_confidence = gate
+
+        def predict(self, iq):
+            return Classification(
+                effective_mode, top_score,
+                {name: (top_score if name == "AM" else
+                        1.0 - top_score if name == "CW" else 0.0)
+                 for name in CLASSES},
+            )
+
+    if expected_error:
+        with pytest.raises(ValueError, match=expected_error):
+            evaluate(manifest(tmp_path), tmp_path, Stub())
+    else:
+        report = evaluate(manifest(tmp_path), tmp_path, Stub())
+        assert report["windows_inferred"] == 4
+        assert report["per_class_recall"]["AM"] == (
+            1.0 if effective_mode == "AM" else 0.0
+        )
