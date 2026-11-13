@@ -700,3 +700,44 @@ def test_class_device_cell_control_and_legacy_rows():
     legacy = rates([row[:4] for row in rows], .95)
     assert legacy["known_worst_class_device_correct_coverage"] is None
     assert legacy["known_class_device_cells_observed"] is None
+
+
+@pytest.mark.parametrize("bad_probability", [True, "1.0", np.bool_(True)])
+def test_observations_rejects_coerced_softmax_probabilities(tmp_path, bad_probability):
+    """Synthetic regression: numeric-looking strings/bools must not pass RF gates."""
+    from pt2vhf.dsp.iq_classifier import CLASSES, Classification
+    from scripts.iq_session_gate import observations
+
+    source = tmp_path / "synthetic_iq.wav"
+    wav(source, 1200)
+
+    class Malformed:
+        def predict(self, iq):
+            scores = {name: 0.0 for name in CLASSES}
+            scores["AM"] = bad_probability
+            return Classification("AM", 1.0, scores)
+
+    with pytest.raises(ValueError, match="Invalid model probability values"):
+        observations([(source, "AM", "synthetic-session", "synthetic-SDR")],
+                     Malformed(), 2)
+
+
+@pytest.mark.parametrize("valid_probability", [np.float32(1.0), np.float64(1.0)])
+def test_observations_accepts_real_numpy_softmax_probabilities(tmp_path, valid_probability):
+    """Numeric numpy scalar outputs remain supported by the strict RF gate."""
+    from pt2vhf.dsp.iq_classifier import CLASSES, Classification
+    from scripts.iq_session_gate import observations
+
+    source = tmp_path / "synthetic_iq.wav"
+    wav(source, 1200)
+
+    class Numeric:
+        def predict(self, iq):
+            scores = {name: 0.0 for name in CLASSES}
+            scores["AM"] = valid_probability
+            return Classification("AM", 1.0, scores)
+
+    rows = observations([(source, "AM", "synthetic-session", "synthetic-SDR")],
+                        Numeric(), 2)
+    assert len(rows) == 2
+    assert all(row[0] == row[1] == "AM" for row in rows)
