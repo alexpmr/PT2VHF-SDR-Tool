@@ -185,6 +185,12 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100,
             predicted = result.mode
             if predicted not in CLASSES:
                 raise ValueError("Invalid classifier mode")
+            # A known mode must agree with the raw softmax argmax.
+            # UNKNOWN may also be an intentional confidence-gate decision.
+            # Otherwise the confusion matrix and the threshold sweep would
+            # describe contradictory predictions from the same window.
+            if predicted != "UNKNOWN" and predicted != top_label:
+                raise ValueError("Classifier mode disagrees with softmax argmax")
             confusion[CLASSES.index(label), CLASSES.index(predicted)] += 1
             sessions[session][0] += 1
             sessions[session][1] += int(predicted == label)

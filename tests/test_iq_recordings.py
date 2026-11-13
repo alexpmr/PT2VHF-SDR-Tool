@@ -438,3 +438,33 @@ def test_offline_threshold_sweep_uses_softmax_not_stale_confidence(tmp_path):
     assert report["acceptance_curve"]["0.99"]["unknown_false_accept_rate"] == 1.0
     assert report["acceptance_curve"]["0.99"]["known_coverage"] == 1.0
     assert report["high_confidence_error_rate"] == 0.5
+
+
+@pytest.mark.parametrize(("effective_mode", "expected_error"), [
+    ("NFM", "Classifier mode disagrees with softmax argmax"),
+    ("BOGUS", "Invalid classifier mode"),
+    ("AM", None),
+    ("UNKNOWN", None),
+])
+def test_offline_mode_consistency_with_softmax_and_unknown_gate(
+    tmp_path, effective_mode, expected_error
+):
+    """Synthetic contract: known modes match argmax; gated UNKNOWN is allowed."""
+    make_wav(tmp_path / "a.wav")
+
+    class Stub:
+        def predict(self, iq):
+            return Classification(
+                effective_mode, 0.99,
+                {name: (1.0 if name == "AM" else 0.0) for name in CLASSES},
+            )
+
+    if expected_error:
+        with pytest.raises(ValueError, match=expected_error):
+            evaluate(manifest(tmp_path), tmp_path, Stub())
+    else:
+        report = evaluate(manifest(tmp_path), tmp_path, Stub())
+        assert report["windows_inferred"] == 4
+        assert report["per_class_recall"]["AM"] == (
+            1.0 if effective_mode == "AM" else 0.0
+        )

@@ -34,7 +34,7 @@ Não faça commit dos WAV, manifestos privados ou capturas contendo informaçõe
 
 O relatório separa janelas de sinal conhecido e UNKNOWN. Nos limiares de 80%, 95% e 99%, informa sinais válidos aceitos corretamente, erros aceitos, cobertura e falsa aceitação de UNKNOWN. Uma classe ausente retorna `null`, não zero fictício.
 
-O avaliador offline agora recusa saídas com classes ausentes, probabilidades não finitas/negativas ou softmax não normalizada, além de confiança fora de `[0, 1]`. As curvas de aceitação e os erros de alta confiança usam o **máximo das probabilidades brutas** e não um campo `confidence` potencialmente desatualizado; a matriz de confusão continua usando o modo efetivo, inclusive UNKNOWN após o limiar configurado. Testes com stubs sintéticos verificam essa consistência, sem validar a qualidade de RF real.
+O avaliador offline agora recusa saídas com classes ausentes, probabilidades não finitas/negativas ou softmax não normalizada, além de confiança fora de `[0, 1]`. As curvas de aceitação e os erros de alta confiança usam o **máximo das probabilidades brutas** e não um campo `confidence` potencialmente desatualizado; a matriz de confusão continua usando o modo efetivo, inclusive UNKNOWN após o limiar configurado. Um modo conhecido (CW/AM/NFM/USB/LSB/WFM) deve coincidir com o argmax da softmax; se divergir, a avaliação falha em vez de publicar matriz de confusão contraditória. UNKNOWN continua permitido como decisão explícita de rejeição por confiança. Esta validação de contrato é sintética, não prova desempenho RF. Testes com stubs sintéticos verificam essa consistência, sem validar a qualidade de RF real.
 
 Execute vários modelos sobre os mesmos WAV sem enviar dados ao GitHub:
 
