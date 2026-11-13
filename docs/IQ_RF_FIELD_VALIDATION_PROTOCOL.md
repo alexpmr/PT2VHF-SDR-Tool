@@ -80,6 +80,23 @@ Onze testes **sintéticos de esquema** cobrem essas rejeições.
 independentes, SDRs físicos distintos, frequências verdadeiras ou rótulos RF.
 A conferência externa do manifesto e das gravações permanece obrigatória.
 
+### Integridade tipada do sidecar bruto (13/11/2026)
+
+A preparação de capturas verifica também o **tipo** dos metadados do
+sidecar `.iq.json` (esquemas 1 e 2): versão inteira explícita,
+`center_hz` numérico finito e positivo (não booleano),
+`sample_rate_hz` e `written_frames` inteiros, quatro contadores de
+continuidade inteiros iguais a zero, e `invalid_reasons` como lista vazia.
+Um `false` não pode substituir o contador `0`, e `{}`, `""` ou
+`null` não podem substituir `[]`. A verificação de SHA-256 do esquema
+2 permanece obrigatória e separada. **24 casos sintéticos** de regressão
+cobrem esses metadados nos dois esquemas.
+
+Isso impede que um manifesto aparentemente íntegro derive de um sidecar
+com tipos incompatíveis e contadores de continuidade ambíguos; **não
+autentica hardware, origem RF, sessões, rótulos ou medições de desempenho**.
+A validação externa de capturas reais permanece obrigatória.
+
 ## Auditoria de qualidade e vazamento
 
 ```bash
