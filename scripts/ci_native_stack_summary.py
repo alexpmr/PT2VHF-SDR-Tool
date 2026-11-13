@@ -24,9 +24,14 @@ def summarize(text: str, limit: int = 24) -> tuple[bool, list[str]]:
     """Return whether an access violation was seen and sanitized frame symbols."""
     if limit < 1:
         raise ValueError("limit must be positive")
-    found = bool(_AV.search(text))
+    # CDB logs may contain earlier, unrelated stacks. An explicit AV marker
+    # must precede the frames attributed to it; otherwise fail closed rather
+    # than accidentally assigning a prior thread's stack to the AV.
+    lines = text.splitlines()
+    first_av = next((i for i, line in enumerate(lines) if _AV.search(line)), None)
+    found = first_av is not None
     frames: list[str] = []
-    for line in text.splitlines():
+    for line in lines[first_av + 1:] if found else lines:
         match = _FRAME.search(line)
         if match:
             # CDB often appends a code offset (+0xNN); omit all offsets.
