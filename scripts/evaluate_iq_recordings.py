@@ -157,9 +157,31 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100,
             # can hide different model-specific preprocessing exclusions.
             if _inferred_window_ids is not None:
                 _inferred_window_ids.add((recording_index, window_index))
-            # The configured confidence gate determines the actual prediction;
-            # threshold sweeps below intentionally use raw probabilities.
-            top_label = max(result.probabilities, key=result.probabilities.get)
+            # Validate the complete softmax contract before reporting RF metrics.
+            # Malformed probabilities must not create a fictitiously low UNKNOWN FAR.
+            probabilities = result.probabilities
+            if not isinstance(probabilities, dict) or set(probabilities) != set(CLASSES):
+                raise ValueError("Invalid model probability labels")
+            if any(isinstance(v, (bool, str)) or
+                   not isinstance(v, (int, float, np.number))
+                   for v in probabilities.values()):
+                raise ValueError("Invalid model probability values")
+            scores = {label_name: float(value)
+                      for label_name, value in probabilities.items()}
+            if (not all(math.isfinite(v) and 0 <= v <= 1 for v in scores.values())
+                    or not math.isclose(sum(scores.values()), 1.0,
+                                        rel_tol=0.0, abs_tol=1e-4)):
+                raise ValueError("Invalid model probabilities: expected normalized softmax")
+            if (isinstance(result.confidence, (bool, str))
+                    or not isinstance(result.confidence, (int, float, np.number))
+                    or not math.isfinite(float(result.confidence))
+                    or not 0 <= float(result.confidence) <= 1):
+                raise ValueError("Invalid model confidence")
+            # Effective mode may be UNKNOWN due to the classifier's configured
+            # gate. A threshold sweep must use the raw maximum softmax score,
+            # never a separately supplied/stale confidence field.
+            top_label = max(scores, key=scores.get)
+            top_score = scores[top_label]
             predicted = result.mode
             if predicted not in CLASSES:
                 raise ValueError("Invalid classifier mode")
@@ -167,13 +189,13 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100,
             sessions[session][0] += 1
             sessions[session][1] += int(predicted == label)
             session_pipeline[session][1] += 1
-            confidence_errors += int(predicted != label and result.confidence >= .80)
+            confidence_errors += int(predicted != label and top_score >= .80)
             if label == "UNKNOWN":
                 unknown_total += 1
             else:
                 known_total += 1
             for threshold, counts in acceptance.items():
-                accepted = top_label != "UNKNOWN" and result.confidence >= float(threshold)
+                accepted = top_label != "UNKNOWN" and top_score >= float(threshold)
                 if label == "UNKNOWN":
                     counts["unknown_misaccepted"] += int(accepted)
                 else:
