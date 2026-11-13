@@ -147,3 +147,15 @@ sendo alternativa. Para análise de causa raiz, o arquivo existente
 
 O coletor **não altera** a v0.13.3 instalada, não ativa a instrumentação
 do PR #9 e não é uma correção do incidente.
+
+
+## Instrumentação adicional: fases de fechamento da janela (PR #9, sem release)
+
+A rotina `MainWindow.closeEvent` agora emite `WINDOW-CLOSE stage=begin`,
+`engine-stopped`, `audio-stopped` e `end` no log local. O primeiro marcador
+inclui `ota=0/1` e `qt_spontaneous=0/1`, sem caminhos, configuração ou dados
+pessoais. `qt_spontaneous` indica apenas a origem do evento segundo Qt:
+**não prova que o usuário clicou em Fechar**. A ausência de um marcador
+posterior sugere onde investigar uma interrupção, mas não identifica sua causa.
+Mesmo `stage=end` não garante a destruição nativa bem-sucedida. Os marcadores
+não são retroativos à v0.13.3 distribuída e não corrigem o incidente de campo.
