@@ -24,6 +24,10 @@ jobs:
         run: python -m pip install -r requirements-dev.txt
       - name: Windows GUI and OTA unit/integration tests
         run: python scripts/run_tests.py
+      - name: P0 native Qt shutdown gate (v1 candidate, 40 subprocesses)
+        # Native Windows process exit status catches heap corruption missed by pytest.
+        # Synthetic Qt only; this is NOT real SDR hardware/OTA stability certification.
+        run: python -X faulthandler scripts/probe_qt_native_exit.py --repeats 20 --scenarios waterfall-empty waterfall --exit-modes normal
       - name: OTA Portable helper with actual Windows processes
         shell: pwsh
         run: ./scripts/test_ota_windows.ps1
