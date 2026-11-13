@@ -127,7 +127,7 @@ def test_av_stack_stops_before_unrelated_later_thread_dump():
 def test_first_av_without_stack_does_not_borrow_second_av_stack(tmp_path, capsys):
     raw = (
         "Access violation - code c0000005 (first chance)\n"
-        "ExceptionCode: c0000005 (Access violation)\n"
+        "Access violation - code c0000005 (second chance)\n"
         "00 000000a1 00007fff unrelated!SecondEvent+0x10\n"
     )
     found, frames = summarize(raw)
@@ -139,3 +139,15 @@ def test_first_av_without_stack_does_not_borrow_second_av_stack(tmp_path, capsys
     output = capsys.readouterr().out
     assert "access_violation=observed frames=0" in output
     assert "unrelated!SecondEvent" not in output
+
+
+def test_repeated_exception_code_metadata_preserves_same_event_stack():
+    raw = (
+        "Access violation - code c0000005 (first chance)\n"
+        "ExceptionCode: c0000005 (Access violation)\n"
+        "STACK_TEXT:\n"
+        "00 000000a1 00007fff Qt6Core!QCoreApplication::notify+0x11\n"
+    )
+    found, frames = summarize(raw)
+    assert found is True
+    assert frames == ["Qt6Core!QCoreApplication::notify"]
