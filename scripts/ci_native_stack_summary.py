@@ -2,7 +2,9 @@
 
 Reads a runner-local CDB log; emits only exception code and module!symbol names
 from debugger stack frames. Never prints addresses, memory, paths or raw logs.
-A missing exception/stack is NOT evidence that Windows QA passed.\nOnly explicit exception records count: debugger commands such as `sxe c0000005`\nare not crash evidence. Preserve C++ `::` scopes in module!symbol frames.
+A missing exception/stack is NOT evidence that Windows QA passed.
+Only explicit exception records count: debugger commands such as `sxe c0000005`
+are not crash evidence. Preserve C++ `::` scopes in module!symbol frames.
 """
 from __future__ import annotations
 
@@ -11,7 +13,11 @@ import sys
 from pathlib import Path
 
 _FRAME = re.compile(r"^\s*[0-9a-fA-F]{2}\s+.*?\b([A-Za-z0-9_.-]+![A-Za-z0-9_?$@.+<>:-]+)")
-_AV = re.compile(\n    r"(?im)^\s*(?:access violation\s*-\s*code|exceptioncode\s*:|"\n    r"exception_code\s*:\s*(?:\(NTSTATUS\)\s*)?|exception code\s*:)"\n    r"\s*(?:0x)?c0000005\b"\n)
+_AV = re.compile(
+    r"(?im)^\s*(?:access violation\s*-\s*code|exceptioncode\s*:|"
+    r"exception_code\s*:\s*(?:\(NTSTATUS\)\s*)?|exception code\s*:)"
+    r"\s*(?:0x)?c0000005\b"
+)
 
 
 def summarize(text: str, limit: int = 24) -> tuple[bool, list[str]]:
