@@ -18,6 +18,9 @@ _AV = re.compile(
     r"exception_code\s*:\s*(?:\(NTSTATUS\)\s*)?|exception code\s*:)"
     r"\s*(?:0x)?c0000005\b"
 )
+# CDB may repeat ExceptionCode metadata within the SAME event. Only a new
+# exception banner is a reliable boundary between separate AV events.
+_AV_BANNER = re.compile(r"(?i)^\\s*access violation\\s*-\\s*code\\s*(?:0x)?c0000005\\b")
 
 
 def summarize(text: str, limit: int = 24) -> tuple[bool, list[str]]:
@@ -33,9 +36,10 @@ def summarize(text: str, limit: int = 24) -> tuple[bool, list[str]]:
     frames: list[str] = []
     in_stack = False
     for line in lines[first_av + 1:] if found else lines:
-        # A later AV is a separate event: never assign its frames to the
-        # earlier exception. Missing frames must remain a failed diagnosis.
-        if found and _AV.search(line):
+        # A later exception banner marks another event; ExceptionCode
+        # metadata may be repeated within the SAME event and must not
+        # terminate a valid stack prematurely.
+        if found and _AV_BANNER.search(line):
             break
         match = _FRAME.search(line)
         if not match:
