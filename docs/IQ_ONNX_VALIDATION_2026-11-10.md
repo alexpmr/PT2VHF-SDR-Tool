@@ -226,3 +226,35 @@ nunca usar como aprovação Windows. O último baseline verificado antes dessa
 alteração foi o [CI #613](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43431088291):
 549 passed / 2 skipped no pytest Windows, mas access violation no encerramento,
 com job obrigatório vermelho. Não repetir a instalação do CDB sem hipótese nova.
+
+
+## 13/11/2026 — Integridade interna do testemunho Adam sqrt (experimental)
+
+O comparador `scripts/compare_iq_cpu_step.py` verificava a igualdade entre
+metadados dos dois relatórios AMD/Intel, mas não verificava todas as relações
+**internas** entre hashes, contagem de diferenças, ULP máximo e primeiro
+elemento divergente. Assim, dois relatórios com a mesma contradição podiam
+produzir `FIRST_STEPS_MATCH_CROSS_CPU_NOT_FULL_REPLAY` indevidamente.
+
+O diagnóstico agora registra `reference_internal_consistency` e
+`independent_internal_consistency` e retorna `NUMERICAL_DIVERGENCE`
+quando qualquer testemunho é incoerente. As invariantes incluem:
+zero diferenças implica hashes iguais, ULP máximo zero e ausência de
+primeiro mismatch; diferenças positivas exigem hashes diferentes,
+primeiro mismatch válido, hexadecimal float64 finito/não negativo e ULP
+recalculado consistente com o máximo informado. Foram acrescentados
+seis casos de regressão sintética (cinco corrupções idênticas nos dois
+relatórios e um testemunho coerente). **Esses testes ainda dependem de
+confirmação no CI após os commits experimentais.**
+
+A última execução verificada antes desta alteração foi o
+[CI #652](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43494972028):
+Linux 611 passed/2 skipped; Windows pytest 611 passed/2 skipped, mas
+`Windows fatal exception: access violation` após o pytest, com threads
+nativas 4→16 e 666 widgets Qt não visíveis. O gate Windows segue
+reprovado, sem minidump WER. Nenhum desses dados atribui causalidade.
+
+O novo controle de metadados **não** substitui medições AMD × Intel
+independentes, reprodução integral das 22 épocas, RF real rotulado,
+OOD/CW/AM ou latência operacional. O PR #2 permanece draft, sem merge,
+publicação neural ou alterações na main.
