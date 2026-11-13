@@ -20,7 +20,7 @@ _AV = re.compile(
 )
 # CDB may repeat ExceptionCode metadata within the SAME event. Only a new
 # exception banner is a reliable boundary between separate AV events.
-_AV_BANNER = re.compile(r"(?i)^\\s*access violation\\s*-\\s*code\\s*(?:0x)?c0000005\\b")
+_AV_BANNER = re.compile(r"(?i)^\s*access violation\s*-\s*code\s*(?:0x)?c0000005\b")
 
 
 def summarize(text: str, limit: int = 24) -> tuple[bool, list[str]]:
