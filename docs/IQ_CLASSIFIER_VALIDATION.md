@@ -81,3 +81,15 @@ módulo/pilha, com saída sanitizada e sem alterar a política de aprovação.
 **Bloqueios inalterados:** RF real rotulado independentemente, divergência
 AMD × Intel v4, OOD/UNKNOWN, CW/AM, latência/CPU operacional e QA Windows.
 Nenhum dado sintético ou execução sob depurador constitui homologação.
+
+
+## Integridade dos resumos escalares do probe CPU (13/11/2026)
+
+O comparador experimental AMD × Intel rejeita agora contagens escalares
+não inteiras (inclusive booleanos), métricas de erro negativas, não finitas
+ou não numéricas, e média de erro superior ao máximo declarado, tanto na
+primeira quanto na segunda convolução. Esses casos não devem produzir
+uma comparação verde de primeiros passos a partir de metadados inválidos.
+Testes usam somente relatórios sintéticos fabricados; não são medições de
+processadores físicos nem validação RF. A reprodução integral de 22 épocas
+e a estabilidade nativa Windows continuam bloqueantes.
