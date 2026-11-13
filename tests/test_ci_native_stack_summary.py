@@ -53,9 +53,9 @@ def test_no_av_is_not_accepted(tmp_path, capsys):
 def test_debugger_configuration_is_not_native_crash_evidence():
     """CDB sxe command/standalone code must never satisfy the AV gate."""
     raw = (
-        "0:000> sxe c0000005\\n"
-        "c0000005\\n"
-        "00 000000a1 00007fff ntdll!RtlExitUserProcess+0x12\\n"
+        "0:000> sxe c0000005\n"
+        "c0000005\n"
+        "00 000000a1 00007fff ntdll!RtlExitUserProcess+0x12\n"
     )
     found, frames = summarize(raw)
     assert found is False
@@ -70,7 +70,7 @@ def test_accepts_explicit_windows_exception_record_variants():
         "Exception code: 0xC0000005",
     ):
         found, frames = summarize(
-            marker + "\\n"
+            marker + "\n"
             "00 000000a1 00007fff Qt6Core!QCoreApplication::sendPostedEvents+0x2f"
         )
         assert found is True
