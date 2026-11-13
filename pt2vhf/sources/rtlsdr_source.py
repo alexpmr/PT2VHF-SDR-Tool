@@ -189,6 +189,7 @@ class RtlSdrSource(IQSource):
         self._reader: threading.Thread | None = None
         self._ctl_thread: threading.Thread | None = None
         self._ctl_stop_sent = False  # one sentinel even after watchdog stops _running
+        self._reader_cancel_sent = False  # idempotent cancellation, including watchdog-failed RX
         self._watch_thread: threading.Thread | None = None
         self._busy_since = 0.0
         self._recovering = threading.Lock()
@@ -326,6 +327,7 @@ class RtlSdrSource(IQSource):
     # ------------------------------------------------------------ ciclo de vida
     def start(self):
         self._ctl_stop_sent = False
+        self._reader_cancel_sent = False
         self._running = True
         self._last_block = time.monotonic()
         self._start_reader()
@@ -351,6 +353,7 @@ class RtlSdrSource(IQSource):
                 sdr.read_samples_async(cb, self.block_size)
             except Exception as e:  # noqa: BLE001
                 log.warning("Leitura RTL-SDR terminou: %s", e)
+        self._reader_cancel_sent = False
         self._reader = threading.Thread(target=run, daemon=True, name="rtl-read")
         self._reader.start()
 
@@ -368,16 +371,21 @@ class RtlSdrSource(IQSource):
         if ctl is not None and ctl.is_alive() and not self._ctl_stop_sent:
             self._ctl_stop_sent = True
             self._ctl.put(None)
-        if not was_running:
-            return
-        sdr = self.sdr
+        # The watchdog can set _running=False while the native async reader
+        # is still blocked.  A later close() must cancel that read before its
+        # bounded join and sdr.close(), even when stop() is called post-failure.
+        reader = self._reader
+        should_cancel = was_running or (reader is not None and reader.is_alive())
+        if should_cancel and not getattr(self, "_reader_cancel_sent", False):
+            self._reader_cancel_sent = True
+            sdr = self.sdr
 
-        def bg():
-            try:
-                sdr.cancel_read_async()
-            except Exception:  # noqa: BLE001
-                pass
-        threading.Thread(target=bg, daemon=True).start()
+            def bg():
+                try:
+                    sdr.cancel_read_async()
+                except Exception:  # noqa: BLE001
+                    pass
+            threading.Thread(target=bg, daemon=True, name="rtl-cancel").start()
 
     def close(self):
         self.stop()
