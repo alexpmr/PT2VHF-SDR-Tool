@@ -102,6 +102,7 @@ def observations(rows, model, max_windows, *, accounting=None):
     data = []
     selected_total = silent_total = rejected_total = inferred_total = 0
     per_session = {}
+    per_device_session = {}
     for path, label, session, _device in rows:
         found = 0
         stats = {"selected": 0, "skipped_silence": 0}
@@ -132,6 +133,9 @@ def observations(rows, model, max_windows, *, accounting=None):
         session_counts = per_session.setdefault(session, [0, 0])
         session_counts[0] += stats["selected"]
         session_counts[1] += found
+        cell_counts = per_device_session.setdefault((session, _device), [0, 0])
+        cell_counts[0] += stats["selected"]
+        cell_counts[1] += found
         if not found:
             raise ValueError("No inferred IQ windows in recording (silence/DC rejection)")
     if selected_total != silent_total + rejected_total + inferred_total:
@@ -139,6 +143,9 @@ def observations(rows, model, max_windows, *, accounting=None):
     if accounting is not None:
         coverages = [inferred / selected for selected, inferred in per_session.values()
                      if selected]
+        cell_coverages = [inferred / selected
+                          for selected, inferred in per_device_session.values()
+                          if selected]
         accounting.update({
             "windows_selected": selected_total,
             "windows_skipped_silence": silent_total,
@@ -146,6 +153,9 @@ def observations(rows, model, max_windows, *, accounting=None):
             "windows_inferred": inferred_total,
             "pipeline_coverage": inferred_total / selected_total if selected_total else 0.0,
             "minimum_session_pipeline_coverage": min(coverages) if coverages else 0.0,
+            "minimum_device_session_pipeline_coverage": (
+                min(cell_coverages) if cell_coverages else 0.0),
+            "device_session_cells": len(per_device_session),
             "sessions": len(per_session),
             "session_ids_excluded": True,
         })
@@ -416,8 +426,16 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
             result["decision"] = "HOLDOUT_FAILED"
         elif not diversity_ok:
             result["decision"] = "HOLDOUT_INSUFFICIENT_DIVERSITY"
-        elif min(calibration_accounting["minimum_session_pipeline_coverage"],
-                 holdout_accounting["minimum_session_pipeline_coverage"]) < min_pipeline_coverage:
+        elif min(
+            calibration_accounting["minimum_session_pipeline_coverage"],
+            holdout_accounting["minimum_session_pipeline_coverage"],
+            calibration_accounting.get(
+                "minimum_device_session_pipeline_coverage",
+                calibration_accounting["minimum_session_pipeline_coverage"]),
+            holdout_accounting.get(
+                "minimum_device_session_pipeline_coverage",
+                holdout_accounting["minimum_session_pipeline_coverage"]),
+        ) < min_pipeline_coverage:
             result["decision"] = "HOLDOUT_INSUFFICIENT_PIPELINE_COVERAGE"
         elif not class_coverage_ok:
             result["decision"] = "HOLDOUT_INSUFFICIENT_CLASS_COVERAGE"
