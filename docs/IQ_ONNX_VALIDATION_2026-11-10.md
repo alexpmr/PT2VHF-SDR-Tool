@@ -186,3 +186,26 @@ não é atestado de hardware; os dados podem ser mascarados por VM. Mesmo um
 match de quatro passos AMD/Intel não comprova reprodução integral de 22
 épocas nem qualidade ONNX/RF. A divergência v4 permanece **não resolvida**.
 Não houve captura RF real, treinamento, merge ou publicação neural.
+
+
+## Integridade de evidência do probe AMD × Intel — 13/11/2026
+
+**Falha metodológica encontrada por inspeção:** o comparador aceitava dois
+relatórios igualmente truncados (por exemplo, ambos com 1 etapa registrada,
+mas `requested_steps=4`) como comparação completa das etapas solicitadas.
+Isso podia produzir `FIRST_STEPS_MATCH_CROSS_CPU_NOT_FULL_REPLAY` com exit 0
+sem que o número de passos declarado tivesse sido executado.
+
+**Correção experimental:** `compare_iq_cpu_step.py` agora exige que cada
+relatório declare `requested_steps` como inteiro estrito entre 1 e 66 e que
+`len(steps) == requested_steps`. Qualquer ausência, valor inválido ou
+truncamento reprova com erro, sem evidência de reprodução positiva. Testes
+sintéticos cobrem relatórios igualmente truncados, metadados inválidos e um
+controle positivo com apenas uma etapa explicitamente solicitada.
+
+**Escopo e bloqueios:** esta alteração valida a completude estrutural do
+diagnóstico, não a autenticidade dos relatórios nem a equivalência numérica
+AMD × Intel. A comparação completa da v4, RF real, OOD/CW/AM, CPU/latência e
+o crash nativo Windows permanecem pendentes. Não houve novo treinamento,
+merge, alteração na main ou publicação neural. A execução do CI após estes
+commits deve ser verificada antes de considerar os novos testes aprovados.
