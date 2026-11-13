@@ -191,6 +191,20 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100,
             # describe contradictory predictions from the same window.
             if predicted != "UNKNOWN" and predicted != top_label:
                 raise ValueError("Classifier mode disagrees with softmax argmax")
+            # IQClassifier exposes its configured confidence gate. When it is
+            # available, validate BOTH directions: a known class below the
+            # gate and UNKNOWN above the gate are inconsistent with predict().
+            # Older external stubs without this attribute remain supported.
+            gate = getattr(model, "min_confidence", None)
+            if gate is not None:
+                if (isinstance(gate, (bool, str)) or
+                        not isinstance(gate, (int, float, np.integer, np.floating)) or
+                        not math.isfinite(float(gate)) or
+                        not 0 <= float(gate) <= 1):
+                    raise ValueError("Invalid classifier confidence threshold")
+                expected_mode = top_label if top_score >= float(gate) else "UNKNOWN"
+                if predicted != expected_mode:
+                    raise ValueError("Classifier mode disagrees with configured confidence gate")
             confusion[CLASSES.index(label), CLASSES.index(predicted)] += 1
             sessions[session][0] += 1
             sessions[session][1] += int(predicted == label)
