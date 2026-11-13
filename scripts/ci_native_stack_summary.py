@@ -31,14 +31,25 @@ def summarize(text: str, limit: int = 24) -> tuple[bool, list[str]]:
     first_av = next((i for i, line in enumerate(lines) if _AV.search(line)), None)
     found = first_av is not None
     frames: list[str] = []
+    in_stack = False
     for line in lines[first_av + 1:] if found else lines:
+        # A later AV is a separate event: never assign its frames to the
+        # earlier exception. Missing frames must remain a failed diagnosis.
+        if found and _AV.search(line):
+            break
         match = _FRAME.search(line)
-        if match:
-            # CDB often appends a code offset (+0xNN); omit all offsets.
-            symbol = re.sub(r"\+0x[0-9a-fA-F]+$", "", match.group(1))
-            frames.append(symbol)
-            if len(frames) == limit:
+        if not match:
+            # CDB's stack frame lines form a contiguous block. A later
+            # unrelated thread dump must not be joined to that block.
+            if in_stack:
                 break
+            continue
+        in_stack = True
+        # CDB often appends a code offset (+0xNN); omit all offsets.
+        symbol = re.sub(r"\+0x[0-9a-fA-F]+$", "", match.group(1))
+        frames.append(symbol)
+        if len(frames) == limit:
+            break
     return found, frames
 
 
