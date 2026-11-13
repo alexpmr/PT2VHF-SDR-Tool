@@ -148,11 +148,22 @@ def compare_reports(a, b):
             lf = left["second_conv_float64_reference"]
             rf = right["second_conv_float64_reference"]
             for report in (lf, rf):
-                if not isinstance(report["reference_sha256"], str) or len(report["reference_sha256"]) != 64:
+                # A valid 64-character string is not necessarily a SHA-256
+                # digest. Nor should bools/strings be coerced into RF/CPU
+                # diagnostics: two equally malformed reports must fail closed.
+                if not isinstance(report, dict) or set(report) != {
+                        "reference_sha256", "max_abs_error", "mean_abs_error"}:
+                    raise ValueError("Invalid second Conv1d float64 reference schema")
+                digest = report["reference_sha256"]
+                if (type(digest) is not str or len(digest) != 64
+                        or any(char not in "0123456789abcdef" for char in digest)):
                     raise ValueError("Invalid second Conv1d float64 reference hash")
-                if not all(math.isfinite(float(report[key])) and float(report[key]) >= 0
-                           for key in ("max_abs_error", "mean_abs_error")):
-                    raise ValueError("Invalid second Conv1d float64 error")
+                for key in ("max_abs_error", "mean_abs_error"):
+                    value = report[key]
+                    if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+                        raise ValueError("Invalid second Conv1d float64 error")
+                if report["mean_abs_error"] > report["max_abs_error"]:
+                    raise ValueError("Invalid second Conv1d float64 mean exceeds maximum")
             exact64 = lf["reference_sha256"] == rf["reference_sha256"]
             matches["steps[0].second_conv_float64_reference_sha256"] = exact64
             second_conv_float64_comparison = {

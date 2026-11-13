@@ -442,3 +442,51 @@ def test_cpu_probe_accepts_consistent_nonzero_scalar_error(layer):
     sample["mean_abs_error"] = 0.0625
     result = compare_reports(a, b)
     assert result["conclusion"] == "NUMERICAL_DIVERGENCE"
+
+
+@pytest.mark.parametrize("field,bad", [
+    ("max_abs_error", True),
+    ("max_abs_error", "0.0001"),
+    ("max_abs_error", None),
+    ("max_abs_error", float("inf")),
+    ("max_abs_error", -0.1),
+    ("mean_abs_error", False),
+    ("mean_abs_error", "0"),
+    ("mean_abs_error", float("nan")),
+])
+def test_cpu_float64_reference_rejects_invalid_numeric_metadata(field, bad):
+    """Do not coerce invalid evidence into a green AMD/Intel comparison."""
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    b["steps"][0]["second_conv_float64_reference"][field] = bad
+    with pytest.raises(ValueError, match="float64 error"):
+        compare_reports(a, b)
+
+
+@pytest.mark.parametrize("digest", ["g" * 64, "A" * 64, "a" * 63, None])
+def test_cpu_float64_reference_rejects_non_sha256_digest(digest):
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    b["steps"][0]["second_conv_float64_reference"]["reference_sha256"] = digest
+    with pytest.raises(ValueError, match="float64 reference hash"):
+        compare_reports(a, b)
+
+
+def test_cpu_float64_reference_rejects_mean_above_maximum():
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    b["steps"][0]["second_conv_float64_reference"]["mean_abs_error"] = 0.1
+    with pytest.raises(ValueError, match="float64 mean exceeds maximum"):
+        compare_reports(a, b)
+
+
+def test_cpu_float64_reference_rejects_unexpected_schema_field():
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    b["steps"][0]["second_conv_float64_reference"]["unverified"] = True
+    with pytest.raises(ValueError, match="float64 reference schema"):
+        compare_reports(a, b)
+
+
+def test_cpu_float64_reference_accepts_valid_nonzero_error_metadata():
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    b["steps"][0]["second_conv_float64_reference"]["max_abs_error"] = 0.125
+    b["steps"][0]["second_conv_float64_reference"]["mean_abs_error"] = 0.0625
+    result = compare_reports(a, b)
+    assert result["conclusion"] == "FIRST_STEPS_MATCH_CROSS_CPU_NOT_FULL_REPLAY"

@@ -108,3 +108,18 @@ e coerentes. A tolerância de comparação é exclusivamente numérica
 
 Isso corrige integridade de evidência **sintética**; não reproduz as 22
 épocas AMD × Intel nem resolve a falha de encerramento nativo Windows.
+
+
+## Integridade da referência Conv1d float64 (13/11/2026)
+
+O comparador AMD × Intel valida agora a estrutura exata da referência
+float64 da segunda convolução, SHA-256 hexadecimal minúsculo (64 caracteres)
+e métricas de erro numéricas, finitas e não negativas, sem converter
+strings ou booleanos. A média não pode exceder o máximo. Testes com
+relatórios sintéticos exercitam rejeições e um controle positivo.
+
+**Limite da evidência:** esta alteração impede que metadados igualmente
+malformados gerem um falso diagnóstico positivo. Não demonstra equivalência
+de CPUs físicas, reprodução integral de 22 épocas, desempenho operacional,
+homologação RF ou correção da falha nativa Windows. O PR permanece
+experimental e sem autorização de merge.
