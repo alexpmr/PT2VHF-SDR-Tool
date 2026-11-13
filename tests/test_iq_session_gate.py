@@ -741,3 +741,48 @@ def test_observations_accepts_real_numpy_softmax_probabilities(tmp_path, valid_p
                         Numeric(), 2)
     assert len(rows) == 2
     assert all(row[0] == row[1] == "AM" for row in rows)
+
+
+@pytest.mark.parametrize("bad_confidence", [
+    float("nan"), float("inf"), -0.01, 1.01, True, "0.99", np.bool_(True),
+])
+def test_rates_rejects_malformed_unknown_confidence(bad_confidence):
+    """Synthetic regression: NaN UNKNOWN confidence previously hid OOD false accepts."""
+    rows = [("AM", "AM", .99, "known"),
+            ("UNKNOWN", "AM", bad_confidence, "unknown")]
+    with pytest.raises(ValueError, match="Invalid IQ observation confidence"):
+        rates(rows, .95)
+    with pytest.raises(ValueError, match="Invalid IQ observation confidence"):
+        select(rows)
+
+
+@pytest.mark.parametrize("field,value,message", [
+    (0, "WFM", "reference label"),
+    (0, "NOT_A_CLASS", "reference label"),
+    (1, "NOT_A_CLASS", "predicted label"),
+    (3, "", "session identifier"),
+    (4, True, "device identifier"),
+])
+def test_rates_rejects_invalid_rf_observation_metadata(field, value, message):
+    rows = [("AM", "AM", .99, "known", "sdr-a"),
+            ("UNKNOWN", "AM", .99, "unknown", "sdr-b")]
+    rows[1] = tuple(value if i == field else item for i, item in enumerate(rows[1]))
+    with pytest.raises(ValueError, match="Invalid IQ " + message):
+        rates(rows, .95)
+
+
+@pytest.mark.parametrize("bad_threshold", [float("nan"), float("inf"), -0.1, 1.1, True, "0.95"])
+def test_rates_rejects_invalid_decision_threshold(bad_threshold):
+    rows = [("AM", "AM", .99, "known"),
+            ("UNKNOWN", "AM", .99, "unknown")]
+    with pytest.raises(ValueError, match="Invalid IQ decision threshold"):
+        rates(rows, bad_threshold)
+
+
+@pytest.mark.parametrize("valid", [np.float32(.99), np.float64(.99)])
+def test_rates_accepts_real_numpy_confidence(valid):
+    rows = [("AM", "AM", valid, "known"),
+            ("UNKNOWN", "UNKNOWN", valid, "unknown")]
+    measured = rates(rows, .95)
+    assert measured["known_correct_coverage"] == 1.0
+    assert measured["unknown_false_accept_rate"] == 0.0
