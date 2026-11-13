@@ -369,7 +369,7 @@ def test_multi_model_comparison_rejects_different_inferred_cohorts(tmp_path):
 
 
 @pytest.mark.parametrize("corruption", [
-    "missing_class", "nan", "infinite", "negative", "unnormalized", "string", "boolean",
+    "missing_class", "nan", "infinite", "negative", "unnormalized", "string", "boolean", "complex",
 ])
 def test_offline_evaluation_rejects_invalid_softmax_before_rf_metrics(tmp_path, corruption):
     """Synthetic stubs: malformed output must not make UNKNOWN FAR look safe."""
@@ -393,13 +393,15 @@ def test_offline_evaluation_rejects_invalid_softmax_before_rf_metrics(tmp_path, 
                 probabilities["AM"] = "1.0"
             elif corruption == "boolean":
                 probabilities["AM"] = True
+            elif corruption == "complex":
+                probabilities["AM"] = np.complex64(1 + 0.5j)
             return Classification("AM", 0.99, probabilities)
 
     with pytest.raises(ValueError, match="Invalid model probabilit"):
         evaluate(manifest(tmp_path), tmp_path, Broken())
 
 
-@pytest.mark.parametrize("bad_confidence", [float("nan"), float("inf"), -0.1, 1.1, "0.99", True])
+@pytest.mark.parametrize("bad_confidence", [float("nan"), float("inf"), -0.1, 1.1, "0.99", True, np.complex64(0.99 + 0.1j)])
 def test_offline_evaluation_rejects_invalid_confidence(tmp_path, bad_confidence):
     make_wav(tmp_path / "a.wav")
 
