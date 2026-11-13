@@ -188,6 +188,7 @@ class RtlSdrSource(IQSource):
         self._last_block = 0.0
         self._reader: threading.Thread | None = None
         self._ctl_thread: threading.Thread | None = None
+        self._ctl_stop_sent = False  # one sentinel even after watchdog stops _running
         self._watch_thread: threading.Thread | None = None
         self._busy_since = 0.0
         self._recovering = threading.Lock()
@@ -324,6 +325,7 @@ class RtlSdrSource(IQSource):
 
     # ------------------------------------------------------------ ciclo de vida
     def start(self):
+        self._ctl_stop_sent = False
         self._running = True
         self._last_block = time.monotonic()
         self._start_reader()
@@ -353,11 +355,21 @@ class RtlSdrSource(IQSource):
         self._reader.start()
 
     def stop(self):
-        """Nunca bloqueia a interface: tudo que pode travar roda em segundo plano."""
-        if not self._running:
-            return
+        """Nunca bloqueia a interface: tudo que pode travar roda em segundo plano.
+
+        A vigia pode ter marcado _running=False após MAX_RECOVER enquanto a
+        thread de controle ainda espera em Queue.get(). Nesse caso também é
+        obrigatório enviar a sentinela; caso contrário a thread daemon vaza
+        até o shutdown do Python, mesmo depois de close().
+        """
+        was_running = self._running
         self._running = False
-        self._ctl.put(None)
+        ctl = self._ctl_thread
+        if ctl is not None and ctl.is_alive() and not self._ctl_stop_sent:
+            self._ctl_stop_sent = True
+            self._ctl.put(None)
+        if not was_running:
+            return
         sdr = self.sdr
 
         def bg():
