@@ -440,10 +440,19 @@ class RtlSdrSource(IQSource):
             # bloquear a GUI quando a biblioteca USB estiver lenta/travada.
             ctl = self._ctl_thread
             if ctl is not None and ctl is not threading.current_thread():
-                ctl.join(timeout=3)
+                ctl.join(timeout=getattr(self, "CTL_CLOSE_JOIN_S", 3.0))
+                if ctl.is_alive():
+                    # A queued native tuner command may still be executing.
+                    # Never free its USB handle until the control thread exits.
+                    log.warning("RTL-SDR control thread still active; deferring native close")
+                    ctl.join()
             watcher = self._watch_thread
             if watcher is not None and watcher is not threading.current_thread():
-                watcher.join(timeout=1)
+                watcher.join(timeout=getattr(self, "WATCH_CLOSE_JOIN_S", 1.0))
+                if watcher.is_alive():
+                    # The watchdog can be inside _recover(), touching USB.
+                    log.warning("RTL-SDR watchdog still active; deferring native close")
+                    watcher.join()
             try:
                 sdr.close()
             except Exception:  # noqa: BLE001
