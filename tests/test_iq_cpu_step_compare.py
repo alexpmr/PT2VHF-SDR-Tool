@@ -7,7 +7,7 @@ from scripts.compare_iq_cpu_step import compare_reports, DOUBLE_STEP, ADAM_STAGE
 def probe(cpu="AMD"):
     return {
         "cpu_model": cpu, "python_version": "3.11", "torch_version": "2.15",
-        "numpy_version": "2.4", "policy": {"threads": 1},
+        "numpy_version": "2.4", "cpu_capability": "DEFAULT", "policy": {"threads": 1},
         "train_samples": 8400, "unknown_examples_replaced": 100,
         "requested_steps": 2,
         "input_sha256": "x", "validation_input_sha256": "v",
@@ -289,3 +289,61 @@ def test_cli_distinguishes_same_cpu_inconclusive_from_cross_cpu_match(
     assert report["conclusion"] == expected_conclusion
     assert report["cross_cpu_tested"] is (independent_cpu != "AMD")
     assert report["first_divergent_stage"] is None
+
+
+def test_cpu_vendor_classification_is_conservative():
+    from scripts.compare_iq_cpu_step import cpu_vendor
+    assert cpu_vendor("AMD EPYC 7763 64-Core Processor") == "amd"
+    assert cpu_vendor("Intel(R) Xeon(R) Platinum 8370C CPU") == "intel"
+    assert cpu_vendor("Intel(R) Core(TM) i7") == "intel"
+    assert cpu_vendor("AMD Ryzen 9") == "amd"
+    assert cpu_vendor("unknown") == "unknown"
+    assert cpu_vendor("Virtual CPU") == "unknown"
+    assert cpu_vendor("AMD Intel hybrid") == "unknown"
+
+
+def test_distinct_models_same_vendor_cannot_pass_amd_intel_gate():
+    a, b = probe("Intel Xeon Platinum"), probe("Intel Core i7")
+    report = compare_reports(a, b)
+    assert report["cross_cpu_tested"] is True
+    assert report["cross_vendor_tested"] is False
+    assert report["conclusion"] == "SAME_VENDOR_ONLY_INCONCLUSIVE"
+
+
+def test_unknown_cpu_vendor_cannot_pass_amd_intel_gate():
+    a, b = probe("AMD EPYC"), probe("Virtual CPU 42")
+    report = compare_reports(a, b)
+    assert report["cross_vendor_tested"] is False
+    assert report["conclusion"] == "CPU_VENDOR_UNKNOWN_INCONCLUSIVE"
+
+
+def test_cpu_capability_mismatch_is_environment_mismatch():
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    b["cpu_capability"] = "AVX2"
+    report = compare_reports(a, b)
+    assert report["cross_vendor_tested"] is True
+    assert report["environment_exact_match"] is False
+    assert report["conclusion"] == "ENVIRONMENT_MISMATCH"
+
+
+def test_amd_intel_probe_match_still_not_full_replay():
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    report = compare_reports(a, b)
+    assert report["cross_vendor_tested"] is True
+    assert report["conclusion"] == "FIRST_STEPS_MATCH_CROSS_CPU_NOT_FULL_REPLAY"
+
+
+def test_cli_same_vendor_probe_is_inconclusive(tmp_path):
+    import json
+    import subprocess
+    import sys
+    from pathlib import Path
+    left, right, out = (tmp_path / name for name in ("a.json", "b.json", "out.json"))
+    left.write_text(json.dumps(probe("Intel Xeon")), encoding="utf-8")
+    right.write_text(json.dumps(probe("Intel Core i7")), encoding="utf-8")
+    script = Path(__file__).resolve().parents[1] / "scripts" / "compare_iq_cpu_step.py"
+    proc = subprocess.run([sys.executable, str(script), "--reference", str(left),
+                           "--independent", str(right), "--out", str(out)],
+                          capture_output=True, text=True, timeout=15)
+    assert proc.returncode == 3
+    assert json.loads(out.read_text(encoding="utf-8"))["conclusion"] == "SAME_VENDOR_ONLY_INCONCLUSIVE"
