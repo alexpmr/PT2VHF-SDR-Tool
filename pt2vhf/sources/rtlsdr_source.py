@@ -210,6 +210,7 @@ class RtlSdrSource(IQSource):
         self._last_block = 0.0
         self._reader: threading.Thread | None = None
         self._ctl_thread: threading.Thread | None = None
+        self._ctl_stop_sent = False  # one sentinel even after watchdog stops _running
         self._watch_thread: threading.Thread | None = None
         self._busy_since = 0.0
         self._recovering = threading.Lock()
@@ -346,6 +347,7 @@ class RtlSdrSource(IQSource):
 
     # ------------------------------------------------------------ ciclo de vida
     def start(self):
+        self._ctl_stop_sent = False
         self._running = True
         self._last_block = time.monotonic()
         self._start_reader()
@@ -375,11 +377,20 @@ class RtlSdrSource(IQSource):
         self._reader.start()
 
     def stop(self):
-        """Nunca bloqueia a interface: tudo que pode travar roda em segundo plano."""
-        if not self._running:
-            return
+        """Nunca bloqueia a interface: tudo que pode travar roda em segundo plano.
+
+        Se o watchdog já marcou _running=False, a thread rtl-ctl ainda pode
+        estar bloqueada em Queue.get(). Enviar uma única sentinela mesmo nesse
+        estado evita deixar a thread daemon viva após close().
+        """
+        was_running = self._running
         self._running = False
-        self._ctl.put(None)
+        ctl = self._ctl_thread
+        if ctl is not None and ctl.is_alive() and not self._ctl_stop_sent:
+            self._ctl_stop_sent = True
+            self._ctl.put(None)
+        if not was_running:
+            return
         sdr = self.sdr
 
         def bg():
