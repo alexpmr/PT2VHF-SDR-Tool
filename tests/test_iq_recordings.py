@@ -366,3 +366,73 @@ def test_multi_model_comparison_rejects_different_inferred_cohorts(tmp_path):
     assert left["windows_rejected_preprocessing"] == right["windows_rejected_preprocessing"] == 2
     with pytest.raises(ValueError, match="did not infer the same IQ windows"):
         evaluate_multiple_models(m, tmp_path, {"v2": a, "v3": b})
+
+
+@pytest.mark.parametrize("corruption", [
+    "missing_class", "nan", "infinite", "negative", "unnormalized", "string", "boolean",
+])
+def test_offline_evaluation_rejects_invalid_softmax_before_rf_metrics(tmp_path, corruption):
+    """Synthetic stubs: malformed output must not make UNKNOWN FAR look safe."""
+    make_wav(tmp_path / "a.wav")
+
+    class Broken:
+        def predict(self, iq):
+            probabilities = {name: (1.0 if name == "AM" else 0.0)
+                             for name in CLASSES}
+            if corruption == "missing_class":
+                probabilities.pop("CW")
+            elif corruption == "nan":
+                probabilities["AM"] = float("nan")
+            elif corruption == "infinite":
+                probabilities["AM"] = float("inf")
+            elif corruption == "negative":
+                probabilities["UNKNOWN"] = -0.1
+            elif corruption == "unnormalized":
+                probabilities["AM"] = 0.7
+            elif corruption == "string":
+                probabilities["AM"] = "1.0"
+            elif corruption == "boolean":
+                probabilities["AM"] = True
+            return Classification("AM", 0.99, probabilities)
+
+    with pytest.raises(ValueError, match="Invalid model probabilit"):
+        evaluate(manifest(tmp_path), tmp_path, Broken())
+
+
+@pytest.mark.parametrize("bad_confidence", [float("nan"), float("inf"), -0.1, 1.1, "0.99", True])
+def test_offline_evaluation_rejects_invalid_confidence(tmp_path, bad_confidence):
+    make_wav(tmp_path / "a.wav")
+
+    class Broken:
+        def predict(self, iq):
+            return Classification("AM", bad_confidence,
+                                  {name: (1.0 if name == "AM" else 0.0)
+                                   for name in CLASSES})
+
+    with pytest.raises(ValueError, match="Invalid model confidence"):
+        evaluate(manifest(tmp_path), tmp_path, Broken())
+
+
+def test_offline_threshold_sweep_uses_softmax_not_stale_confidence(tmp_path):
+    """A stale low confidence must not falsely suppress UNKNOWN acceptance."""
+    make_wav(tmp_path / "a.wav")
+    make_wav(tmp_path / "b.wav")
+    m = manifest(tmp_path)
+    document = json.loads(m.read_text())
+    document["recordings"].append({
+        "path": "b.wav", "mode": "UNKNOWN",
+        "session_id": "independent-unknown", "device": "fake SDR",
+        "frequency_hz": 145650000,
+    })
+    m.write_text(json.dumps(document))
+
+    class StaleConfidence:
+        def predict(self, iq):
+            return Classification("AM", 0.01,
+                                  {name: (1.0 if name == "AM" else 0.0)
+                                   for name in CLASSES})
+
+    report = evaluate(m, tmp_path, StaleConfidence())
+    assert report["acceptance_curve"]["0.99"]["unknown_false_accept_rate"] == 1.0
+    assert report["acceptance_curve"]["0.99"]["known_coverage"] == 1.0
+    assert report["high_confidence_error_rate"] == 0.5
