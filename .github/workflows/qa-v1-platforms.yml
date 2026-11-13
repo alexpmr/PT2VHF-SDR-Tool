@@ -9,6 +9,36 @@ permissions:
   contents: read
 
 jobs:
+  release-asset-gate:
+    # Explicit red gate: green unit/Qt jobs do not imply a releasable v1.0.
+    # No binary is built or published by this job.
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feature/splash-v1.0'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check required user-supplied splash JPEG
+        shell: bash
+        run: |
+          python -m pip install Pillow
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          asset = Path("pt2vhf/assets/branding/welcome-banner.jpg")
+          if not asset.is_file():
+              raise SystemExit("BLOCKED_MISSING_ORIGINAL_BANNER: v1.0 release packaging is NOT ready")
+          if asset.stat().st_size < 25_000:
+              raise SystemExit("BLOCKED_INVALID_BANNER: JPEG is suspiciously small")
+          with Image.open(asset) as image:
+              if image.format != "JPEG" or image.size != (1200, 675):
+                  raise SystemExit(f"BLOCKED_INVALID_BANNER: expected JPEG 1200x675, got {image.format} {image.size}")
+              image.verify()
+          print("BANNER_FORMAT_GATE=PASS; original image provenance still requires human confirmation")
+          PY
+
   windows-unit:
     if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feature/splash-v1.0'
     runs-on: windows-2022
