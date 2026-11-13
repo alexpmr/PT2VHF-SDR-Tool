@@ -55,7 +55,15 @@ def main():
     if args.screenshot:
         def shot():
             w._auto_levels()
-            QTimer.singleShot(1500, lambda: (w.grab().save(args.screenshot), app.quit()))
+
+            def save_and_close():
+                w.grab().save(args.screenshot)
+                # Exercise the actual MainWindow.closeEvent cleanup in the
+                # packaged-GUI diagnostic smoke, not only QApplication.quit().
+                w.close()
+                app.quit()
+
+            QTimer.singleShot(1500, save_and_close)
         QTimer.singleShot(int(10_000), shot)
     exit_code = app.exec()
     mark_qt_loop_return(exit_code)
