@@ -68,6 +68,45 @@ def validate_scalar_consistency(sample, label):
         raise ValueError(f"Inconsistent {label} scalar error summary")
 
 
+
+def sqrt_oracle_self_consistent(item):
+    """Audit the sparse Adam sqrt witness within ONE CPU report.
+
+    Matching metadata across AMD/Intel is insufficient if both reports
+    contain the same impossible count/hash/ULP combination. This verifies
+    internal consistency, not the correctness of the underlying tensors.
+    """
+    count = item["mismatch_count"]
+    maximum = item["max_ulp_error"]
+    first = item["first_mismatch"]
+    hashes_differ = item["native_sha256"] != item["oracle_sha256"]
+    if count == 0:
+        return maximum == 0 and first is None and not hashes_differ
+    if maximum < 1 or first is None or not hashes_differ:
+        return False
+    if (type(first["tensor_index"]) is not int or first["tensor_index"] < 0
+            or type(first["flat_index"]) is not int or first["flat_index"] < 0
+            or type(first["ulp_error"]) is not int or first["ulp_error"] < 1):
+        return False
+    try:
+        import struct
+        values = []
+        for key in ("native_hex", "oracle_hex"):
+            raw = first[key]
+            if type(raw) is not str:
+                return False
+            value = float.fromhex(raw)
+            if not math.isfinite(value) or value < 0 or value.hex() != raw:
+                return False
+            values.append(value)
+        bits = [struct.unpack(">Q", struct.pack(">d", value))[0]
+                for value in values]
+    except (ValueError, TypeError, OverflowError):
+        return False
+    ulp = abs(bits[0] - bits[1])
+    return 0 < ulp == first["ulp_error"] <= maximum
+
+
 def compare_reports(a, b):
     if not a.get("steps") or len(a["steps"]) != len(b.get("steps", [])):
         raise ValueError("Probe step counts differ or are empty")
@@ -222,6 +261,8 @@ def compare_reports(a, b):
                             "tensor_index", "flat_index", "native_hex", "oracle_hex", "ulp_error"
                         }):
                     raise ValueError("Invalid Adam sqrt oracle mismatch")
+            left_integrity = sqrt_oracle_self_consistent(sqrt_left)
+            right_integrity = sqrt_oracle_self_consistent(sqrt_right)
             if sqrt_left["sample_count"] != sqrt_right["sample_count"]:
                 raise ValueError("Adam sqrt oracle sample counts differ")
             sqrt_oracle_comparison = {
@@ -231,6 +272,8 @@ def compare_reports(a, b):
                 "mismatch_count_exact_match": sqrt_left["mismatch_count"] == sqrt_right["mismatch_count"],
                 "max_ulp_error_exact_match": sqrt_left["max_ulp_error"] == sqrt_right["max_ulp_error"],
                 "first_mismatch_exact_match": sqrt_left["first_mismatch"] == sqrt_right["first_mismatch"],
+                "reference_internal_consistency": left_integrity,
+                "independent_internal_consistency": right_integrity,
                 "reference_mismatch_count": sqrt_left["mismatch_count"],
                 "independent_mismatch_count": sqrt_right["mismatch_count"],
                 "reference_max_ulp_error": sqrt_left["max_ulp_error"],
@@ -269,7 +312,8 @@ def compare_reports(a, b):
         not sqrt_oracle_comparison[key] for key in (
             "oracle_exact_match", "native_exact_match",
             "mismatch_count_exact_match", "max_ulp_error_exact_match",
-            "first_mismatch_exact_match",
+            "first_mismatch_exact_match", "reference_internal_consistency",
+            "independent_internal_consistency",
         )
     )
     adam_mismatch = sqrt_mismatch or first_adam_stage is not None or any(
