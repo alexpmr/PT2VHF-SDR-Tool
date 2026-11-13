@@ -100,6 +100,31 @@ def test_manifest_rejects_duplicate_recordings(tmp_path):
         read_manifest(m,tmp_path)
 
 
+@pytest.mark.parametrize("field,value,message", [
+    ("session_id", 123, "Manifest session_id"),
+    ("session_id", True, "Manifest session_id"),
+    ("session_id", "   ", "Manifest session_id"),
+    ("device", 123, "Manifest device"),
+    ("device", False, "Manifest device"),
+    ("device", ["RTL-SDR"], "Manifest device"),
+    ("path", 123, "Manifest path"),
+    ("frequency_hz", "145650000", "Invalid frequency"),
+    ("frequency_hz", True, "Invalid frequency"),
+    ("frequency_hz", 0, "Invalid frequency"),
+    ("mode", ["AM"], "Unsupported label"),
+])
+def test_manifest_rejects_coerced_metadata_that_could_fake_rf_diversity(
+        tmp_path, field, value, message):
+    """Synthetic schema tests: do not infer SDR/session independence from coercion."""
+    make_wav(tmp_path / "a.wav")
+    m = manifest(tmp_path)
+    data = json.loads(m.read_text())
+    data["recordings"][0][field] = value
+    m.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match=message):
+        read_manifest(m, tmp_path)
+
+
 def test_manifest_rejects_session_crossing_devices(tmp_path):
     make_wav(tmp_path/"a.wav")
     make_wav(tmp_path/"b.wav")
