@@ -66,6 +66,20 @@ python scripts/prepare_iq_rf_capture.py \
 
 A ferramenta converte/centraliza o canal para **48 kS/s** e acrescenta sua identificação ao `manifest.json`. Se a gravação possuir sidecar `.iq.json` íntegro, `--center-hz` pode ser dispensado; conferir integridade e metadados. O exemplo é **apenas ilustrativo**, não informa que a estação ou a frequência foram de fato capturadas.
 
+### Integridade de tipos no manifesto (13/11/2026)
+
+O avaliador offline rejeita `session_id`, `device` e `path` que não
+sejam strings não vazias, e exige `frequency_hz` numérico finito e
+estritamente positivo (não aceita texto numérico nem booleanos). Sem esse
+controle, valores como `session_id: 123` e `device: true` seriam
+convertidos silenciosamente em texto, aparentando identidades de sessão ou
+equipamento válidas e contaminando verificações de diversidade do corpus.
+Onze testes **sintéticos de esquema** cobrem essas rejeições.
+
+**Limitação:** identificadores bem formados não comprovam sessões
+independentes, SDRs físicos distintos, frequências verdadeiras ou rótulos RF.
+A conferência externa do manifesto e das gravações permanece obrigatória.
+
 ## Auditoria de qualidade e vazamento
 
 ```bash
