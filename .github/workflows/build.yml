@@ -96,8 +96,13 @@ jobs:
           python -X faulthandler scripts/probe_qt_native_exit.py --source-root baseline-v0133 --repeats 20 --scenarios $cases --exit-modes normal
           $released133 = $LASTEXITCODE
           Write-Host "P0 focused released v0.13.3 diagnostic: exit=$released133 (0=all passed; 1=native failures)"
-          # Baseline is observational: do not hide or normalize its failures.
-          # The candidate is already a mandatory gate in the preceding step.
+          # Baseline is observational: retain the real nonzero result in the log,
+          # but do not let pwsh's implicit 'exit $LASTEXITCODE' abort later QA.
+          # Only the candidate is a mandatory gate in the preceding step.
+          if ($released133 -ne 0) {
+            Write-Warning "Historical v0.13.3 native Qt failures reproduced (exit=$released133); candidate still requires full QA."
+          }
+          $global:LASTEXITCODE = 0
       - name: P0 - continuous Qt operational soak (v0.13.2 / v0.13.3 / candidate)
         run: |
           # Same 45-second synthetic workload on both released tags and candidate.
