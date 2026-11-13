@@ -209,3 +209,20 @@ AMD × Intel. A comparação completa da v4, RF real, OOD/CW/AM, CPU/latência e
 o crash nativo Windows permanecem pendentes. Não houve novo treinamento,
 merge, alteração na main ou publicação neural. A execução do CI após estes
 commits deve ser verificada antes de considerar os novos testes aprovados.
+
+
+## CI native stack parser — 13/11/2026 (diagnóstico, não correção do crash)
+
+O parser local `scripts/ci_native_stack_summary.py` foi endurecido para não
+interpretar comandos de configuração do depurador (`sxe c0000005`) ou um
+código hexadecimal solto como exceção observada. Agora exige um registro
+explícito `Access violation - code c0000005`, `ExceptionCode:` ou
+`EXCEPTION_CODE:` e preserva escopos C++ (`Qt6Core!Classe::metodo`) nos
+símbolos sanitizados. O output continua sem endereços, caminhos ou memória.
+
+Os testes são **sintéticos de parser**, não uma nova pilha nativa capturada.
+Um relatório sem exceção ou sem frames verificados permanece inconclusivo;
+nunca usar como aprovação Windows. O último baseline verificado antes dessa
+alteração foi o [CI #613](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43431088291):
+549 passed / 2 skipped no pytest Windows, mas access violation no encerramento,
+com job obrigatório vermelho. Não repetir a instalação do CDB sem hipótese nova.
