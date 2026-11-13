@@ -187,6 +187,8 @@ class RtlSdrSource(IQSource):
         self._ctl: queue.Queue = queue.Queue()
         self._last_block = 0.0
         self._reader: threading.Thread | None = None
+        self._close_lock = threading.Lock()
+        self._close_requested = False
         self._ctl_thread: threading.Thread | None = None
         self._ctl_stop_sent = False  # one sentinel even after watchdog stops _running
         self._reader_cancel_sent = False  # idempotent cancellation, including watchdog-failed RX
@@ -388,6 +390,16 @@ class RtlSdrSource(IQSource):
             threading.Thread(target=bg, daemon=True, name="rtl-cancel").start()
 
     def close(self):
+        # UI/engine teardown may call close more than once (or concurrently).
+        # Calling librtlsdr.close twice on the same native handle is unsafe.
+        lock = getattr(self, "_close_lock", None)
+        if lock is None:  # permits lightweight object.__new__ test doubles
+            lock = threading.Lock()
+            self._close_lock = lock
+        with lock:
+            if getattr(self, "_close_requested", False):
+                return
+            self._close_requested = True
         self.stop()
         sdr = self.sdr
 
