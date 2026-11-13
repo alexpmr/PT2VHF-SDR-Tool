@@ -10,8 +10,8 @@ def probe(cpu="AMD"):
         "numpy_version": "2.4", "cpu_capability": "DEFAULT", "policy": {"threads": 1},
         "train_samples": 8400, "unknown_examples_replaced": 100,
         "requested_steps": 2,
-        "input_sha256": "x", "validation_input_sha256": "v",
-        "initial_parameters_sha256": "p", "epoch0_permutation_sha256": "perm",
+        "input_sha256": "1" * 64, "validation_input_sha256": "2" * 64,
+        "initial_parameters_sha256": "3" * 64, "epoch0_permutation_sha256": "4" * 64,
         "steps": [{"step": i, "second_conv_scalar_samples": {
                        "sample_count": 2, "observed": [3.0, 4.0],
                        "reference": [3.0, 4.0],
@@ -37,11 +37,11 @@ def probe(cpu="AMD"):
                        "reference": [1.0, 2.0],
                        "max_abs_error": 0.0, "mean_abs_error": 0.0},
                    "layer_forward_sha256": {
-                       "00_Conv1d": "conv", "01_ReLU": "relu"},
-                   "indices_sha256": "idx",
-                   "batch_sha256": "batch", "forward_logits_sha256": "logits",
-                   "loss_sha256": "loss", "gradients_sha256": "grad",
-                   "updated_parameters_sha256": "weights"} for i in range(2)],
+                       "00_Conv1d": "c" * 64, "01_ReLU": "d" * 64},
+                   "indices_sha256": "5" * 64,
+                   "batch_sha256": "6" * 64, "forward_logits_sha256": "7" * 64,
+                   "loss_sha256": "8" * 64, "gradients_sha256": "9" * 64,
+                   "updated_parameters_sha256": "a" * 64} for i in range(2)],
     }
 
 
@@ -54,8 +54,8 @@ def test_same_cpu_is_inconclusive():
 
 def test_first_divergence_is_reported():
     a, b = probe(), probe("Intel")
-    b["steps"][1]["gradients_sha256"] = "changed"
-    b["steps"][1]["updated_parameters_sha256"] = "also changed"
+    b["steps"][1]["gradients_sha256"] = "b" * 64
+    b["steps"][1]["updated_parameters_sha256"] = "e" * 64
     result = compare_reports(a, b)
     assert result["first_divergent_stage"] == "steps[1].gradients_sha256"
     assert result["conclusion"] == "NUMERICAL_DIVERGENCE"
@@ -79,8 +79,8 @@ def test_invalid_steps_fail_closed():
 
 def test_first_divergent_layer_precedes_logits_and_gradients():
     a, b = probe(), probe("Intel")
-    b["steps"][0]["layer_forward_sha256"]["00_Conv1d"] = "changed"
-    b["steps"][0]["forward_logits_sha256"] = "changed"
+    b["steps"][0]["layer_forward_sha256"]["00_Conv1d"] = "b" * 64
+    b["steps"][0]["forward_logits_sha256"] = "b" * 64
     result = compare_reports(a, b)
     assert result["first_divergent_stage"] == "steps[0].layers.00_Conv1d"
     assert result["cross_cpu_tested"] is True
@@ -88,7 +88,7 @@ def test_first_divergent_layer_precedes_logits_and_gradients():
 
 def test_layer_order_mismatch_fails_closed():
     a, b = probe(), probe("Intel")
-    b["steps"][0]["layer_forward_sha256"] = {"00_Conv1d": "conv"}
+    b["steps"][0]["layer_forward_sha256"] = {"00_Conv1d": "c" * 64}
     with pytest.raises(ValueError, match="layer ordering"):
         compare_reports(a, b)
 
@@ -118,8 +118,8 @@ def test_malformed_or_nonfinite_scalar_samples_fail_closed():
 
 def test_second_conv_scalar_comparison_reports_drift():
     a, b = probe(), probe("Intel")
-    a["steps"][0]["layer_forward_sha256"]["02_Conv1d"] = "original"
-    b["steps"][0]["layer_forward_sha256"]["02_Conv1d"] = "different"
+    a["steps"][0]["layer_forward_sha256"]["02_Conv1d"] = "a" * 64
+    b["steps"][0]["layer_forward_sha256"]["02_Conv1d"] = "b" * 64
     sample = b["steps"][0]["second_conv_scalar_samples"]
     sample["observed"][0] += 0.00002
     sample["max_abs_error"] = abs(sample["observed"][0] - sample["reference"][0])
@@ -132,8 +132,8 @@ def test_second_conv_scalar_comparison_reports_drift():
 
 def test_float64_reference_exact_match_is_independent_of_float32_divergence():
     a, b = probe(), probe("Intel")
-    a["steps"][0]["layer_forward_sha256"]["02_Conv1d"] = "original"
-    b["steps"][0]["layer_forward_sha256"]["02_Conv1d"] = "changed"
+    a["steps"][0]["layer_forward_sha256"]["02_Conv1d"] = "a" * 64
+    b["steps"][0]["layer_forward_sha256"]["02_Conv1d"] = "b" * 64
     result = compare_reports(a, b)
     assert result["first_divergent_stage"] == "steps[0].layers.02_Conv1d"
     assert result["second_conv_float64_comparison"]["reference_exact_match"] is True
@@ -153,7 +153,7 @@ def test_float64_reference_mismatch_and_nonfinite_error_fail_closed():
 
 def test_float64_first_step_matches_despite_float32_layer_divergence():
     a, b = probe(), probe("Intel")
-    b["steps"][0]["layer_forward_sha256"]["01_ReLU"] = "different"
+    b["steps"][0]["layer_forward_sha256"]["01_ReLU"] = "b" * 64
     result = compare_reports(a, b)
     assert result["conclusion"] == "NUMERICAL_DIVERGENCE"
     assert result["float64_first_step_exact_match"] is True
@@ -579,3 +579,35 @@ def test_consistent_adam_sqrt_mismatch_witness_is_not_a_false_metadata_error():
     assert evidence["reference_internal_consistency"] is True
     assert evidence["independent_internal_consistency"] is True
     assert result["conclusion"] == "FIRST_STEPS_MATCH_CROSS_CPU_NOT_FULL_REPLAY"
+
+
+@pytest.mark.parametrize("field", [
+    "input_sha256", "validation_input_sha256",
+    "initial_parameters_sha256", "epoch0_permutation_sha256",
+])
+@pytest.mark.parametrize("bad", [None, True, "x" * 64, "A" * 64, "0" * 63])
+def test_matching_malformed_global_hashes_cannot_pass_cpu_gate(field, bad):
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    a[field] = b[field] = bad
+    with pytest.raises(ValueError, match="Invalid SHA-256"):
+        compare_reports(a, b)
+
+
+@pytest.mark.parametrize("field", [
+    "indices_sha256", "batch_sha256", "forward_logits_sha256",
+    "loss_sha256", "gradients_sha256", "updated_parameters_sha256",
+])
+def test_matching_malformed_step_hashes_cannot_pass_cpu_gate(field):
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    a["steps"][1][field] = b["steps"][1][field] = "not-a-digest"
+    with pytest.raises(ValueError, match="Invalid SHA-256"):
+        compare_reports(a, b)
+
+
+@pytest.mark.parametrize("bad", [None, True, "G" * 64, "f" * 65])
+def test_matching_malformed_layer_hashes_cannot_pass_cpu_gate(bad):
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    a["steps"][0]["layer_forward_sha256"]["00_Conv1d"] = bad
+    b["steps"][0]["layer_forward_sha256"]["00_Conv1d"] = bad
+    with pytest.raises(ValueError, match="Invalid SHA-256"):
+        compare_reports(a, b)
