@@ -14,7 +14,7 @@
 1. Utilizar **SDR** com gravação I/Q complexa, em **WAV estéreo PCM16** (I canal esquerdo, Q direito); não gravar áudio demodulado ou MP3.
 2. Anotar **dispositivo, data/hora, frequência central da captura, frequência do sinal, taxa de amostragem, ganho/AGC, antena, modo comprovado e sessão**. O rótulo deve ser atribuído pelo operador, não pelo classificador.
 3. Registrar **CW com portadora e chaveamento verificável**, **AM**, **NFM**, **USB**, **LSB** e **UNKNOWN** (ruído, portadora sem modulação, interferência e sinais fora das classes); para portadora não modulada, verificar com referência independente que não é espúrio DC do receptor.
-4. Fazer **ao menos três sessões independentes** e usar **ao menos dois SDRs diferentes**, conforme aviso já implementado no avaliador. Esse é um mínimo de cobertura operacional, **não** uma garantia estatística.
+4. Planejar a coleta por **split, SDR, modo e sessão**, com **pelo menos dois SDRs físicos distintos no holdout**. O gate atual exige **duas sessões distintas para cada combinação de SDR × CW/AM/NFM/USB/LSB/UNKNOWN no holdout**, além de pelo menos duas sessões conhecidas e duas UNKNOWN e de todas as classes conhecidas globalmente na calibração. Sessões de modos conhecidos podem compartilhar um ID somente quando a proveniência justificar; UNKNOWN deve ficar em sessões separadas. Os IDs do holdout não podem aparecer na calibração. **Três sessões no total não satisfazem o gate atual**; nenhum desses mínimos garante poder estatístico ou autenticidade RF.
 5. Dividir treino, ajustes de limiar e avaliação **por sessão e dispositivo**, evitando que segmentos da mesma transmissão apareçam em conjuntos diferentes. Nunca treinar em dados reservados para avaliação cega.
 6. Guardar os WAVs RF brutos e o manifesto **fora do GitHub**; não incluir identificadores pessoais nem conteúdo de comunicações particulares nos relatórios públicos. Confirmar licitude/consentimento quando necessário.
 
@@ -130,11 +130,17 @@ o número de combinações esperadas e ausentes, sem nomes dos equipamentos.
 A calibração continua exigindo todas as classes globalmente; a cobertura
 cruzada é requisito específico do holdout independente.
 
-**Limites:** presença não significa representatividade estatística.
-Uma única janela por combinação ainda é insuficiente para estimar recall
-ou FAR com confiança. As identidades dos SDRs, a independência dos
-rótulos e a origem RF precisam ser auditadas externamente. Esta mudança
-foi testada com dados sintéticos e não constitui homologação RF.
+**Replicação exigida no holdout:** cada célula SDR × modo (incluindo UNKNOWN)
+precisa conter **ao menos duas sessões distintas**, sob o bloqueio
+`HOLDOUT_INSUFFICIENT_CLASS_DEVICE_SESSION_DIVERSITY`. Janelas adicionais
+na mesma sessão não substituem replicação. A calibração exige todas as cinco
+classes conhecidas globalmente, mas não essa matriz cruzada de replicação.
+
+**Limites:** presença e replicação mínima não significam representatividade
+estatística. A rejeição OOD é também avaliada pela pior combinação SDR × sessão,
+sem expor os identificadores no relatório. As identidades dos SDRs, a
+independência das sessões, os rótulos e a origem RF precisam ser auditados
+externamente. Os testes dessa política são sintéticos, não homologação RF.
 
 ## Portões para revisão do PR
 
