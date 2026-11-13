@@ -116,7 +116,44 @@ def validate_sha256(value, label):
         raise ValueError(f"Invalid SHA-256 for {label}")
 
 
+
+def validate_probe_environment(report):
+    """Reject matching but invalid portable-CPU provenance before comparing hashes.
+
+    The first-step diagnostic always requests the controlled v4 policy.
+    Two equally malformed JSON environments cannot certify cross-vendor QA.
+    This validates declared metadata, not the physical identity of a runner.
+    """
+    for key in ("cpu_model", "cpu_capability", "python_version",
+                "torch_version", "numpy_version"):
+        value = report.get(key)
+        if type(value) is not str or not value.strip():
+            raise ValueError(f"Invalid CPU probe environment {key}")
+    samples = report.get("train_samples")
+    replaced = report.get("unknown_examples_replaced")
+    if type(samples) is not int or samples != 8400:
+        raise ValueError("Invalid CPU probe train_samples for v4")
+    if type(replaced) is not int or not 0 <= replaced <= samples:
+        raise ValueError("Invalid CPU probe unknown_examples_replaced")
+    policy = report.get("policy")
+    expected = {
+        "portable_cpu": True,
+        "threads": 1,
+        "mkldnn_enabled": False,
+        "deterministic_algorithms": True,
+        "aten_cpu_capability": "default",
+        "mkl_cbwr": "COMPATIBLE",
+    }
+    if type(policy) is not dict or set(policy) != set(expected):
+        raise ValueError("Invalid CPU probe portable policy schema")
+    for key, expected_value in expected.items():
+        if type(policy[key]) is not type(expected_value) or policy[key] != expected_value:
+            raise ValueError(f"Invalid CPU probe portable policy {key}")
+
+
 def compare_reports(a, b):
+    for report in (a, b):
+        validate_probe_environment(report)
     if not a.get("steps") or len(a["steps"]) != len(b.get("steps", [])):
         raise ValueError("Probe step counts differ or are empty")
     # A report claiming four requested steps must actually contain four.
