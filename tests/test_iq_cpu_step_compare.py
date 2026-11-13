@@ -7,7 +7,10 @@ from scripts.compare_iq_cpu_step import compare_reports, DOUBLE_STEP, ADAM_STAGE
 def probe(cpu="AMD"):
     return {
         "cpu_model": cpu, "python_version": "3.11", "torch_version": "2.15",
-        "numpy_version": "2.4", "cpu_capability": "DEFAULT", "policy": {"threads": 1},
+        "numpy_version": "2.4", "cpu_capability": "DEFAULT", "policy": {
+            "portable_cpu": True, "threads": 1, "mkldnn_enabled": False,
+            "deterministic_algorithms": True, "aten_cpu_capability": "default",
+            "mkl_cbwr": "COMPATIBLE"},
         "train_samples": 8400, "unknown_examples_replaced": 100,
         "requested_steps": 2,
         "input_sha256": "1" * 64, "validation_input_sha256": "2" * 64,
@@ -63,7 +66,7 @@ def test_first_divergence_is_reported():
 
 def test_environment_mismatch_is_not_a_valid_replay():
     a, b = probe(), probe("Intel")
-    b["policy"]["threads"] = 2
+    b["torch_version"] = "2.16"
     assert compare_reports(a, b)["conclusion"] == "ENVIRONMENT_MISMATCH"
 
 
@@ -611,3 +614,57 @@ def test_matching_malformed_layer_hashes_cannot_pass_cpu_gate(bad):
     b["steps"][0]["layer_forward_sha256"]["00_Conv1d"] = bad
     with pytest.raises(ValueError, match="Invalid SHA-256"):
         compare_reports(a, b)
+
+
+@pytest.mark.parametrize("field,bad", [
+    ("cpu_model", None), ("cpu_model", ""),
+    ("cpu_capability", False), ("cpu_capability", ""),
+    ("python_version", None), ("torch_version", 215),
+    ("numpy_version", ""), ("train_samples", True),
+    ("train_samples", "8400"), ("train_samples", 8399),
+    ("unknown_examples_replaced", False),
+    ("unknown_examples_replaced", -1),
+    ("unknown_examples_replaced", 8401),
+    ("unknown_examples_replaced", "100"),
+])
+def test_identically_invalid_cpu_environment_never_passes(field, bad):
+    """Equal corrupted metadata on both hosts must not produce a green gate."""
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    a[field] = b[field] = bad
+    with pytest.raises(ValueError, match="CPU probe"):
+        compare_reports(a, b)
+
+
+@pytest.mark.parametrize("field,bad", [
+    ("portable_cpu", False),
+    ("portable_cpu", 1),
+    ("threads", True),
+    ("threads", 2),
+    ("mkldnn_enabled", True),
+    ("deterministic_algorithms", False),
+    ("aten_cpu_capability", "avx2"),
+    ("mkl_cbwr", ""),
+])
+def test_identically_invalid_portable_cpu_policy_never_passes(field, bad):
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    a["policy"][field] = b["policy"][field] = bad
+    with pytest.raises(ValueError, match="CPU probe portable policy"):
+        compare_reports(a, b)
+
+
+def test_missing_or_extra_portable_policy_fields_fail_closed():
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    for report in (a, b):
+        del report["policy"]["mkl_cbwr"]
+    with pytest.raises(ValueError, match="portable policy schema"):
+        compare_reports(a, b)
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    for report in (a, b):
+        report["policy"]["unverified"] = True
+    with pytest.raises(ValueError, match="portable policy schema"):
+        compare_reports(a, b)
+
+
+def test_valid_portable_probe_environment_keeps_bounded_cross_vendor_result():
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    assert compare_reports(a, b)["conclusion"] == "FIRST_STEPS_MATCH_CROSS_CPU_NOT_FULL_REPLAY"
