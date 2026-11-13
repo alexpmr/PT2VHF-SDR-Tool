@@ -164,3 +164,11 @@ estatístico suficiente para homologar FAR, recall ou latência. A identidade
 dos dispositivos, a independência temporal e os rótulos continuam sujeitos
 a auditoria externa. O teste usa WAVs e predições fabricadas, sem RF real.
 Não autoriza merge do PR #2, instalador neural nem publicação.
+
+## UNKNOWN por combinação SDR × sessão (12/11/2026)
+
+O gate agora calcula também `unknown_worst_device_session_false_accept_rate` e `unknown_device_session_cells_observed`, usando a pior taxa de falsa aceitação entre as células **SDR × sessão** presentes nos dados. Esse limite é aplicado na seleção de limiar na calibração e na avaliação do holdout, além das verificações globais, por SDR e por sessão. Não expõe identificadores de SDR ou sessão no relatório.
+
+**Falha demonstrada apenas por teste sintético:** uma sessão com 19 janelas UNKNOWN corretas no SDR-A e uma falsa aceitação no SDR-B tinha taxa agregada por sessão de 5%; outras 19 janelas corretas do SDR-B reduziam sua taxa agregada por dispositivo a 5%. Ambas ficavam abaixo do limite ilustrativo de 10%, apesar de a célula SDR-B × sessão apresentar **100%** de falsa aceitação. O novo critério reprova esse caso. Um controle com todas as janelas UNKNOWN corretamente rejeitadas permanece elegível. A API de taxas com linhas legadas sem metadados de SDR retorna `null` para essas novas métricas; não simula identidade de dispositivo.
+
+Esse teste não constitui medição de RF real, não resolve a identificabilidade CW versus portadora, não substitui rótulos independentes nem comprova estabilidade Windows. As células podem conter janelas temporalmente correlacionadas; limites estatísticos e cobertura de sessões/dispositivos continuam obrigatórios antes de qualquer promoção operacional.
