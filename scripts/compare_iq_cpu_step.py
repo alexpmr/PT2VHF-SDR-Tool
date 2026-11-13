@@ -104,7 +104,8 @@ def compare_reports(a, b):
             for label in ("observed", "reference"):
                 if len(ls[label]) != count or len(rs[label]) != count:
                     raise ValueError("First Conv1d scalar sample lengths differ")
-                if not all(math.isfinite(float(v)) for v in ls[label] + rs[label]):
+                if not all(type(v) in (int, float) and math.isfinite(v)
+                           for v in ls[label] + rs[label]):
                     raise ValueError("Non-finite first Conv1d scalar sample")
                 matches[f"steps[0].first_conv_scalar_{label}"] = ls[label] == rs[label]
             for sample in (ls, rs):
@@ -127,7 +128,8 @@ def compare_reports(a, b):
             for label in ("observed", "reference"):
                 if len(sl[label]) != scount or len(sr[label]) != scount:
                     raise ValueError("Second Conv1d scalar sample lengths differ")
-                if not all(math.isfinite(float(v)) for v in sl[label] + sr[label]):
+                if not all(type(v) in (int, float) and math.isfinite(v)
+                           for v in sl[label] + sr[label]):
                     raise ValueError("Non-finite second Conv1d scalar sample")
                 matches[f"steps[0].second_conv_scalar_{label}"] = sl[label] == sr[label]
             for sample in (sl, sr):
