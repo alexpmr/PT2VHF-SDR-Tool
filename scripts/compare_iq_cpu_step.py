@@ -48,6 +48,26 @@ def validate_scalar_summary(sample, label):
     return count
 
 
+def validate_scalar_consistency(sample, label):
+    """Verify reported sparse Conv1d error statistics against the actual samples.
+
+    The probe computes max and mean over precisely these observed/reference
+    pairs. Comparing only scalar metadata could falsely accept two reports
+    carrying the same inconsistent values.
+    """
+    observed, reference = sample["observed"], sample["reference"]
+    if any(type(value) not in (int, float) or not math.isfinite(value)
+           for value in observed + reference):
+        raise ValueError(f"Invalid {label} scalar sample value")
+    errors = [abs(left - right) for left, right in zip(observed, reference)]
+    if (not math.isclose(max(errors), sample["max_abs_error"],
+                         rel_tol=1e-12, abs_tol=1e-12)
+            or not math.isclose(sum(errors) / len(errors),
+                                sample["mean_abs_error"],
+                                rel_tol=1e-12, abs_tol=1e-12)):
+        raise ValueError(f"Inconsistent {label} scalar error summary")
+
+
 def compare_reports(a, b):
     if not a.get("steps") or len(a["steps"]) != len(b.get("steps", [])):
         raise ValueError("Probe step counts differ or are empty")
@@ -87,6 +107,8 @@ def compare_reports(a, b):
                 if not all(math.isfinite(float(v)) for v in ls[label] + rs[label]):
                     raise ValueError("Non-finite first Conv1d scalar sample")
                 matches[f"steps[0].first_conv_scalar_{label}"] = ls[label] == rs[label]
+            for sample in (ls, rs):
+                validate_scalar_consistency(sample, "first Conv1d")
             obs_diff = [abs(x - y) for x, y in zip(ls["observed"], rs["observed"])]
             ref_diff = [abs(x - y) for x, y in zip(ls["reference"], rs["reference"])]
             first_conv_comparison = {
@@ -108,6 +130,8 @@ def compare_reports(a, b):
                 if not all(math.isfinite(float(v)) for v in sl[label] + sr[label]):
                     raise ValueError("Non-finite second Conv1d scalar sample")
                 matches[f"steps[0].second_conv_scalar_{label}"] = sl[label] == sr[label]
+            for sample in (sl, sr):
+                validate_scalar_consistency(sample, "second Conv1d")
             second_obs_diff = [abs(x - y) for x, y in zip(sl["observed"], sr["observed"])]
             second_ref_diff = [abs(x - y) for x, y in zip(sl["reference"], sr["reference"])]
             second_conv_comparison = {

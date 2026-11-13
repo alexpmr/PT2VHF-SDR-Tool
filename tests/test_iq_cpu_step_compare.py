@@ -95,7 +95,10 @@ def test_layer_order_mismatch_fails_closed():
 
 def test_scalar_sample_comparison_quantifies_float_differences():
     a, b = probe(), probe("Intel")
-    b["steps"][0]["first_conv_scalar_samples"]["observed"][1] += 0.00001
+    sample = b["steps"][0]["first_conv_scalar_samples"]
+    sample["observed"][1] += 0.00001
+    sample["max_abs_error"] = abs(sample["observed"][1] - sample["reference"][1])
+    sample["mean_abs_error"] = sample["max_abs_error"] / sample["sample_count"]
     result = compare_reports(a, b)
     assert result["first_divergent_stage"] == "steps[0].first_conv_scalar_observed"
     assert abs(result["first_conv_scalar_comparison"]["sampled_observed_max_abs_diff"] - 0.00001) < 1e-10
@@ -117,7 +120,10 @@ def test_second_conv_scalar_comparison_reports_drift():
     a, b = probe(), probe("Intel")
     a["steps"][0]["layer_forward_sha256"]["02_Conv1d"] = "original"
     b["steps"][0]["layer_forward_sha256"]["02_Conv1d"] = "different"
-    b["steps"][0]["second_conv_scalar_samples"]["observed"][0] += 0.00002
+    sample = b["steps"][0]["second_conv_scalar_samples"]
+    sample["observed"][0] += 0.00002
+    sample["max_abs_error"] = abs(sample["observed"][0] - sample["reference"][0])
+    sample["mean_abs_error"] = sample["max_abs_error"] / sample["sample_count"]
     result = compare_reports(a, b)
     assert result["first_divergent_stage"] == "steps[0].layers.02_Conv1d"
     assert abs(result["second_conv_scalar_comparison"]["sampled_observed_max_abs_diff"] - 0.00002) < 1e-10
@@ -405,3 +411,34 @@ def test_cpu_probe_rejects_scalar_mean_exceeding_max_and_boolean_count(layer):
     b["steps"][0][layer]["sample_count"] = True
     with pytest.raises(ValueError, match="sample count"):
         compare_reports(a, b)
+
+
+@pytest.mark.parametrize("layer", ["first_conv_scalar_samples", "second_conv_scalar_samples"])
+def test_matching_inconsistent_scalar_reports_cannot_pass_cross_cpu(layer):
+    """Two identically corrupted reports must not certify AMD x Intel agreement."""
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    for report in (a, b):
+        report["steps"][0][layer]["observed"][0] += 0.25
+        # The zero-valued summaries are now inconsistent with their samples.
+    with pytest.raises(ValueError, match="Inconsistent .* scalar error summary"):
+        compare_reports(a, b)
+
+
+@pytest.mark.parametrize("layer", ["first_conv_scalar_samples", "second_conv_scalar_samples"])
+@pytest.mark.parametrize("bad_value", [True, "1.0", None])
+def test_cpu_probe_rejects_non_numeric_scalar_samples(layer, bad_value):
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    b["steps"][0][layer]["observed"][0] = bad_value
+    with pytest.raises(ValueError, match="scalar sample"):
+        compare_reports(a, b)
+
+
+@pytest.mark.parametrize("layer", ["first_conv_scalar_samples", "second_conv_scalar_samples"])
+def test_cpu_probe_accepts_consistent_nonzero_scalar_error(layer):
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    sample = b["steps"][0][layer]
+    sample["observed"][0] += 0.125
+    sample["max_abs_error"] = 0.125
+    sample["mean_abs_error"] = 0.0625
+    result = compare_reports(a, b)
+    assert result["conclusion"] == "NUMERICAL_DIVERGENCE"

@@ -93,3 +93,18 @@ uma comparação verde de primeiros passos a partir de metadados inválidos.
 Testes usam somente relatórios sintéticos fabricados; não são medições de
 processadores físicos nem validação RF. A reprodução integral de 22 épocas
 e a estabilidade nativa Windows continuam bloqueantes.
+
+
+## Coerência amostral dos resumos Conv1d (13/11/2026)
+
+O diagnóstico `conv1d_scalar_samples()` calcula máximo e média dos erros
+**exatamente sobre as amostras observadas e de referência** registradas.
+O comparador agora recalcula ambas as estatísticas em cada relatório e
+rejeita inconsistências, mesmo quando AMD e Intel fornecem metadados
+igualmente incorretos. Valores booleanos, texto ou nulos nas amostras
+também são recusados. Testes incluem controles positivos com erros finitos
+e coerentes. A tolerância de comparação é exclusivamente numérica
+(`rel_tol=1e-12`, `abs_tol=1e-12`), não um limiar de desempenho RF.
+
+Isso corrige integridade de evidência **sintética**; não reproduz as 22
+épocas AMD × Intel nem resolve a falha de encerramento nativo Windows.
