@@ -228,6 +228,9 @@ def compare_reports(a, b):
                 "sample_count": sqrt_left["sample_count"],
                 "oracle_exact_match": sqrt_left["oracle_sha256"] == sqrt_right["oracle_sha256"],
                 "native_exact_match": sqrt_left["native_sha256"] == sqrt_right["native_sha256"],
+                "mismatch_count_exact_match": sqrt_left["mismatch_count"] == sqrt_right["mismatch_count"],
+                "max_ulp_error_exact_match": sqrt_left["max_ulp_error"] == sqrt_right["max_ulp_error"],
+                "first_mismatch_exact_match": sqrt_left["first_mismatch"] == sqrt_right["first_mismatch"],
                 "reference_mismatch_count": sqrt_left["mismatch_count"],
                 "independent_mismatch_count": sqrt_right["mismatch_count"],
                 "reference_max_ulp_error": sqrt_left["max_ulp_error"],
@@ -258,8 +261,17 @@ def compare_reports(a, b):
         key: next((i for i, ok in enumerate(flags) if not ok), None)
         for key, flags in adam_parameter_matches.items()
     }
-    sqrt_mismatch = (not sqrt_oracle_comparison["oracle_exact_match"]
-                     or not sqrt_oracle_comparison["native_exact_match"])
+    # Hashes alone do not certify the native-vs-oracle diagnostic: two
+    # reports can have identical hashes but contradictory mismatch metadata.
+    # Treat that disagreement as a numerical diagnostic divergence, never a
+    # cross-vendor green gate. This does not establish RF or full replay QA.
+    sqrt_mismatch = any(
+        not sqrt_oracle_comparison[key] for key in (
+            "oracle_exact_match", "native_exact_match",
+            "mismatch_count_exact_match", "max_ulp_error_exact_match",
+            "first_mismatch_exact_match",
+        )
+    )
     adam_mismatch = sqrt_mismatch or first_adam_stage is not None or any(
         value is not None for value in first_adam_parameters.values())
     env_ok = all(a[key] == b[key] for key in ENV)

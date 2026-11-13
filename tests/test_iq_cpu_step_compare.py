@@ -490,3 +490,30 @@ def test_cpu_float64_reference_accepts_valid_nonzero_error_metadata():
     b["steps"][0]["second_conv_float64_reference"]["mean_abs_error"] = 0.0625
     result = compare_reports(a, b)
     assert result["conclusion"] == "FIRST_STEPS_MATCH_CROSS_CPU_NOT_FULL_REPLAY"
+
+
+@pytest.mark.parametrize("field,value,match_field", [
+    ("mismatch_count", 1, "mismatch_count_exact_match"),
+    ("max_ulp_error", 1, "max_ulp_error_exact_match"),
+    ("first_mismatch", {
+        "tensor_index": 0, "flat_index": 0,
+        "native_hex": "0x1.0000000000001p+0",
+        "oracle_hex": "0x1.0000000000000p+0",
+        "ulp_error": 1,
+    }, "first_mismatch_exact_match"),
+])
+def test_sqrt_oracle_metadata_drift_blocks_false_cross_vendor_pass(
+        field, value, match_field):
+    """Matching digests cannot override contradictory sampled-sqrt metadata.
+
+    These are deliberately malformed synthetic reports, not CPU measurements.
+    """
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    b["steps"][0]["float64_first_step"]["adam_sqrt_oracle"][field] = value
+    result = compare_reports(a, b)
+    assert result["cross_vendor_tested"] is True
+    assert result["first_divergent_stage"] is None
+    assert result["adam_sqrt_oracle_comparison"]["oracle_exact_match"] is True
+    assert result["adam_sqrt_oracle_comparison"]["native_exact_match"] is True
+    assert result["adam_sqrt_oracle_comparison"][match_field] is False
+    assert result["conclusion"] == "NUMERICAL_DIVERGENCE"
