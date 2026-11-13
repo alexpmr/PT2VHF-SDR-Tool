@@ -31,6 +31,23 @@ def cpu_vendor(model):
     return "amd" if amd else "intel"
 
 
+def validate_scalar_summary(sample, label):
+    """Reject malformed scalar diagnostics before comparing CPU reports.
+
+    These are consistency checks on synthetic probe metadata, not RF accuracy.
+    """
+    count = sample.get("sample_count")
+    if type(count) is not int or count < 1:
+        raise ValueError(f"Invalid {label} scalar sample count")
+    for metric in ("max_abs_error", "mean_abs_error"):
+        value = sample.get(metric)
+        if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+            raise ValueError(f"Invalid {label} scalar {metric}")
+    if sample["mean_abs_error"] > sample["max_abs_error"]:
+        raise ValueError(f"Invalid {label} scalar mean exceeds maximum")
+    return count
+
+
 def compare_reports(a, b):
     if not a.get("steps") or len(a["steps"]) != len(b.get("steps", [])):
         raise ValueError("Probe step counts differ or are empty")
@@ -61,8 +78,8 @@ def compare_reports(a, b):
         matches.update({f"steps[{i}].{key}": left[key] == right[key] for key in STEP})
         if i == 0:
             ls, rs = left["first_conv_scalar_samples"], right["first_conv_scalar_samples"]
-            count = ls["sample_count"]
-            if count < 1 or count != rs["sample_count"]:
+            count = validate_scalar_summary(ls, "first Conv1d")
+            if count != validate_scalar_summary(rs, "first Conv1d"):
                 raise ValueError("First Conv1d scalar sample counts differ")
             for label in ("observed", "reference"):
                 if len(ls[label]) != count or len(rs[label]) != count:
@@ -82,8 +99,8 @@ def compare_reports(a, b):
                 "scope": "Sparse first-minibatch samples; exact layer hashes still gate",
             }
             sl, sr = left["second_conv_scalar_samples"], right["second_conv_scalar_samples"]
-            scount = sl["sample_count"]
-            if scount < 1 or scount != sr["sample_count"]:
+            scount = validate_scalar_summary(sl, "second Conv1d")
+            if scount != validate_scalar_summary(sr, "second Conv1d"):
                 raise ValueError("Second Conv1d scalar sample counts differ")
             for label in ("observed", "reference"):
                 if len(sl[label]) != scount or len(sr[label]) != scount:
