@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import math
+from numbers import Real
 import wave
 from pathlib import Path
 
@@ -114,9 +115,15 @@ def observations(rows, model, max_windows, *, accounting=None):
                     raise
                 rejected_total += 1
                 continue
-            scores = {name: float(value) for name, value in result.probabilities.items()}
-            if set(scores) != set(CLASSES):
+            probabilities = result.probabilities
+            if not isinstance(probabilities, dict) or set(probabilities) != set(CLASSES):
                 raise ValueError("Model label mismatch")
+            # Do not silently coerce booleans or numeric strings to softmax
+            # probabilities. A malformed model must never pass the RF/OOD gate.
+            if any(isinstance(value, bool) or not isinstance(value, Real)
+                   for value in probabilities.values()):
+                raise ValueError("Invalid model probability values")
+            scores = {name: float(value) for name, value in probabilities.items()}
             if not all(math.isfinite(v) and 0 <= v <= 1 for v in scores.values()):
                 raise ValueError("Invalid model probability")
             # UNKNOWN threshold selection assumes a normalized softmax.
