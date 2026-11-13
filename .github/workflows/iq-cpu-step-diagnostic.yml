@@ -1,15 +1,9 @@
 name: Experimental IQ CPU first-step diagnosis (synthetic)
+# Deliberate, bounded diagnosis only. Hosted ubuntu-latest runners do not
+# guarantee an AMD/Intel pair; repeated pushes would rerun expensive Torch
+# setup without providing new cross-vendor evidence.
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - feature/iq-signal-classifier
-    paths:
-      - 'scripts/diagnose_iq_cpu_step.py'
-      - 'scripts/compare_iq_cpu_step.py'
-      - 'tests/test_iq_cpu_step_compare.py'
-      - 'tests/test_iq_cpu_conv_reference.py'
-      - '.github/workflows/iq-cpu-step-diagnostic.yml'
 jobs:
   reference:
     runs-on: ubuntu-latest
