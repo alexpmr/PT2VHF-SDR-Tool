@@ -163,7 +163,7 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100,
             if not isinstance(probabilities, dict) or set(probabilities) != set(CLASSES):
                 raise ValueError("Invalid model probability labels")
             if any(isinstance(v, (bool, str)) or
-                   not isinstance(v, (int, float, np.number))
+                   not isinstance(v, (int, float, np.integer, np.floating))
                    for v in probabilities.values()):
                 raise ValueError("Invalid model probability values")
             scores = {label_name: float(value)
@@ -173,7 +173,7 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100,
                                         rel_tol=0.0, abs_tol=1e-4)):
                 raise ValueError("Invalid model probabilities: expected normalized softmax")
             if (isinstance(result.confidence, (bool, str))
-                    or not isinstance(result.confidence, (int, float, np.number))
+                    or not isinstance(result.confidence, (int, float, np.integer, np.floating))
                     or not math.isfinite(float(result.confidence))
                     or not 0 <= float(result.confidence) <= 1):
                 raise ValueError("Invalid model confidence")
