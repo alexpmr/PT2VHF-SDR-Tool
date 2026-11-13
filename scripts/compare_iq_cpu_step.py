@@ -14,8 +14,21 @@ ADAM_STAGES = ("first_moment", "second_moment", "sqrt_second_moment",
                "denominator", "normalized_update", "manual_updated_parameters")
 ADAM_KEYS = ("adam_manual_stage_sha256", "adam_sqrt_oracle", "adam_manual_parameter_sha256",
              "adam_native_parameter_sha256")
-ENV = ("python_version", "torch_version", "numpy_version", "policy",
+ENV = ("python_version", "torch_version", "numpy_version", "cpu_capability", "policy",
        "train_samples", "unknown_examples_replaced", "requested_steps")
+
+
+
+def cpu_vendor(model):
+    """Conservative CPU-vendor inference; never infer AMD/Intel from different model strings."""
+    if not isinstance(model, str):
+        return "unknown"
+    name = model.casefold()
+    amd = any(token in name for token in ("amd", "epyc", "ryzen"))
+    intel = any(token in name for token in ("intel", "xeon", "pentium", "celeron"))
+    if amd == intel:
+        return "unknown"
+    return "amd" if amd else "intel"
 
 
 def compare_reports(a, b):
@@ -188,16 +201,26 @@ def compare_reports(a, b):
     adam_mismatch = sqrt_mismatch or first_adam_stage is not None or any(
         value is not None for value in first_adam_parameters.values())
     env_ok = all(a[key] == b[key] for key in ENV)
-    cross_cpu = (a["cpu_model"] != b["cpu_model"]
-                 and "unknown" not in (a["cpu_model"], b["cpu_model"]))
+    cross_cpu = a["cpu_model"] != b["cpu_model"]
+    reference_vendor = cpu_vendor(a["cpu_model"])
+    independent_vendor = cpu_vendor(b["cpu_model"])
+    cross_vendor = (reference_vendor != "unknown"
+                    and independent_vendor != "unknown"
+                    and reference_vendor != independent_vendor)
     conclusion = ("ENVIRONMENT_MISMATCH" if not env_ok else
                   "NUMERICAL_DIVERGENCE" if first or float64_first or adam_mismatch else
                   "SAME_CPU_ONLY_INCONCLUSIVE" if not cross_cpu else
+                  "CPU_VENDOR_UNKNOWN_INCONCLUSIVE" if "unknown" in (
+                      reference_vendor, independent_vendor) else
+                  "SAME_VENDOR_ONLY_INCONCLUSIVE" if not cross_vendor else
                   "FIRST_STEPS_MATCH_CROSS_CPU_NOT_FULL_REPLAY")
     return {
         "scope": "Bounded synthetic v4 first-step diagnostic; no full training or RF",
         "reference_cpu": a["cpu_model"], "independent_cpu": b["cpu_model"],
-        "cross_cpu_tested": cross_cpu, "environment_exact_match": env_ok,
+        "cross_cpu_tested": cross_cpu, "cross_vendor_tested": cross_vendor,
+        "reference_cpu_vendor": reference_vendor,
+        "independent_cpu_vendor": independent_vendor,
+        "environment_exact_match": env_ok,
         "steps_compared": len(a["steps"]), "first_divergent_stage": first,
         "stage_exact_match": matches, "first_conv_scalar_comparison": first_conv_comparison,
         "second_conv_scalar_comparison": second_conv_comparison,
@@ -230,7 +253,9 @@ def main():
     # individual stages missed isolated native/oracle sqrt hash divergence.
     # Two identical CPU models cannot establish cross-CPU reproducibility.
     # Keep the JSON evidence, but do not mark this diagnostic as a green gate.
-    if report["conclusion"] == "SAME_CPU_ONLY_INCONCLUSIVE":
+    if report["conclusion"] in (
+            "SAME_CPU_ONLY_INCONCLUSIVE", "SAME_VENDOR_ONLY_INCONCLUSIVE",
+            "CPU_VENDOR_UNKNOWN_INCONCLUSIVE"):
         raise SystemExit(3)
     if report["conclusion"] in ("ENVIRONMENT_MISMATCH", "NUMERICAL_DIVERGENCE"):
         raise SystemExit(2)
