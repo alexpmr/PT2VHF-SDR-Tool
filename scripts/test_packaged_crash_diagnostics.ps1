@@ -38,8 +38,23 @@ try {
         $log = Join-Path $env:APPDATA 'PT2VHF-SDR-Tool\crash-diagnostics.log'
         if (-not (Test-Path -LiteralPath $log)) { throw 'Packaged GUI did not create crash-diagnostics.log' }
         $data = Get-Content -LiteralPath $log -Raw
-        foreach ($marker in @('START pid=', 'QT-ABOUT-TO-QUIT', 'QT-LOOP-RETURN code=0')) {
-            if (-not $data.Contains($marker)) { throw "Packaged GUI missing diagnostic marker: $marker" }
+        # The --screenshot smoke now closes the MainWindow explicitly.
+        # Require every cleanup stage in order; a plain QApplication.quit()
+        # would skip closeEvent and must not pass this diagnostic gate.
+        $markers = @(
+            'START pid=',
+            'WINDOW-CLOSE stage=begin',
+            'WINDOW-CLOSE stage=engine-stopped',
+            'WINDOW-CLOSE stage=audio-stopped',
+            'WINDOW-CLOSE stage=end',
+            'QT-ABOUT-TO-QUIT',
+            'QT-LOOP-RETURN code=0'
+        )
+        $cursor = -1
+        foreach ($marker in $markers) {
+            $position = $data.IndexOf($marker, $cursor + 1, [System.StringComparison]::Ordinal)
+            if ($position -lt 0) { throw "Packaged GUI missing or out-of-order diagnostic marker: $marker" }
+            $cursor = $position
         }
         if ($data -match 'UNHANDLED|THREAD-ERROR|Fatal Python error|CLEAN-EXIT') {
             throw 'Packaged GUI diagnostics contain an error or misleading clean-exit marker'
