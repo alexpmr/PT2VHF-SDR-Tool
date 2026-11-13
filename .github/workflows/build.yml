@@ -118,6 +118,13 @@ jobs:
           Write-Host "P0 continuous Qt soak: v0.13.2=$baseline132 v0.13.3=$baseline133 candidate=$candidate"
           # A nonzero historical status does not establish a field crash root cause.
           if ($candidate -ne 0) { throw "P0 candidate failed continuous operational Qt soak" }
+      - name: P0 - longer continuous Qt UI soak (candidate 2x180s)
+        run: |
+          # Six minutes of live event-loop activity, synthetic frames, pans and
+          # waterfall clicks. Native process status is checked after Qt teardown.
+          # NOT a real RTL-SDR/audio driver or field-crash certification.
+          python -X faulthandler scripts/probe_qt_operational_soak.py --seconds 180 --repeats 2
+          if ($LASTEXITCODE -ne 0) { throw "P0 candidate failed 2x180s active Qt UI soak" }
       - name: P0 - compare native Qt shutdown against v0.13.2
         run: |
           $PSNativeCommandUseErrorActionPreference = $false
