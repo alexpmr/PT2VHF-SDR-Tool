@@ -2328,6 +2328,11 @@ class MainWindow(QMainWindow):
             " Ctrl+1…6 abas; F11 modo apresentação; Esc sai da apresentação ou para a varredura."))
 
     def closeEvent(self, ev):
+        from ..crash_diagnostics import mark_window_close
+        # Observe deliberate OTA vs. Qt/window-system close events, and locate
+        # cleanup-stage failures without changing close behavior or logging paths.
+        mark_window_close("begin", ota=bool(getattr(self, "_quitting_for_update", False)),
+                          spontaneous=bool(ev.spontaneous()))
         self._stop_sonde()
         self.rigctl_panel.stop()
         if self.web is not None:
@@ -2359,8 +2364,11 @@ class MainWindow(QMainWindow):
         self.bank.save()
         self.occupancy.flush(force=True)
         self.engine.stop()
+        mark_window_close("engine-stopped")
         self.audio.stop()
+        mark_window_close("audio-stopped")
         super().closeEvent(ev)
+        mark_window_close("end")
 
 
 def _scroll(w):
