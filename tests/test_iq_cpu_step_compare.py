@@ -347,3 +347,32 @@ def test_cli_same_vendor_probe_is_inconclusive(tmp_path):
                           capture_output=True, text=True, timeout=15)
     assert proc.returncode == 3
     assert json.loads(out.read_text(encoding="utf-8"))["conclusion"] == "SAME_VENDOR_ONLY_INCONCLUSIVE"
+
+
+@pytest.mark.parametrize("requested", [0, -1, 3, True, "2", None, 67])
+def test_requested_steps_must_match_complete_probe(requested):
+    """Matching truncated JSON reports cannot certify four requested steps."""
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    a["requested_steps"] = requested
+    b["requested_steps"] = requested
+    with pytest.raises(ValueError, match="requested_steps"):
+        compare_reports(a, b)
+
+
+def test_equal_length_truncated_probes_are_rejected():
+    """Both hosts losing the same final step must still fail closed."""
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    a["steps"] = a["steps"][:1]
+    b["steps"] = b["steps"][:1]
+    with pytest.raises(ValueError, match="requested_steps"):
+        compare_reports(a, b)
+
+
+def test_valid_one_step_probe_is_limited_not_full_replay():
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    a["requested_steps"] = b["requested_steps"] = 1
+    a["steps"] = a["steps"][:1]
+    b["steps"] = b["steps"][:1]
+    result = compare_reports(a, b)
+    assert result["steps_compared"] == 1
+    assert result["conclusion"] == "FIRST_STEPS_MATCH_CROSS_CPU_NOT_FULL_REPLAY"
