@@ -119,3 +119,46 @@ def test_watchdog_failure_cancels_native_async_read_before_close():
     finally:
         read_cancelled.set()
         src._reader.join(timeout=2)
+
+def test_native_close_waits_for_stuck_reader_even_after_join_timeout():
+    """A native USB handle must not close while async read is still alive.
+
+    Synthetic thread only: this does not validate a physical RTL-SDR driver.
+    """
+    import time
+
+    reader_started = threading.Event()
+    release_reader = threading.Event()
+    native_closed = threading.Event()
+
+    class FakeSdr:
+        def close(self):
+            native_closed.set()
+
+    def blocked_read():
+        reader_started.set()
+        release_reader.wait(5)
+
+    src = object.__new__(RtlSdrSource)
+    src._running = False  # watchdog has already stopped RX
+    src._ctl = queue.Queue()
+    src._ctl_thread = None
+    src._ctl_stop_sent = False
+    src._reader_cancel_sent = True  # cancellation was already requested
+    src._watch_thread = None
+    src.READER_CLOSE_JOIN_S = 0.05  # exercise timeout without a 3s test delay
+    src.sdr = FakeSdr()
+    src._reader = threading.Thread(target=blocked_read, daemon=True)
+    src._reader.start()
+    try:
+        assert reader_started.wait(2)
+        src.close()
+        time.sleep(0.15)  # longer than the first bounded reader join
+        assert not native_closed.is_set(), "native close raced an active async read"
+        release_reader.set()
+        src._reader.join(timeout=2)
+        assert native_closed.wait(2), "native close never followed reader exit"
+    finally:
+        release_reader.set()
+        src._reader.join(timeout=2)
+
