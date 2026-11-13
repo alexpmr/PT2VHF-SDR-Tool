@@ -64,6 +64,8 @@ def test_rtl_stop_before_start_does_not_poison_control_queue():
     src._ctl = queue.Queue()
     src._ctl_thread = None
     src._ctl_stop_sent = False
+    src._reader = None  # Mirrors __init__: stop() must see an initialized reader slot.
+    src._reader_cancel_sent = False
     src.stop()
     assert src._ctl.empty()
 
