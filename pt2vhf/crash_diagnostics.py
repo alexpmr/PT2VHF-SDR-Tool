@@ -102,3 +102,15 @@ def mark_qt_loop_return(code: int) -> None:
 def mark_update_exit() -> None:
     """Distinguish an intentional OTA shutdown from an unexplained exit."""
     _write("UPDATE-EXIT requested; external installer will restart the app")
+
+
+def mark_window_close(stage: str, *, ota: bool = False, spontaneous: bool = False) -> None:
+    """Trace Qt closeEvent phases without claiming successful process shutdown.
+
+    The spontaneous flag is supplied by Qt and does not establish that a user
+    clicked Close; neither it nor the end marker proves native teardown.
+    """
+    if stage not in {"begin", "engine-stopped", "audio-stopped", "end"}:
+        stage = "unknown"
+    _write(f"WINDOW-CLOSE stage={stage} ota={int(bool(ota))} "
+           f"qt_spontaneous={int(bool(spontaneous))} (native teardown unverified)")
