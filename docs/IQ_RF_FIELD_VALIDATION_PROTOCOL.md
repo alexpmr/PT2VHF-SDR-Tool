@@ -386,3 +386,13 @@ números reais finitos entre 0 e 1. Valores booleanos, strings numéricas,
 `min_pipeline_coverage=False` poderia desativar silenciosamente a cobertura
 mínima. A mudança é proteção de esquema, coberta por testes sintéticos; não
 representa medição de RF nem aprovação da IA.
+
+
+### Integridade dos hashes do comparador AMD × Intel (13/11/2026)
+
+O comparador de diagnósticos sintéticos `compare_iq_cpu_step.py` exige agora
+SHA-256 hexadecimal minúsculo de 64 caracteres para os campos globais, cada
+etapa do otimizador e os hashes das camadas. Dois relatórios igualmente
+malformados não podem mais ser interpretados como concordância numérica.
+A alteração é coberta por testes com testemunhos artificiais; **não** constitui
+reprodução em processadores AMD e Intel físicos, nem homologação de RF.
