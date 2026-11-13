@@ -357,3 +357,20 @@ invalidando uma comparação direta de acurácia. O avaliador verifica os pares
 se os conjuntos diferirem. Os índices não aparecem no relatório público.
 Investigar modelos individualmente quando a comparabilidade falhar.
 Testes exclusivamente sintéticos; nenhuma homologação RF real.
+
+
+### Integridade das observações agregadas de limiar (13/11/2026)
+
+O cálculo experimental de cobertura e falsa aceitação em
+`scripts/iq_session_gate.py::rates` agora valida diretamente as observações
+recebidas, inclusive quando a função é chamada fora do fluxo completo de
+inferência. Confianças `NaN`, infinitas, negativas, maiores que 1,
+booleanas ou textuais, limiares inválidos, classes de referência fora do
+contrato (inclusive WFM) e identificadores de sessão/dispositivo inválidos
+causam erro explícito. Valores reais NumPy continuam aceitos.
+
+**Motivo:** uma confiança `NaN` em uma amostra `UNKNOWN` anteriormente
+tornava falsa a comparação `confidence >= threshold`, podendo reduzir
+artificialmente a taxa de falsa aceitação OOD. Os testes adicionados são
+sintéticos e verificam apenas integridade de cálculo; não constituem
+medição RF, validação de rejeição neural ou autorização de publicação.
