@@ -162,3 +162,48 @@ def test_native_close_waits_for_stuck_reader_even_after_join_timeout():
         release_reader.set()
         src._reader.join(timeout=2)
 
+def test_native_close_is_idempotent_with_concurrent_teardown():
+    """A repeated Qt/engine shutdown must never close one USB handle twice.
+
+    Uses a fake SDR only; real librtlsdr behavior still requires bench testing.
+    """
+    close_calls = []
+    native_closed = threading.Event()
+    calls_lock = threading.Lock()
+
+    class FakeSdr:
+        def close(self):
+            with calls_lock:
+                close_calls.append(1)
+            native_closed.set()
+
+    src = object.__new__(RtlSdrSource)
+    src._running = False
+    src._ctl = queue.Queue()
+    src._ctl_thread = None
+    src._ctl_stop_sent = False
+    src._reader = None
+    src._reader_cancel_sent = False
+    src._watch_thread = None
+    src._close_lock = threading.Lock()
+    src._close_requested = False
+    src.sdr = FakeSdr()
+
+    gate = threading.Barrier(9)
+
+    def request_close():
+        gate.wait(timeout=5)
+        src.close()
+
+    callers = [threading.Thread(target=request_close) for _ in range(8)]
+    for caller in callers:
+        caller.start()
+    gate.wait(timeout=5)
+    for caller in callers:
+        caller.join(timeout=5)
+        assert not caller.is_alive(), "close() blocked a caller"
+    assert native_closed.wait(5), "native close did not run"
+    assert close_calls == [1], "native handle was closed more than once"
+    src.close()
+    assert close_calls == [1], "later close() retried native close"
+
