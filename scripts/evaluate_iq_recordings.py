@@ -47,11 +47,20 @@ def read_manifest(path: Path, root: Path) -> list:
         if not isinstance(row, dict):
             raise ValueError("Expected a recording object")
         for key in ("path", "session_id", "device", "frequency_hz", "mode"):
-            if not row.get(key):
+            if key not in row or row[key] is None or row[key] == "":
                 raise ValueError(f"Missing required recording key: {key}")
-        if row["mode"] not in SUPPORTED:
+        # Do not coerce numeric/boolean identifiers into apparently distinct
+        # sessions or physical SDRs: that could manufacture RF holdout diversity.
+        for key in ("path", "session_id", "device"):
+            if not isinstance(row[key], str) or not row[key].strip():
+                raise ValueError(f"Manifest {key} must be a nonempty string")
+        if not isinstance(row["mode"], str) or row["mode"] not in SUPPORTED:
             raise ValueError("Unsupported label; WFM not evaluated by 48k IQ model")
-        relative = Path(str(row["path"]))
+        frequency = row["frequency_hz"]
+        if (type(frequency) not in (int, float)
+                or not math.isfinite(frequency) or frequency <= 0):
+            raise ValueError("Invalid frequency")
+        relative = Path(row["path"])
         if relative.is_absolute():
             raise ValueError("Absolute paths are not allowed")
         source = (root / relative).resolve()
@@ -60,10 +69,8 @@ def read_manifest(path: Path, root: Path) -> list:
         if source in seen_files:
             raise ValueError("Duplicate WAV in manifest: recording cannot be counted twice")
         seen_files.add(source)
-        session_id = str(row["session_id"]).strip()
-        device_name = str(row["device"]).strip()
-        if not session_id or not device_name:
-            raise ValueError("session_id and device must be nonempty")
+        session_id = row["session_id"].strip()
+        device_name = row["device"].strip()
         if session_id in session_devices and session_devices[session_id] != device_name:
             raise ValueError("A session_id cannot span different SDR devices")
         session_devices[session_id] = device_name
@@ -71,8 +78,6 @@ def read_manifest(path: Path, root: Path) -> list:
             raise ValueError("WAV file not found")
         if source.stat().st_size > 512 * 1024 * 1024:
             raise ValueError("WAV exceeds 512 MiB cap")
-        if not math.isfinite(float(row["frequency_hz"])) or float(row["frequency_hz"]) <= 0:
-            raise ValueError("Invalid frequency")
         result.append((source, row["mode"], session_id, device_name))
     return result
 
