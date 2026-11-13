@@ -84,3 +84,27 @@ def test_negative_or_unrelated_exception_text_is_not_av():
         "sxe c0000005",
     ):
         assert summarize(log)[0] is False
+
+
+def test_av_frames_do_not_inherit_unrelated_preamble_stack():
+    raw = (
+        "00 000000a1 00007fff unrelated!EarlierThread+0x10\n"
+        "Access violation - code c0000005 (first chance)\n"
+        "00 000000a1 00007fff Qt6Widgets!QWidget::destroy+0x42\n"
+    )
+    found, frames = summarize(raw)
+    assert found is True
+    assert frames == ["Qt6Widgets!QWidget::destroy"]
+
+
+def test_av_without_subsequent_stack_fails_closed(tmp_path, capsys):
+    log = tmp_path / "missing-av-stack.log"
+    log.write_text(
+        "00 000000a1 00007fff unrelated!OldStack+0x10\n"
+        "ExceptionCode: c0000005 (Access violation)\n",
+        encoding="utf-8",
+    )
+    assert main([str(log)]) == 3
+    output = capsys.readouterr().out
+    assert "access_violation=observed frames=0" in output
+    assert "unrelated!OldStack" not in output
