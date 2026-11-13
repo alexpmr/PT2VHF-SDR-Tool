@@ -245,3 +245,20 @@ def test_real_qt_double_click_reaches_waterfall_handler(qt_lifecycle):
         assert heard == [145_525_000]
     finally:
         w.close()
+
+
+def test_manual_pan_signals_still_schedule_debounced_check(qt_lifecycle):
+    """Both viewboxes must retain pan behavior after removing strong Qt/Python cycles."""
+    w = _ui(qt_lifecycle)
+    try:
+        timer = w._pan_timer
+        for plot in (w.spec, w.wf):
+            timer.stop()
+            assert not timer.isActive()
+            # pyqtgraph ViewBox.sigRangeChangedManually carries an axis mask.
+            plot.getViewBox().sigRangeChangedManually.emit([True, False])
+            assert timer.isActive()
+            assert timer.isSingleShot()
+        timer.stop()
+    finally:
+        w.close()
