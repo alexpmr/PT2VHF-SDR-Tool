@@ -105,3 +105,23 @@ def test_qt_lifecycle_markers_do_not_claim_clean_native_exit(monkeypatch):
     assert "QT-LOOP-RETURN code=17" in data
     assert "native teardown not verified" in data
     assert "CLEAN-EXIT" not in data
+
+
+def test_window_close_phases_distinguish_ota_without_claiming_clean_exit(monkeypatch):
+    """No file paths or user configuration are written by close-phase markers."""
+    output = io.StringIO()
+    monkeypatch.setattr(diag, "_handle", output)
+    diag.mark_window_close("begin", ota=True, spontaneous=False)
+    diag.mark_window_close("engine-stopped")
+    diag.mark_window_close("audio-stopped")
+    diag.mark_window_close("end", spontaneous=True)
+    diag.mark_window_close("untrusted-path-C:\\Users\\Someone")
+    data = output.getvalue()
+    assert "WINDOW-CLOSE stage=begin ota=1 qt_spontaneous=0" in data
+    assert "WINDOW-CLOSE stage=engine-stopped" in data
+    assert "WINDOW-CLOSE stage=audio-stopped" in data
+    assert "WINDOW-CLOSE stage=end ota=0 qt_spontaneous=1" in data
+    assert "WINDOW-CLOSE stage=unknown" in data
+    assert "Someone" not in data
+    assert "CLEAN-EXIT" not in data
+    assert "native teardown unverified" in data
