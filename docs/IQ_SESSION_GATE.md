@@ -140,3 +140,27 @@ não uma estimativa validada de risco operacional.
 Três testes sintéticos cobrem falsa aprovação OOD em sessão isolada,
 falha CW em uma célula classe × SDR × sessão e controle positivo/compatibilidade
 com a API unitária legada. **Nenhuma validação RF real foi executada.**
+
+
+## Replicação independente por célula classe × SDR — 12/11/2026
+
+**Novo caso de falsa suficiência estrutural (regressão sintética):** uma matriz
+completa de CW/AM/NFM/USB/LSB/UNKNOWN por SDR pode conter apenas **uma sessão**
+para cada combinação. Cem janelas ou dez WAVs da mesma sessão não são dez
+observações independentes. Isso é especialmente perigoso para CW/AM e para a
+rejeição UNKNOWN, cujas condições variam entre capturas.
+
+O gate offline exige agora **pelo menos duas sessões distintas por combinação
+modo × SDR no holdout**, inclusive UNKNOWN, além da cobertura de classes e
+da diversidade global já exigidas. O novo bloqueio é
+`HOLDOUT_INSUFFICIENT_CLASS_DEVICE_SESSION_DIVERSITY`. O relatório expõe
+`min_holdout_sessions_per_class_device_cell=2` e apenas a contagem
+`holdout_class_device_cells_below_min_sessions`, sem nomes de dispositivos
+ou IDs de sessões. O gate de células ausentes tem precedência; células com
+uma única sessão também são contadas como insuficientes.
+
+**Limitações:** duas sessões são somente um mínimo estrutural, não poder
+estatístico suficiente para homologar FAR, recall ou latência. A identidade
+dos dispositivos, a independência temporal e os rótulos continuam sujeitos
+a auditoria externa. O teste usa WAVs e predições fabricadas, sem RF real.
+Não autoriza merge do PR #2, instalador neural nem publicação.

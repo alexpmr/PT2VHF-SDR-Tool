@@ -332,6 +332,17 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
     }
     missing_holdout_cells = expected_holdout_cells - observed_holdout_cells
     class_device_coverage_ok = not missing_holdout_cells
+    # A complete class x SDR matrix can still contain only one capture
+    # session per cell. Repeated windows or WAVs from that session are not
+    # independent evidence. Count unique session IDs, including UNKNOWN.
+    holdout_cell_sessions = {}
+    for _source, mode, session, device in hold:
+        holdout_cell_sessions.setdefault((mode, device), set()).add(session)
+    min_sessions_per_cell = 2
+    under_sampled_holdout_cells = sum(
+        len(holdout_cell_sessions.get(cell, ())) < min_sessions_per_cell
+        for cell in expected_holdout_cells)
+    class_device_session_diversity_ok = under_sampled_holdout_cells == 0
     result = {
         "scope": "Offline split-session diagnostic; RF authenticity not established",
         "decision": "NO_ACCEPTABLE_THRESHOLD" if best is None else "HOLDOUT_EVALUATED",
@@ -360,6 +371,10 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
         "holdout_class_device_coverage_gate_passed": class_device_coverage_ok,
         "required_holdout_class_device_cells": len(expected_holdout_cells),
         "missing_holdout_class_device_cells": len(missing_holdout_cells),
+        "min_holdout_sessions_per_class_device_cell": min_sessions_per_cell,
+        "holdout_class_device_session_diversity_gate_passed":
+            class_device_session_diversity_ok,
+        "holdout_class_device_cells_below_min_sessions": under_sampled_holdout_cells,
         "max_unknown_false_accept": max_far,
         "min_known_correct_coverage": min_coverage,
         "operationally_validated": False,
@@ -389,6 +404,8 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
             result["decision"] = "HOLDOUT_INSUFFICIENT_CLASS_COVERAGE"
         elif not class_device_coverage_ok:
             result["decision"] = "HOLDOUT_INSUFFICIENT_CLASS_DEVICE_COVERAGE"
+        elif not class_device_session_diversity_ok:
+            result["decision"] = "HOLDOUT_INSUFFICIENT_CLASS_DEVICE_SESSION_DIVERSITY"
     return result
 
 

@@ -542,8 +542,43 @@ def test_holdout_requires_every_supported_known_mode_in_both_splits(tmp_path, mo
                 for _, label, session, device in rows]
 
     monkeypatch.setattr(gate, "observations", perfect)
+    # One session per class x SDR cell is not independent replication,
+    # even when every class and SDR is represented.
+    single_session = gate.run(cal, hold, tmp_path, object())
+    assert single_session["decision"] == "HOLDOUT_INSUFFICIENT_CLASS_DEVICE_SESSION_DIVERSITY"
+    assert single_session["holdout_class_device_coverage_gate_passed"] is True
+    assert single_session["holdout_class_device_cells_below_min_sessions"] == 12
+
+    # Add a second independent synthetic session for every class x SDR
+    # (known modes share one known session per SDR; UNKNOWN stays separate).
+    for device_index, device in enumerate(("synthetic device", "second synthetic SDR")):
+        for mode_index, label in enumerate(("CW", "AM", "NFM", "USB", "LSB", "UNKNOWN")):
+            filename = f"hold-repeat-{device_index}-{label.lower()}.wav"
+            wav(tmp_path / filename, 12000 + 180 * (device_index * 6 + mode_index))
+            family = "unknown" if label == "UNKNOWN" else "known"
+            hold_doc["recordings"].append({
+                "path": filename, "mode": label,
+                "session_id": f"hold-repeat-{device_index}-{family}",
+                "device": device, "frequency_hz": 145500000})
+    hold.write_text(json.dumps(hold_doc))
     complete = gate.run(cal, hold, tmp_path, object())
     assert complete["decision"] == "HOLDOUT_EVALUATED"
+    assert complete["holdout_class_device_session_diversity_gate_passed"] is True
+    assert complete["holdout_class_device_cells_below_min_sessions"] == 0
+    assert complete["min_holdout_sessions_per_class_device_cell"] == 2
+
+    # Removing only one session's CW from SDR-B leaves the class x SDR
+    # matrix complete, but must fail the independent-session gate.
+    extra_cw = next(row for row in hold_doc["recordings"]
+                    if row["path"] == "hold-repeat-1-cw.wav")
+    hold_doc["recordings"].remove(extra_cw)
+    hold.write_text(json.dumps(hold_doc))
+    missing_replication = gate.run(cal, hold, tmp_path, object())
+    assert missing_replication["decision"] == "HOLDOUT_INSUFFICIENT_CLASS_DEVICE_SESSION_DIVERSITY"
+    assert missing_replication["holdout_class_device_coverage_gate_passed"] is True
+    assert missing_replication["holdout_class_device_cells_below_min_sessions"] == 1
+    hold_doc["recordings"].append(extra_cw)
+    hold.write_text(json.dumps(hold_doc))
     assert complete["holdout_class_coverage_gate_passed"] is True
     assert complete["required_known_classes"] == ["CW", "AM", "NFM", "USB", "LSB"]
     assert complete["operationally_validated"] is False
