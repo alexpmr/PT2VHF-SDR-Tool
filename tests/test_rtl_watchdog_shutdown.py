@@ -207,3 +207,60 @@ def test_native_close_is_idempotent_with_concurrent_teardown():
     src.close()
     assert close_calls == [1], "later close() retried native close"
 
+
+def test_native_close_waits_for_active_control_and_watchdog_threads():
+    """Do not free a USB handle while a native tuner command or recovery is active.
+
+    Synthetic synchronization only: real USB-driver behavior needs bench QA.
+    """
+    for role in ("control", "watchdog"):
+        entered = threading.Event()
+        release = threading.Event()
+        native_closed = threading.Event()
+
+        class FakeSdr:
+            def close(self):
+                native_closed.set()
+
+        src = object.__new__(RtlSdrSource)
+        src._running = True
+        src._ctl = queue.Queue()
+        src._ctl_stop_sent = False
+        src._reader_cancel_sent = False
+        src._reader = None
+        src._ctl_thread = None
+        src._watch_thread = None
+        src.CTL_CLOSE_JOIN_S = 0.05
+        src.WATCH_CLOSE_JOIN_S = 0.05
+        src.sdr = FakeSdr()
+
+        if role == "control":
+            def blocking_command(_sdr):
+                entered.set()
+                release.wait(5)
+            src._ctl.put(("gain", blocking_command))
+            active = threading.Thread(target=src._control_loop, daemon=True)
+            src._ctl_thread = active
+        else:
+            def blocking_recovery():
+                entered.set()
+                release.wait(5)
+            active = threading.Thread(target=blocking_recovery, daemon=True)
+            src._watch_thread = active
+
+        active.start()
+        try:
+            assert entered.wait(2), f"{role} did not start"
+            src.close()
+            assert not native_closed.wait(0.15), (
+                f"native close raced an active {role} thread"
+            )
+            release.set()
+            active.join(timeout=2)
+            assert not active.is_alive(), f"{role} did not finish"
+            assert native_closed.wait(2), (
+                f"native close did not follow {role} completion"
+            )
+        finally:
+            release.set()
+            active.join(timeout=2)
