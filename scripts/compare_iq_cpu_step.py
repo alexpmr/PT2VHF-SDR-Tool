@@ -106,6 +106,15 @@ def sqrt_oracle_self_consistent(item):
     ulp = abs(bits[0] - bits[1])
     return 0 < ulp == first["ulp_error"] <= maximum
 
+def validate_sha256(value, label):
+    """Reject malformed digest witnesses, including matching bad CPU reports.
+
+    This checks JSON integrity only; it cannot authenticate capture provenance.
+    """
+    if (type(value) is not str or len(value) != 64
+            or any(char not in "0123456789abcdef" for char in value)):
+        raise ValueError(f"Invalid SHA-256 for {label}")
+
 
 def compare_reports(a, b):
     if not a.get("steps") or len(a["steps"]) != len(b.get("steps", [])):
@@ -118,6 +127,10 @@ def compare_reports(a, b):
         if (type(requested) is not int or not 1 <= requested <= 66
                 or len(report["steps"]) != requested):
             raise ValueError("Probe requested_steps does not match complete step count")
+    # Two matching but malformed witnesses cannot certify numerical agreement.
+    for report in (a, b):
+        for key in GLOBAL:
+            validate_sha256(report[key], key)
     matches = {key: a[key] == b[key] for key in GLOBAL}
     first_conv_comparison = None
     second_conv_comparison = None
@@ -132,6 +145,12 @@ def compare_reports(a, b):
         left_layers, right_layers = left["layer_forward_sha256"], right["layer_forward_sha256"]
         if list(left_layers) != list(right_layers):
             raise ValueError("Probe layer ordering differs")
+        for layer in left_layers:
+            validate_sha256(left_layers[layer], f"steps[{i}].layers.{layer}")
+            validate_sha256(right_layers[layer], f"steps[{i}].layers.{layer}")
+        for key in STEP:
+            validate_sha256(left[key], f"steps[{i}].{key}")
+            validate_sha256(right[key], f"steps[{i}].{key}")
         matches.update({f"steps[{i}].layers.{key}": left_layers[key] == right_layers[key]
                         for key in left_layers})
         matches.update({f"steps[{i}].{key}": left[key] == right[key] for key in STEP})
