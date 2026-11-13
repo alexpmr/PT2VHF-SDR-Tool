@@ -415,7 +415,14 @@ class RtlSdrSource(IQSource):
         def bg():
             reader = self._reader
             if reader is not None:
-                reader.join(timeout=3)
+                reader.join(timeout=getattr(self, "READER_CLOSE_JOIN_S", 3.0))
+                if reader.is_alive():
+                    # Closing a native USB handle while librtlsdr is still
+                    # reading on another thread risks use-after-free/heap
+                    # corruption. Keep the close worker waiting in background
+                    # until the native reader actually exits; never block Qt.
+                    log.warning("RTL-SDR reader still active; deferring native close until it exits")
+                    reader.join()
             # Nenhuma thread de controle deve sobreviver ao encerramento do SDR.
             # A sentinela já foi enviada em stop(); aguarda em background para não
             # bloquear a GUI quando a biblioteca USB estiver lenta/travada.
