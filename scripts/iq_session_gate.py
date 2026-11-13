@@ -178,6 +178,18 @@ def rates(rows, threshold):
         if has_devices else None)
     unknown_device_far = (
         device_rates(unknown, accepted) if has_devices else None)
+    # A bad UNKNOWN capture on one SDR can be hidden when a session ID is
+    # shared by multiple SDRs AND that SDR has other clean sessions. Neither
+    # the worst per-session nor worst per-device marginal rate catches it.
+    unknown_device_session_far = None
+    if has_devices:
+        unknown_cells = {}
+        for item in unknown:
+            unknown_cells.setdefault((item[4], item[3]), []).append(item)
+        unknown_device_session_far = [
+            sum(accepted(item) for item in cell) / len(cell)
+            for cell in unknown_cells.values()
+        ]
     # A class can fail completely on one SDR while class-only and device-only
     # averages both pass (Simpson-like masking). Audit each observed
     # (known class, SDR) cell independently; no device IDs leave the report.
@@ -250,6 +262,12 @@ def rates(rows, threshold):
             if class_device_session_coverage is not None else None),
         "unknown_worst_device_false_accept_rate": (
             max(unknown_device_far) if unknown_device_far is not None else None),
+        "unknown_worst_device_session_false_accept_rate": (
+            max(unknown_device_session_far)
+            if unknown_device_session_far is not None else None),
+        "unknown_device_session_cells_observed": (
+            len(unknown_device_session_far)
+            if unknown_device_session_far is not None else None),
         "known_devices": len(known_device_coverage) if has_devices else None,
         "unknown_devices": len(unknown_device_far) if has_devices else None,
         "device_ids_excluded": True,
@@ -264,7 +282,8 @@ def acceptable(r, max_far, min_coverage):
     return (max(r["unknown_false_accept_rate"],
                 r["unknown_session_macro_false_accept"],
                 r["unknown_worst_session_false_accept_rate"],
-                r["unknown_worst_device_false_accept_rate"] or 0.0) <= max_far
+                r["unknown_worst_device_false_accept_rate"] or 0.0,
+                r["unknown_worst_device_session_false_accept_rate"] or 0.0) <= max_far
             and r["known_session_macro_coverage"] >= min_coverage
             and r["known_worst_class_session_macro_coverage"] >= min_coverage
             and (r["known_worst_device_correct_coverage"] is None or
