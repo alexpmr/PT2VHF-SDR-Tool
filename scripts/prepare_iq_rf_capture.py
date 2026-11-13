@@ -49,24 +49,37 @@ def check_recording_metadata(source: Path, sample_rate: int, frames: int,
             raise ValueError("Missing --center-hz and PT2VHF IQ sidecar")
         return float(requested_center), False, False
     meta = json.loads(path.read_text(encoding="utf-8"))
-    if (meta.get("schema_version") not in (1, 2) or
+    if (type(meta.get("schema_version")) is not int or
+        meta["schema_version"] not in (1, 2) or
         meta.get("capture_kind") != "pt2vhf_raw_iq" or
         meta.get("wav_name") != source.name or
         meta.get("completed") is not True):
         raise ValueError("Invalid/incomplete IQ recording sidecar")
+    # Sidecars are unsigned observations, not RF proof. Even so, their
+    # schema must fail closed: False == 0 and True == 1 in Python, so ordinary
+    # equality would let boolean counters or a boolean center masquerade as
+    # valid numeric capture metadata. Empty dictionaries/strings are not
+    # valid substitutes for the invalid_reasons list either.
+    zero_counters = (
+        "center_change_count", "sample_rate_change_count",
+        "dropped_iq_blocks_during_capture", "source_drop_counter_resets",
+    )
     if (meta.get("suitable_for_continuous_channelization") is not True or
-        meta.get("invalid_reasons") or meta.get("iq_vox") is not False or
-        meta.get("center_change_count") != 0 or
-        meta.get("sample_rate_change_count") != 0 or
-        meta.get("dropped_iq_blocks_during_capture", 0) != 0 or
-        meta.get("source_drop_counter_resets", 0) != 0 or
+        type(meta.get("invalid_reasons")) is not list or
+        meta["invalid_reasons"] or
+        meta.get("iq_vox") is not False or
+        any(type(meta.get(key)) is not int or meta[key] != 0
+            for key in zero_counters) or
         meta.get("interruption_reason") is not None):
         raise ValueError("IQ recording has interruptions, dropped blocks, frequency/rate changes or VOX")
-    if (meta.get("sample_rate_hz") != sample_rate or
-        meta.get("written_frames") != frames):
+    if (type(meta.get("sample_rate_hz")) is not int or
+        type(meta.get("written_frames")) is not int or
+        meta["sample_rate_hz"] != sample_rate or
+        meta["written_frames"] != frames):
         raise ValueError("IQ sidecar sample rate/frame count mismatch")
     center = meta.get("center_hz")
-    if not isinstance(center, (int, float)) or not math.isfinite(float(center)) or center <= 0:
+    if (type(center) not in (int, float) or
+        not math.isfinite(center) or center <= 0):
         raise ValueError("Invalid center frequency in IQ sidecar")
     if requested_center is not None and abs(float(center) - float(requested_center)) > 0.5:
         raise ValueError("Requested center frequency differs from IQ recording sidecar")
