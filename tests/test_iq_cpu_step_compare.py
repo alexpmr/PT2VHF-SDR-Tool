@@ -376,3 +376,32 @@ def test_valid_one_step_probe_is_limited_not_full_replay():
     result = compare_reports(a, b)
     assert result["steps_compared"] == 1
     assert result["conclusion"] == "FIRST_STEPS_MATCH_CROSS_CPU_NOT_FULL_REPLAY"
+
+
+@pytest.mark.parametrize("layer", ["first_conv_scalar_samples", "second_conv_scalar_samples"])
+@pytest.mark.parametrize("metric,bad_value", [
+    ("max_abs_error", float("nan")),
+    ("max_abs_error", float("inf")),
+    ("max_abs_error", -1.0),
+    ("mean_abs_error", -0.01),
+    ("mean_abs_error", "0.0"),
+    ("mean_abs_error", True),
+])
+def test_cpu_probe_rejects_invalid_scalar_error_metadata(layer, metric, bad_value):
+    """Malformed scalar diagnostics must never support a green CPU comparison."""
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    b["steps"][0][layer][metric] = bad_value
+    with pytest.raises(ValueError, match="scalar"):
+        compare_reports(a, b)
+
+
+@pytest.mark.parametrize("layer", ["first_conv_scalar_samples", "second_conv_scalar_samples"])
+def test_cpu_probe_rejects_scalar_mean_exceeding_max_and_boolean_count(layer):
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    b["steps"][0][layer]["mean_abs_error"] = 0.1
+    with pytest.raises(ValueError, match="mean exceeds maximum"):
+        compare_reports(a, b)
+    b = probe("Intel Xeon")
+    b["steps"][0][layer]["sample_count"] = True
+    with pytest.raises(ValueError, match="sample count"):
+        compare_reports(a, b)
