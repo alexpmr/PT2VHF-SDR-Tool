@@ -170,6 +170,27 @@ def observations(rows, model, max_windows, *, accounting=None):
 
 
 def rates(rows, threshold):
+    # Defense in depth: callers of this public helper (including standalone
+    # RF threshold tools) must not turn malformed observations into favorable
+    # UNKNOWN false-accept rates. In particular NaN >= threshold is False.
+    if (isinstance(threshold, bool) or not isinstance(threshold, Real)
+            or not math.isfinite(threshold) or not 0 <= threshold <= 1):
+        raise ValueError("Invalid IQ decision threshold")
+    for row in rows:
+        if not isinstance(row, (tuple, list)) or len(row) not in (4, 5):
+            raise ValueError("Expected four or five IQ observation fields")
+        label, predicted, confidence, session = row[:4]
+        if not isinstance(label, str) or label not in (*REQUIRED_KNOWN_CLASSES, "UNKNOWN"):
+            raise ValueError("Invalid IQ reference label")
+        if not isinstance(predicted, str) or predicted not in CLASSES:
+            raise ValueError("Invalid IQ predicted label")
+        if (isinstance(confidence, bool) or not isinstance(confidence, Real)
+                or not math.isfinite(confidence) or not 0 <= confidence <= 1):
+            raise ValueError("Invalid IQ observation confidence")
+        if not isinstance(session, str) or not session.strip():
+            raise ValueError("Invalid IQ session identifier")
+        if len(row) == 5 and (not isinstance(row[4], str) or not row[4].strip()):
+            raise ValueError("Invalid IQ device identifier")
     known = [r for r in rows if r[0] != "UNKNOWN"]
     unknown = [r for r in rows if r[0] == "UNKNOWN"]
     if not known or not unknown:
