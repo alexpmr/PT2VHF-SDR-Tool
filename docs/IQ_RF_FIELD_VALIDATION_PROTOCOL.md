@@ -374,3 +374,15 @@ tornava falsa a comparação `confidence >= threshold`, podendo reduzir
 artificialmente a taxa de falsa aceitação OOD. Os testes adicionados são
 sintéticos e verificam apenas integridade de cálculo; não constituem
 medição RF, validação de rejeição neural ou autorização de publicação.
+
+
+### Integridade dos limites de decisão RF/OOD (13/11/2026)
+
+Os parâmetros `max_far`, `min_coverage` e `min_pipeline_coverage` devem ser
+números reais finitos entre 0 e 1. Valores booleanos, strings numéricas,
+`null`, NaN, infinito e números fora do intervalo são rejeitados. Em Python,
+`True == 1` e `False == 0`: aceitar `max_far=True` poderia permitir
+100% de falsa aceitação UNKNOWN, enquanto `min_coverage=False` ou
+`min_pipeline_coverage=False` poderia desativar silenciosamente a cobertura
+mínima. A mudança é proteção de esquema, coberta por testes sintéticos; não
+representa medição de RF nem aprovação da IA.

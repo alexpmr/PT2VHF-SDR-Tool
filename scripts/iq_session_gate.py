@@ -333,8 +333,12 @@ def acceptable(r, max_far, min_coverage):
 
 
 def select(rows, max_far=.10, min_coverage=.50):
-    if (not math.isfinite(max_far) or not 0 <= max_far <= 1 or
-        not math.isfinite(min_coverage) or not 0 <= min_coverage <= 1):
+    # Boolean flags are integers in Python (True == 1, False == 0).
+    # Treating max_far=True or min_coverage=False as numeric limits can
+    # silently disable RF/OOD rejection or known-class coverage gates.
+    if any(isinstance(value, bool) or not isinstance(value, Real)
+           or not math.isfinite(value) or not 0 <= value <= 1
+           for value in (max_far, min_coverage)):
         raise ValueError("Invalid limits")
     curve = [rates(rows, t) for t in THRESHOLDS]
     passing = [r for r in curve if acceptable(r, max_far, min_coverage)]
@@ -347,7 +351,10 @@ def select(rows, max_far=.10, min_coverage=.50):
 
 def run(cal_manifest, hold_manifest, root, model, max_windows=100,
         max_far=.10, min_coverage=.50, min_pipeline_coverage=.80):
-    if not math.isfinite(min_pipeline_coverage) or not 0 <= min_pipeline_coverage <= 1:
+    if (isinstance(min_pipeline_coverage, bool)
+            or not isinstance(min_pipeline_coverage, Real)
+            or not math.isfinite(min_pipeline_coverage)
+            or not 0 <= min_pipeline_coverage <= 1):
         raise ValueError("Invalid minimum pipeline coverage")
     cal, hold = audit(cal_manifest, hold_manifest, root)
     calibration_accounting = {}
