@@ -128,13 +128,48 @@ def test_pure_zero_beat_cw_needs_human_review_not_false_block(tmp_path):
     assert not report["operator_labels_verified"]
 
 
-def test_constant_unknown_remains_blocked_as_invalid_classification_sample(tmp_path):
+def test_constant_unknown_carrier_requires_external_review(tmp_path):
+    # A true unmodulated OOD carrier is a required negative control, but the
+    # same zero-beat PCM may be a receiver DC spur. Never auto-certify either.
     raw = np.full(2048*15, .28 + .17j, dtype=np.complex64)
     _wav(tmp_path/"unknown.wav", raw)
     report = audit_dataset(
         _manifest(tmp_path, [_row("unknown.wav", "s1", "UNKNOWN")]), tmp_path)
+    assert report["status"] == "REVIEW"
+    assert report["blocked_recordings"] == 0
+    assert report["review_recordings"] == 1
+    flags = report["entries"][0]["flags"]
+    assert "REVIEW: constant_unknown_carrier_or_hardware_dc" in flags
+    assert "BLOCK: nearly_constant_iq_samples" not in flags
+    assert not report["rf_validated"]
+    assert not report["operator_labels_verified"]
+
+
+def test_silent_unknown_still_blocked(tmp_path):
+    _wav(tmp_path/"silent_unknown.wav", np.zeros(2048*15, dtype=np.complex64))
+    report = audit_dataset(
+        _manifest(tmp_path, [_row("silent_unknown.wav", "s1", "UNKNOWN")]), tmp_path)
+    assert report["status"] == "BLOCK"
+    assert "BLOCK: almost_all_windows_quiet" in report["entries"][0]["flags"]
+    assert "BLOCK: nearly_constant_iq_samples" in report["entries"][0]["flags"]
+
+
+def test_constant_known_nfm_still_blocked(tmp_path):
+    _wav(tmp_path/"constant_nfm.wav",
+         np.full(2048*15, .28 + .17j, dtype=np.complex64))
+    report = audit_dataset(
+        _manifest(tmp_path, [_row("constant_nfm.wav", "s1", "NFM")]), tmp_path)
     assert report["status"] == "BLOCK"
     assert "BLOCK: nearly_constant_iq_samples" in report["entries"][0]["flags"]
+
+
+def test_clipped_unknown_still_blocked(tmp_path):
+    _wav(tmp_path/"clipped_unknown.wav",
+         np.full(2048*15, 1 + 1j, dtype=np.complex64))
+    report = audit_dataset(
+        _manifest(tmp_path, [_row("clipped_unknown.wav", "s1", "UNKNOWN")]), tmp_path)
+    assert report["status"] == "BLOCK"
+    assert "BLOCK: heavy_adc_or_pcm_clipping" in report["entries"][0]["flags"]
 
 
 def test_full_duration_sampling_catches_late_clipping(tmp_path):

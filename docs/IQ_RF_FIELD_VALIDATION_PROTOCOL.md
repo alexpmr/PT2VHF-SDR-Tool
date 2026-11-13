@@ -18,6 +18,27 @@
 5. Dividir treino, ajustes de limiar e avaliação **por sessão e dispositivo**, evitando que segmentos da mesma transmissão apareçam em conjuntos diferentes. Nunca treinar em dados reservados para avaliação cega.
 6. Guardar os WAVs RF brutos e o manifesto **fora do GitHub**; não incluir identificadores pessoais nem conteúdo de comunicações particulares nos relatórios públicos. Confirmar licitude/consentimento quando necessário.
 
+## QA de portadora contínua OOD — revisão de 13/11/2026
+
+Uma portadora **não modulada** e comprovadamente fora das classes é um controle
+negativo indispensável para testar falsa aceitação como CW/AM. A auditoria
+`audit_iq_dataset.py` anteriormente classificava qualquer IQ quase constante
+rotulado `UNKNOWN` como `BLOCK`, removendo justamente esse controle do
+corpus antes da avaliação. Agora, uma gravação não silenciosa e não saturada
+com IQ quase constante recebe
+`REVIEW: constant_unknown_carrier_or_hardware_dc` e exige verificação externa
+da origem RF, offset e ausência de espúrio DC. Não é `PASS` automático.
+Silêncio, clipping excessivo, cópia exata entre sessões e IQ constante
+rotulado NFM/USB/LSB continuam bloqueantes conforme as demais regras.
+
+**Separação de métricas:** o pré-processamento ONNX pode rejeitar um IQ
+puramente constante como `No usable RF signal`. Isso deve aparecer como
+exclusão pré-inferência, **nunca** como acerto neural UNKNOWN nem como prova
+de rejeição OOD. Para testar a rejeição neural de portadoras, também coletar
+portadoras reais deslocadas do centro, com amplitude/frequência verificadas
+independentemente e janelas inferíveis. Os testes desta política usam PCM
+sintético e não constituem homologação RF.
+
 ## Limite temporal fundamental: CW versus portadora OOD (revisão de 12/11/2026)
 
 O classificador ONNX recebe **2.048 amostras complexas a 48.000 amostras/s**:

@@ -94,10 +94,14 @@ def _assess(metrics: dict, mode: str) -> list[str]:
     elif metrics["clipping_sample_rate"] > .005:
         flags.append("REVIEW: clipped_samples")
     if metrics["flat_pair_rate"] >= .95:
-        if mode in ("CW", "AM") and metrics["quiet_window_rate"] < .99:
-            # A real zero-beat carrier is locally identical to hardware DC.
-            # Require independent RF confirmation, never auto-approve/reject.
-            flags.append("REVIEW: constant_cw_am_or_hardware_dc")
+        if metrics["quiet_window_rate"] < .99 and mode in ("CW", "AM", "UNKNOWN"):
+            # A genuine zero-beat carrier and receiver DC are indistinguishable
+            # from these PCM samples. UNKNOWN must include unmodulated OOD
+            # carriers, so demand external review instead of deleting the
+            # negative-control population before evaluating neural rejection.
+            flags.append(
+                "REVIEW: constant_unknown_carrier_or_hardware_dc"
+                if mode == "UNKNOWN" else "REVIEW: constant_cw_am_or_hardware_dc")
         else:
             flags.append("BLOCK: nearly_constant_iq_samples")
     if metrics["windows_inspected"] < 10:
@@ -149,8 +153,9 @@ def audit_dataset(manifest: Path, root: Path, *, max_windows: int = 256) -> dict
         "review_recordings": review,
         "entries": entries,
         "limitations": (
-            "Heuristic flags may include legitimate weak AM/CW. Exact window reuse "
-            "does not detect shifted or modified copies. PASS only means no "
+            "Heuristic flags may include legitimate weak AM/CW or unmodulated "
+            "UNKNOWN carriers; constant IQ needs independent DC/RF review. "
+            "Exact window reuse does not detect shifted or modified copies. PASS only means no "
             "listed anomalies were observed; it does not validate RF accuracy."),
     }
 
