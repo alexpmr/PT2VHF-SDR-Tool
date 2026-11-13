@@ -264,3 +264,32 @@ def test_native_close_waits_for_active_control_and_watchdog_threads():
         finally:
             release.set()
             active.join(timeout=2)
+
+
+def test_submit_rejects_late_commands_after_close_requested():
+    """Late UI setters must not call native SDR methods on a closing handle.
+
+    Pre-start configuration must still work. Uses a fake SDR, not USB.
+    """
+    class FakeSdr:
+        def __init__(self):
+            self.calls = []
+
+        def set_gain(self, value):
+            self.calls.append(value)
+
+    for running in (False, True):
+        src = object.__new__(RtlSdrSource)
+        src._running = running
+        src._close_requested = True
+        src._ctl = queue.Queue()
+        src.sdr = FakeSdr()
+        src._submit("gain", lambda sdr: sdr.set_gain(12))
+        assert src.sdr.calls == [], "native setter ran after close request"
+        assert src._ctl.empty(), "late setter was queued after close request"
+
+    # _submit is also used to configure the device before start().
+    src._running = False
+    src._close_requested = False
+    src._submit("gain", lambda sdr: sdr.set_gain(8))
+    assert src.sdr.calls == [8]
