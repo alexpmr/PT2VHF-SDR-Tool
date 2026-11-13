@@ -9,6 +9,26 @@
 - Artefato experimental #13776459028 e relatório independente #13778170194. Isso prova apenas repetibilidade no ambiente controlado; desempenho RF e WFM permanecem sem validação.
 - Dados sintéticos fora da distribuição mostram falsos positivos graves na v4: 75,0% e 83,8% de portadoras não moduladas reconhecidas como classes conhecidas com confiança ≥0,80 em duas sementes; top-1 76,4%/75,0%.
 
+## Integridade de proveniência do probe AMD × Intel — 13/11/2026
+
+O comparador de primeiros passos sintéticos da v4 agora exige que **cada**
+relatório declare um ambiente portátil coerente: 8.400 exemplos de treino,
+contagem inteira de exemplos UNKNOWN substituídos entre 0 e 8.400, identidade
+e versões de runtime em strings não vazias, e a política explícita
+`portable_cpu=true`, uma thread, oneDNN desativado, algoritmos
+determinísticos ativados, `ATEN_CPU_CAPABILITY=default` e
+`MKL_CBWR=COMPATIBLE`. A ausência, adulteração ou tipagem incompatível
+desses campos bloqueia a comparação, mesmo quando os dois relatórios
+contêm os mesmos valores inválidos. A comparação de versões distintas
+continua produzindo `ENVIRONMENT_MISMATCH` quando ambos os ambientes
+são individualmente válidos.
+
+Essas verificações impedem um falso resultado favorável por metadados
+corrompidos; **não autenticam** a CPU física, o runner, a origem dos
+hashes nem a execução integral de 22 épocas. Os testes associados usam
+fixtures sintéticas e ainda exigem CI Linux/Windows e validação real
+AMD × Intel antes de qualquer homologação.
+
 ## Requisitos da coleta
 
 1. Utilizar **SDR** com gravação I/Q complexa, em **WAV estéreo PCM16** (I canal esquerdo, Q direito); não gravar áudio demodulado ou MP3.
