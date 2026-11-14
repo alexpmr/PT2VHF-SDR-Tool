@@ -710,7 +710,12 @@ class MainWindow(QMainWindow):
         from ..sources.sim_sources import SimulatorSource, WavIQSource
         name = opts["source"]
         fs = opts["sample_rate"]
-        center = self.engine.vfo + fs / 8
+        # RF frequencies remain public, while the hardware is tuned at RF+LO.
+        # Applies only to tunable hardware; never to simulator/IQ recordings.
+        offset_hz = (float(opts.get("external_converter_offset_mhz", 100.0)) * 1e6
+                     if opts.get("external_converter_enabled") and
+                     name in ("RTL-SDR", "rtl_tcp", "SoapySDR") else 0.0)
+        center = self.engine.vfo + fs / 8 + offset_hz
         try:
             if name == "Simulador":
                 src = SimulatorSource(fs, center)
@@ -723,7 +728,7 @@ class MainWindow(QMainWindow):
                 from ..sources.rtlsdr_source import select_direct_sampling_mode
                 configured = int(self.cfg.get("direct_sampling", 0))
                 preferred = int(self.cfg.get("hf_direct_sampling_mode", configured))
-                selected = select_direct_sampling_mode(self.engine.vfo, fs,
+                selected = select_direct_sampling_mode(self.engine.vfo + offset_hz, fs,
                                                        configured, preferred)
                 if selected != configured:
                     if configured in (1, 2) and not selected:
@@ -770,7 +775,12 @@ class MainWindow(QMainWindow):
                         f"interface {'—' if i.mi is None else i.mi}: {i.service or 'nenhum'}" for i in ifaces)
             QMessageBox.warning(self, "Fonte de sinal", text)
             return
-        self.cfg.update(source=name, sample_rate=src.sample_rate, gain=opts["gain"], ppm=opts["ppm"])
+        if offset_hz:
+            from ..sources.frequency_translation import FrequencyTranslatedSource
+            src = FrequencyTranslatedSource(src, offset_hz)
+        self.cfg.update(source=name, sample_rate=src.sample_rate, gain=opts["gain"], ppm=opts["ppm"],
+                        external_converter_enabled=bool(opts.get("external_converter_enabled", False)),
+                        external_converter_offset_mhz=float(opts.get("external_converter_offset_mhz", 100.0)))
         if src.check_freq(self.engine.vfo):  # frequência salva fora do alcance deste dongle
             self.statusBar().showMessage(src.check_freq(self.engine.vfo), 12000)
             self.engine.vfo = 145.570e6
@@ -865,7 +875,8 @@ class MainWindow(QMainWindow):
         current = int(getattr(src, "direct_sampling", 0))
         preferred = int(self.cfg.get("hf_direct_sampling_mode",
                                      self.cfg.get("direct_sampling", 0)))
-        chosen = select_direct_sampling_mode(freq, src.sample_rate, current, preferred)
+        physical_freq = freq + float(getattr(src, "offset_hz", 0.0))
+        chosen = select_direct_sampling_mode(physical_freq, src.sample_rate, current, preferred)
         if chosen == current:
             return
         if current in (1, 2) and chosen == 0:
@@ -1021,15 +1032,18 @@ class MainWindow(QMainWindow):
                 current = int(getattr(src, "direct_sampling", 0))
                 preferred = int(self.cfg.get("hf_direct_sampling_mode",
                                              self.cfg.get("direct_sampling", 0)))
-                wanted = select_direct_sampling_mode(mid, src.sample_rate, current, preferred)
+                physical_mid = mid + float(getattr(src, "offset_hz", 0.0))
+                wanted = select_direct_sampling_mode(physical_mid, src.sample_rate, current, preferred)
                 if wanted != current:
                     lo, hi = tuning_range(getattr(src, "tuner", ""),
                                           library_info().get("blog", False), wanted,
                                           getattr(src, "product", ""))
-                    if lo <= mid <= hi:
+                    if lo <= physical_mid <= hi:
                         return ""
             return problem
         source = self.rx_panel.source.currentText()
+        physical_mid = mid + (float(self.rx_panel.converter_offset.value()) * 1e6
+                              if self.rx_panel.external_converter.isChecked() else 0.0)
         if source == "Simulador":
             return ""
         if source == "RTL-SDR":
@@ -1042,13 +1056,13 @@ class MainWindow(QMainWindow):
             # Inactive but available tuner bands must not be greyed out by a
             # previously saved HF direct-sampling setting.
             low, high = tuning_range("R828D" if v4 else "R820T", v4, 0, device)
-            if low <= mid <= high:
+            if low <= physical_mid <= high:
                 return ""
             preferred = int(self.cfg.get("hf_direct_sampling_mode",
                                          self.cfg.get("direct_sampling", 0)))
             if preferred in (1, 2):
                 hf_low, hf_high = tuning_range("R820T", False, preferred, device)
-                if hf_low <= mid <= hf_high:
+                if hf_low <= physical_mid <= hf_high:
                     return ""
             return f"{band.name}: fora da faixa do SDR ({low / 1e6:g}–{high / 1e6:g} MHz)."
         return "Conecte a fonte para identificar a faixa de recepção."
