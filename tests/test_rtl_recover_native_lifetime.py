@@ -15,6 +15,8 @@ def source_with_fake(old, new):
     src._running = True
     src._close_requested = False
     src._native_lock = threading.Lock()
+    src._cancel_state_lock = threading.Lock()
+    src._native_closing = False
     src._reader = None
     src._cancel_thread = None
     src._reader_cancel_sent = False
@@ -165,3 +167,43 @@ def test_recovery_waits_for_inflight_control_command():
         control.join(timeout=2)
         if recovery is not None:
             recovery.join(timeout=2)
+
+
+def test_stop_does_not_cancel_handle_during_recovery_native_close():
+    """A late stop must not cancel a native handle being closed."""
+    closing = threading.Event()
+    release = threading.Event()
+    calls = []
+    calls_lock = threading.Lock()
+
+    class Old:
+        def cancel_read_async(self):
+            with calls_lock:
+                calls.append("cancel")
+
+        def close(self):
+            closing.set()
+            release.wait(5)
+            with calls_lock:
+                calls.append("close")
+
+    src, _, reopened, _ = source_with_fake(Old(), object())
+    src._ctl_thread = None
+    src._watch_thread = None
+    src._ctl_stop_sent = False
+    worker = threading.Thread(target=src._recover, daemon=True)
+    worker.start()
+    try:
+        assert closing.wait(2), "recovery did not enter native close"
+        src.stop()
+        with calls_lock:
+            assert calls == ["cancel"], "stop overlapped native close with another cancel"
+        release.set()
+        worker.join(timeout=2)
+        assert not worker.is_alive()
+        assert not reopened.is_set(), "recovery reopened after stop"
+        with calls_lock:
+            assert calls == ["cancel", "close"]
+    finally:
+        release.set()
+        worker.join(timeout=2)
