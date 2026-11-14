@@ -16,6 +16,10 @@ class Band:
     mode: str
     step: int
     service: str = "Radioamador"
+    # LCD-only shortcut metadata. Keep canonical names/ranges unchanged for
+    # memories, scanner, previously saved band selections and statistics.
+    quick_freq: float | None = None
+    key_label: str | None = None
 
 
 # Plano de bandas (IARU Região 2 / Anatel - referência rápida).
@@ -32,14 +36,20 @@ BAND_PLAN = [
     Band("11 m (PX)", 26.965e6, 27.405e6, "AM", 10000, "Faixa do Cidadão"),
     Band("10 m", 28.0e6, 29.7e6, "USB", 100),
     Band("6 m", 50.0e6, 54.0e6, "USB", 1000),
-    Band("FM Broadcast", 76.0e6, 108.0e6, "WFM", 100000, "Radiodifusão"),
-    Band("Aviação (VHF)", 108.0e6, 137.0e6, "AM", 8333, "Aeronáutico"),
+    Band("FM Broadcast", 76.0e6, 108.0e6, "WFM", 100000, "Radiodifusão",
+         quick_freq=100.0e6, key_label="FM"),
+    Band("Aviação (VHF)", 108.0e6, 137.0e6, "AM", 8333, "Aeronáutico",
+         quick_freq=123.450e6, key_label="AIR"),
     Band("Satélites meteo", 137.0e6, 138.0e6, "WFM", 1000, "Satélite"),
-    Band("2 m", 144.0e6, 148.0e6, "NFM", 5000),
+    Band("2 m", 144.0e6, 148.0e6, "NFM", 5000,
+         quick_freq=146.000e6, key_label="2m"),
     Band("Marítimo VHF", 156.0e6, 162.05e6, "NFM", 25000, "Marítimo"),
     Band("1,25 m", 220.0e6, 225.0e6, "NFM", 5000),
-    Band("70 cm", 430.0e6, 440.0e6, "NFM", 12500),
+    Band("70 cm", 430.0e6, 440.0e6, "NFM", 12500,
+         quick_freq=433.000e6, key_label="433 MHz"),
     Band("PMR/Uso livre", 462.5e6, 467.75e6, "NFM", 12500, "Rádio comunicador"),
+    Band("915 MHz", 902.0e6, 928.0e6, "NFM", 12500, "ISM / recebimento",
+         quick_freq=915.000e6, key_label="915 MHz"),
     Band("23 cm", 1240.0e6, 1300.0e6, "NFM", 25000),
 ]
 

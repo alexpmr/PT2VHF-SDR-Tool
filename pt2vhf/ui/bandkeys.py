@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QGridLayout, QToolButton, QWidget, QSizePolicy
 
 from .lcd import THEMES
@@ -29,8 +30,12 @@ class BandKeys(QWidget):
         cols = 5
         for i, band in enumerate(self.bands):
             btn = QToolButton(self)
-            btn.setText(band.name.replace(" (PX)", "").replace(" Broadcast", "").replace(" (VHF)", ""))
+            btn.setText(band.key_label or band.name.replace(" (PX)", "").replace(" Broadcast", "").replace(" (VHF)", ""))
             btn.setCheckable(True)
+            # Same typography as the keys painted on the LCD: Consolas bold.
+            font = QFont("Consolas")
+            font.setBold(True)
+            btn.setFont(font)
             btn.setMinimumSize(0, 0)
             btn.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
             btn.setToolTip(f"{band.name}: {band.start / 1e6:g} a {band.end / 1e6:g} MHz")
@@ -57,7 +62,7 @@ class BandKeys(QWidget):
             fg, border, background = ink, ink, top
             btn.setStyleSheet(
                 "QToolButton { background: %s; color: %s; border: 1px solid %s; "
-                "border-radius: %dpx; font-weight: bold; font-size: %dpx; padding: 0; }"
+                "border-radius: %dpx; font-family: Consolas; font-weight: bold; font-size: %dpx; padding: 0; }"
                 "QToolButton:checked { background: %s; color: %s; }"
                 "QToolButton:hover { border-width: 2px; }" %
                 (background, fg, border, max(1, round(3 * self._scale)),
