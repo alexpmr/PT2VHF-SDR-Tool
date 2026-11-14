@@ -129,7 +129,10 @@ experimental e sem autorização de merge.
 O worker experimental agora rejeita, antes de copiar buffers NumPy ou listas
 planas, entradas acima de **768.000 amostras IQ** ou de **12.000 amostras
 estimadas após reamostragem para 48 kS/s** (até 250 ms de IQ). O limite
-também é revalidado depois da conversão, protegendo formatos aninhados.
+também é revalidado depois da conversão. Formatos aninhados, matrizes
+multidimensionais e elementos não numéricos agora são rejeitados
+**antes** da conversão, pois o tamanho do contêiner externo não limita
+a memória necessária para converter elementos internos.
 O objetivo é impedir que uma fila de tamanho 1 esconda cópias e
 reamostragens de buffers arbitrariamente longos no caminho de recepção.
 
