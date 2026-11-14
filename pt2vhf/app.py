@@ -26,6 +26,10 @@ def main():
     if args.selftest:
         sys.exit(selftest())
 
+    # QA P0: local-only native/Python crash evidence before importing Qt.
+    from .crash_diagnostics import enable, mark_qt_quit_requested, mark_qt_loop_return
+    enable()
+
     if sys.platform == "win32":  # o instalador (AppMutex) detecta o programa aberto
         import ctypes
         ctypes.windll.kernel32.CreateMutexW(None, False, "PT2VHF_SDR_Tool_Running")
@@ -39,6 +43,7 @@ def main():
     from .ui.main_window import MainWindow
 
     app = QApplication(sys.argv)
+    app.aboutToQuit.connect(mark_qt_quit_requested)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName("PT2VHF")
     w = MainWindow()
@@ -51,7 +56,9 @@ def main():
             w._auto_levels()
             QTimer.singleShot(1500, lambda: (w.grab().save(args.screenshot), app.quit()))
         QTimer.singleShot(int(10_000), shot)
-    sys.exit(app.exec())
+    exit_code = app.exec()
+    mark_qt_loop_return(exit_code)
+    sys.exit(exit_code)
 
 
 def selftest() -> int:
