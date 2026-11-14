@@ -89,6 +89,26 @@ def test_audit_rejects_copied_wave_even_when_renamed(tmp_path):
         audit(a,b,tmp_path)
 
 
+@pytest.mark.parametrize("split", ["calibration", "holdout"])
+def test_audit_rejects_identical_wav_copied_within_split(tmp_path, split):
+    """Synthetic regression: duplicate captures cannot count as independent RF."""
+    a = manifest(tmp_path, "cal.json", "cal", 1200)
+    b = manifest(tmp_path, "hold.json", "hold", 1700)
+    selected = a if split == "calibration" else b
+    doc = json.loads(selected.read_text())
+    original = doc["recordings"][0]
+    duplicate_name = split + "-copied.wav"
+    shutil.copyfile(tmp_path / original["path"], tmp_path / duplicate_name)
+    doc["recordings"].append({
+        **original,
+        "path": duplicate_name,
+        "session_id": split + "-independent-on-paper",
+    })
+    selected.write_text(json.dumps(doc))
+    with pytest.raises(ValueError, match="Duplicate WAV content within " + split + " split"):
+        audit(a, b, tmp_path)
+
+
 def test_select_threshold_from_calibration_only():
     rows=[("AM","AM",.97,"known"),("AM","AM",.86,"known"),
           ("UNKNOWN","AM",.94,"unknown"),("UNKNOWN","UNKNOWN",.99,"unknown")]
