@@ -77,7 +77,34 @@ def test_receiver_panel_passes_converter_options_to_source(monkeypatch):
     assert received[0]["external_converter_enabled"] is True
     assert received[0]["external_converter_offset_mhz"] == 100.0
     panel.set_running(True)
-    assert not panel.converter_offset.isEnabled()
+    assert panel.converter_offset.isEnabled()
+    assert panel.external_converter.isEnabled()
+    assert "RF:" in panel.converter_preview.text()
+    assert "SDR:" in panel.converter_preview.text()
+    panel.update_converter_preview(7_100_000)
+    assert "7.100000 MHz" in panel.converter_preview.text()
+    assert "107.100000 MHz" in panel.converter_preview.text()
     panel.set_running(False)
     assert panel.converter_offset.isEnabled()
+    panel.close()
+
+def test_converter_change_is_emitted_and_preview_updates(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from pt2vhf.config import Config
+    from pt2vhf.ui.panels import ReceiverPanel
+
+    app = QApplication.instance() or QApplication([])
+    panel = ReceiverPanel(Config())
+    panel.source.setCurrentText("RTL-SDR")
+    changed = []
+    panel.converterConfigurationChanged.connect(lambda: changed.append(True))
+    panel.external_converter.setChecked(True)
+    panel.converter_offset.setValue(125.0)
+    assert len(changed) >= 2
+    panel.update_converter_preview(7_100_000)
+    assert "132.100000 MHz" in panel.converter_preview.text()
+    panel.source.setCurrentText("Simulador")
+    assert not panel.external_converter.isEnabled()
+    assert not panel.converter_offset.isEnabled()
     panel.close()
