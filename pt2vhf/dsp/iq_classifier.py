@@ -42,8 +42,26 @@ class IQClassifier:
         outputs = self.session.get_outputs()
         if len(inputs) != 1 or len(outputs) != 1:
             raise ValueError("Expected one input and one output")
-        if list(inputs[0].shape)[1:] != [2, SAMPLES]:
+        # ONNX Runtime exposes input/output metadata before the first run.
+        # Validate the complete fixed feature/class contract here so a model
+        # with a wrong dtype or number of logits cannot silently load and
+        # fail only after the operator starts receiving IQ.
+        def valid_batch_shape(shape, trailing):
+            if not isinstance(shape, (list, tuple)) or len(shape) != len(trailing) + 1:
+                return False
+            batch = shape[0]
+            valid_batch = (batch is None or type(batch) is int and batch == 1
+                           or isinstance(batch, str) and bool(batch))
+            return valid_batch and list(shape[1:]) == trailing
+
+        if not valid_batch_shape(inputs[0].shape, [2, SAMPLES]):
             raise ValueError("Expected input shape [batch, 2, 2048]")
+        if inputs[0].type != "tensor(float)":
+            raise ValueError("Expected float32 IQ input tensor")
+        if not valid_batch_shape(outputs[0].shape, [len(CLASSES)]):
+            raise ValueError("Expected output shape [batch, 7]")
+        if outputs[0].type != "tensor(float)":
+            raise ValueError("Expected float32 logits output tensor")
         self.input_name = inputs[0].name
 
     @staticmethod
