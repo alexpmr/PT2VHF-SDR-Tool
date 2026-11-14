@@ -129,6 +129,10 @@ def validate_probe_environment(report):
         value = report.get(key)
         if type(value) is not str or not value.strip():
             raise ValueError(f"Invalid CPU probe environment {key}")
+    # ATEN_CPU_CAPABILITY=default must be active before importing torch.
+    # Two identical AVX2/AVX512 reports are not evidence of portable execution.
+    if report["cpu_capability"] != "DEFAULT":
+        raise ValueError("Invalid CPU probe effective capability: expected DEFAULT")
     samples = report.get("train_samples")
     replaced = report.get("unknown_examples_replaced")
     if type(samples) is not int or samples != 8400:
