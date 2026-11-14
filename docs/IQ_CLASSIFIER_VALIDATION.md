@@ -123,3 +123,23 @@ malformados gerem um falso diagnóstico positivo. Não demonstra equivalência
 de CPUs físicas, reprodução integral de 22 épocas, desempenho operacional,
 homologação RF ou correção da falha nativa Windows. O PR permanece
 experimental e sem autorização de merge.
+
+## Limite de entrada do worker assíncrono — 14/11/2026
+
+O worker experimental agora rejeita, antes de copiar buffers NumPy ou listas
+planas, entradas acima de **768.000 amostras IQ** ou de **12.000 amostras
+estimadas após reamostragem para 48 kS/s** (até 250 ms de IQ). O limite
+também é revalidado depois da conversão, protegendo formatos aninhados.
+O objetivo é impedir que uma fila de tamanho 1 esconda cópias e
+reamostragens de buffers arbitrariamente longos no caminho de recepção.
+
+Trata-se de um orçamento estático de memória/trabalho, **não** de medição
+de latência nem de garantia de tempo real. O teste sintético confirma
+rejeição antecipada e aceitação no limite, sem hardware SDR.
+
+**Contrato de integração ainda pendente:** o worker pressupõe IQ já
+centrado no canal de interesse. Apenas reamostrar IQ wideband não desloca
+a frequência do VFO para banda-base; a futura integração supervisionada
+precisará demonstrar channelization/NCO e seleção correta do canal,
+além de medir latência em Windows/CPUs físicas. O worker não deve ser
+tratado como homologado ou conectado ao fluxo de RF operacional.
