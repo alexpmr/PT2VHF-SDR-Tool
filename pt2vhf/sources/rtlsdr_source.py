@@ -197,6 +197,8 @@ class RtlSdrSource(IQSource):
         self._ctl_stop_sent = False  # one sentinel even after watchdog stops _running
         self._reader_cancel_sent = False  # idempotent cancellation, including watchdog-failed RX
         self._cancel_thread: threading.Thread | None = None  # native cancel must finish before USB close
+        self._cancel_state_lock = threading.Lock()
+        self._native_closing = False
         self._watch_thread: threading.Thread | None = None
         self._busy_since = 0.0
         self._recovering = threading.Lock()
@@ -335,6 +337,18 @@ class RtlSdrSource(IQSource):
                 return out
 
     # ------------------------------------------------------------ ciclo de vida
+    def _cancel_guard(self):
+        """Initialize a per-device guard, including for lightweight test objects."""
+        lock = getattr(self, "_cancel_state_lock", None)
+        if lock is None:
+            with RtlSdrSource._close_init_lock:
+                lock = getattr(self, "_cancel_state_lock", None)
+                if lock is None:
+                    lock = threading.Lock()
+                    self._cancel_state_lock = lock
+                    self._native_closing = False
+        return lock
+
     def start(self):
         self._ctl_stop_sent = False
         self._reader_cancel_sent = False
@@ -386,19 +400,21 @@ class RtlSdrSource(IQSource):
         # bounded join and sdr.close(), even when stop() is called post-failure.
         reader = self._reader
         should_cancel = was_running or (reader is not None and reader.is_alive())
-        if should_cancel and not getattr(self, "_reader_cancel_sent", False):
-            self._reader_cancel_sent = True
-            sdr = self.sdr
-
-            def bg():
-                try:
-                    sdr.cancel_read_async()
-                except Exception:  # noqa: BLE001
-                    pass
-            cancel_thread = threading.Thread(target=bg, daemon=True, name="rtl-cancel")
-            # Register before starting so close() can await native cancellation.
-            self._cancel_thread = cancel_thread
-            cancel_thread.start()
+        if should_cancel:
+            # Register cancellation atomically with recovery's close transition.
+            with self._cancel_guard():
+                if not getattr(self, "_reader_cancel_sent", False) and not self._native_closing:
+                    self._reader_cancel_sent = True
+                    sdr = self.sdr
+                    if sdr is not None:
+                        def bg():
+                            try:
+                                sdr.cancel_read_async()
+                            except Exception:  # noqa: BLE001
+                                pass
+                        cancel_thread = threading.Thread(target=bg, daemon=True, name="rtl-cancel")
+                        self._cancel_thread = cancel_thread
+                        cancel_thread.start()
 
     def close(self):
         # UI/engine teardown may call close more than once (or concurrently).
@@ -592,15 +608,16 @@ class RtlSdrSource(IQSource):
                 return
             old = self.sdr
             old_reader = self._reader
-            cancel_thread = getattr(self, "_cancel_thread", None)
-            if cancel_thread is None or not cancel_thread.is_alive():
-                cancel_thread = threading.Thread(
-                    target=lambda: _quiet(old.cancel_read_async),
-                    daemon=True, name="rtl-recover-cancel",
-                )
-                self._reader_cancel_sent = True
-                self._cancel_thread = cancel_thread
-                cancel_thread.start()
+            with self._cancel_guard():
+                cancel_thread = getattr(self, "_cancel_thread", None)
+                if cancel_thread is None or not cancel_thread.is_alive():
+                    cancel_thread = threading.Thread(
+                        target=lambda: _quiet(old.cancel_read_async),
+                        daemon=True, name="rtl-recover-cancel",
+                    )
+                    self._reader_cancel_sent = True
+                    self._cancel_thread = cancel_thread
+                    cancel_thread.start()
             cancel_thread.join(timeout=getattr(self, "RECOVER_CANCEL_JOIN_S", 2.5))
             if cancel_thread.is_alive():
                 self.status = "failed"
@@ -614,8 +631,23 @@ class RtlSdrSource(IQSource):
                     self._running = False
                     self._say("RTL-SDR: leitura USB não encerrou; reconexão suspensa para evitar corrupção de memória.")
                     return
-            if not self._running or getattr(self, "_close_requested", False):
-                return
+            # A concurrent stop() can register a later cancellation after
+            # the first join. Drain it and atomically block new cancellation
+            # before releasing the native handle.
+            while True:
+                with self._cancel_guard():
+                    cancel_thread = getattr(self, "_cancel_thread", None)
+                    if cancel_thread is None or not cancel_thread.is_alive():
+                        if not self._running or getattr(self, "_close_requested", False):
+                            return
+                        self._native_closing = True
+                        break
+                cancel_thread.join(timeout=getattr(self, "RECOVER_CANCEL_JOIN_S", 2.5))
+                if cancel_thread.is_alive():
+                    self.status = "failed"
+                    self._running = False
+                    self._say("RTL-SDR: cancelamento concorrente travado; reconexão suspensa.")
+                    return
             try:
                 old.close()
             except Exception as exc:  # noqa: BLE001
@@ -623,6 +655,9 @@ class RtlSdrSource(IQSource):
                 self._running = False
                 self._say(f"RTL-SDR: falha ao liberar dispositivo; reconexão suspensa ({exc}).")
                 return
+            finally:
+                with self._cancel_guard():
+                    self._native_closing = False
             self.sdr = None  # the old native handle must not be closed twice
             if not self._running or getattr(self, "_close_requested", False):
                 return
