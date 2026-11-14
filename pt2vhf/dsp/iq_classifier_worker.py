@@ -43,14 +43,28 @@ class IQClassificationWorker:
         # np.asarray() and copy() may otherwise allocate unbounded memory on
         # the real-time receive thread, even with a one-slot output queue.
         if isinstance(iq, np.ndarray):
+            # Only a flat numeric IQ vector is a valid DSP buffer. Flattening
+            # an object/nested array could invoke expensive coercions on the
+            # receive thread before the sample budget is checked.
+            if iq.ndim != 1 or iq.dtype.kind not in "iufc":
+                return False
             count = iq.size
         elif isinstance(iq, (list, tuple)):
             count = len(iq)
+            if count > MAX_WORKER_INPUT_SAMPLES:
+                return False
+            # len() counts only the outer container: [[huge IQ vector]] used
+            # to bypass the preflight and allocate inside np.asarray().
+            # Reject nested/exotic elements before any NumPy conversion.
+            if any(isinstance(value, (bool, np.bool_))
+                   or not isinstance(value, (int, float, complex, np.number))
+                   for value in iq):
+                return False
         else:
-            count = None
-        if count is not None and count > MAX_WORKER_INPUT_SAMPLES:
             return False
-        if count is not None and (
+        if count > MAX_WORKER_INPUT_SAMPLES:
+            return False
+        if (
             count * ratio.numerator + ratio.denominator - 1
         ) // ratio.denominator > MAX_WORKER_OUTPUT_SAMPLES:
             return False
