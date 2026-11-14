@@ -54,6 +54,15 @@ QPushButton { background: #252d37; border: 1px solid #39444f; border-radius: 4px
 QPushButton:hover { background: #2f3945; }
 QPushButton:checked { background: #c9871e; color: #120c02; border-color: #f0b44a; font-weight: bold; }
 QPushButton#powerButton:checked { background: #1f8a3b; color: white; border-color: #3fd46a; }
+/* Visible unchecked checkbox indicator in dark interface (QA candidate). */
+QCheckBox { spacing: 6px; }
+QCheckBox::indicator:unchecked {
+  width: 15px; height: 15px; border: 2px solid #9dacbc;
+  border-radius: 3px; background: #11161c;
+}
+QCheckBox::indicator:unchecked:hover { border-color: #f0b44a; background: #1d2732; }
+QCheckBox::indicator:unchecked:disabled { border-color: #697582; background: #222831; }
+QCheckBox:disabled { color: #87929d; }
 QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTreeWidget, QTableWidget {
   background: #0f1216; border: 1px solid #2e3742; border-radius: 3px; padding: 2px;
   selection-background-color: #c9871e; selection-color: #120c02; }
