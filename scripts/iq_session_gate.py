@@ -84,12 +84,25 @@ def audit(cal_manifest: Path, hold_manifest: Path, root: Path):
         raise ValueError("Identical WAV content across split: recording leakage")
     # Different WAVs may still contain an identical excerpt (e.g., trimming
     # or appending a tail). Prevent exact sample reuse across split sessions.
+    # A full-file SHA-256 check alone misses renamed/truncated excerpts within
+    # the same split. Those excerpts can double-weight one RF event even when
+    # calibration and holdout themselves are disjoint. Check each *different*
+    # WAV against earlier WAVs in its own split; repeated windows inside one
+    # WAV are intentionally collapsed by sampled_iq_window_hashes().
     calibration_windows = set()
     for source, *_ in cal:
-        calibration_windows.update(sampled_iq_window_hashes(source))
+        windows = sampled_iq_window_hashes(source)
+        if calibration_windows & windows:
+            raise ValueError("Identical IQ window within calibration split: recording reuse")
+        calibration_windows.update(windows)
+    holdout_windows = set()
     for source, *_ in hold:
-        if calibration_windows & sampled_iq_window_hashes(source):
+        windows = sampled_iq_window_hashes(source)
+        if holdout_windows & windows:
+            raise ValueError("Identical IQ window within holdout split: recording reuse")
+        if calibration_windows & windows:
             raise ValueError("Identical IQ window across calibration/holdout: test leakage")
+        holdout_windows.update(windows)
     for label, rows in (("calibration", cal), ("holdout", hold)):
         # Session-macro rates assume known and UNKNOWN captures come from
         # distinct sessions. Two session IDs are not enough when a single
