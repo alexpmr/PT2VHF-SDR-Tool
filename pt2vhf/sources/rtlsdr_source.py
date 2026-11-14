@@ -214,6 +214,7 @@ class RtlSdrSource(IQSource):
         self._ctl_thread: threading.Thread | None = None
         self._ctl_stop_sent = False  # one sentinel even after watchdog stops _running
         self._reader_cancel_sent = False  # idempotent cancellation, including watchdog-failed RX
+        self._cancel_thread: threading.Thread | None = None  # native cancel must finish before USB close
         self._watch_thread: threading.Thread | None = None
         self._busy_since = 0.0
         self._recovering = threading.Lock()
@@ -408,7 +409,10 @@ class RtlSdrSource(IQSource):
                     sdr.cancel_read_async()
                 except Exception:  # noqa: BLE001
                     pass
-            threading.Thread(target=bg, daemon=True, name="rtl-cancel").start()
+            cancel_thread = threading.Thread(target=bg, daemon=True, name="rtl-cancel")
+            # Register before starting so close() can await native cancellation.
+            self._cancel_thread = cancel_thread
+            cancel_thread.start()
 
     def close(self):
         # UI/engine teardown may call close more than once (or concurrently).
@@ -453,6 +457,14 @@ class RtlSdrSource(IQSource):
                     # The watchdog can be inside _recover(), touching USB.
                     log.warning("RTL-SDR watchdog still active; deferring native close")
                     watcher.join()
+            # A cancel_read_async worker can outlive the async reader. Never
+            # release its native handle while that worker is still in librtlsdr.
+            cancel_thread = getattr(self, "_cancel_thread", None)
+            if cancel_thread is not None and cancel_thread is not threading.current_thread():
+                cancel_thread.join(timeout=getattr(self, "CANCEL_CLOSE_JOIN_S", 3.0))
+                if cancel_thread.is_alive():
+                    log.warning("RTL-SDR cancellation still active; deferring native close")
+                    cancel_thread.join()
             try:
                 sdr.close()
             except Exception:  # noqa: BLE001
