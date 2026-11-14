@@ -631,7 +631,7 @@ class RtlSdrSource(IQSource):
             except SourceError as exc:
                 self.status = "failed"
                 self._running = False
-                self._say(str(exc).split("\\n")[0])
+                self._say(str(exc).split("\n")[0])
                 return
             except Exception as exc:  # noqa: BLE001
                 self.status = "failed"
