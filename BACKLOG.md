@@ -1,5 +1,14 @@
 # Backlog — PT2VHF SDR Tool
 
+## P0 — v1.0.1: checkbox do upconverter externo desabilitado durante recepção (14/11/2026)
+- **Relato do mantenedor:** checkbox do conversor aparece desligado/inacessível na v1.0.0 quando o SDR está ligado. `ReceiverPanel.set_running(True)` desabilitava checkbox e spinbox por design, sem permitir reconfiguração enquanto recebia.
+- **Correção candidata no PR #16:** controles continuam habilitados para fontes RTL-SDR/rtl_tcp/SoapySDR; alteração dispara debounce Qt de 400 ms e `stop_source()` seguido de `start_source(source_options())`, evitando mudar frequência de LO durante bloco IQ. Durante troca o scanner e gravação são interrompidos; os parâmetros são salvos e novo estado é indicado na barra de status.
+- **Diagnóstico visível:** linha `RF: ... MHz | SDR: ... MHz` converte RF exibida para hardware com o offset opcional (por padrão 100 MHz, desabilitado). Tooltip explica reinício automático e diferença para conversor interno RTL-SDR Blog V4.
+- **Validação:** testes Qt de estado em recepção, emissões, preview em +100/+125 MHz, fontes não suportadas e regressão de direct sampling com offset físico. CI Windows, instalação Setup/Portable e hardware RF real devem ser verificados antes da distribuição pública.
+- **Versão corrigida:** v1.0.1, sem sobrescrever artefatos imutáveis da v1.0.0.
+- **Site:** não confundir commit em `PT2VHF-Site/main/updates.json` com implantação em `www.pt2vhf.com`. Em 14/11 o endpoint real ainda anunciou 0.13.2 apesar de Git já conter v1.0.0.
+
+
 ## P1 — compensação de upconverter externo +100 MHz (PP5AX) — candidato v1.0 (14/11/2026)
 - **Pedido:** PP5AX (Carlos) utiliza SDR Anauzer com conversor externo que soma nominalmente 100 MHz. Exibir 7,100 MHz quando o hardware estiver em 107,100 MHz.
 - **Implementação candidata:** `pt2vhf/sources/frequency_translation.py` envolve a fonte RF e traduz `set_center_freq`/`check_freq`; a interface, o motor DSP, VFO, memórias e waterfall continuam operando em RF aparente. Controles `Usar conversor externo` e `Deslocamento externo` na aba Receptor, com valor padrão de 100 MHz mas função desativada por padrão; ajustes somente com recepção desligada.
