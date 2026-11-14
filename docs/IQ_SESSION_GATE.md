@@ -193,3 +193,28 @@ a regressão de contagem e o bloqueio fim a fim, incluindo controle positivo.
 Essas contagens dependem de identidades declaradas no manifesto, não provam
 autenticidade RF, independência entre dispositivos ou desempenho do modelo.
 Não houve coleta RF real, treinamento nem autorização para release neural.
+
+
+## Detecção de recortes IQ repetidos dentro do mesmo conjunto — 14/11/2026
+
+A verificação SHA-256 de WAVs completos já bloqueia cópias idênticas
+dentro de calibração ou holdout. Contudo, dois arquivos diferentes podem
+compartilhar um recorte de 2.048 amostras IQ (42,67 ms a 48 kS/s) e ter
+SHA-256 distintos. Isso pode contar a mesma evidência RF mais de uma vez
+no mesmo conjunto, inclusive com IDs de sessão diferentes.
+
+A auditoria experimental agora compara as janelas IQ amostradas entre
+**arquivos diferentes dentro de cada split**, além de comparar calibração
+com holdout. Um recorte idêntico encontrado em dois WAVs de calibração ou
+em dois WAVs de holdout provoca erro explícito, antes da inferência.
+Repetições dentro do mesmo WAV não são confundidas com duplicação entre
+arquivos. Há dois testes negativos e um controle positivo com PCM
+**exclusivamente sintético**.
+
+**Limitações:** a inspeção é amostral e exige correspondência exata de bytes;
+recortes deslocados por menos de uma janela, reamostrados, modificados ou
+não selecionados podem escapar. Coincidências exatas de sinais
+determinísticos também exigem revisão de proveniência humana. Não há
+prova criptográfica de independência de transmissões, de autenticidade
+de SDR, de rótulos independentes nem de desempenho em RF real. A IA
+permanece experimental, sem autorização de merge ou release.
