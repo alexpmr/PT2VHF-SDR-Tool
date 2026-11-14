@@ -326,13 +326,25 @@ def test_unknown_cpu_vendor_cannot_pass_amd_intel_gate():
     assert report["conclusion"] == "CPU_VENDOR_UNKNOWN_INCONCLUSIVE"
 
 
-def test_cpu_capability_mismatch_is_environment_mismatch():
+@pytest.mark.parametrize("capability", ["AVX2", "AVX512", "default"])
+def test_identically_nonportable_effective_cpu_capability_fails_closed(capability):
+    """Matching non-default kernel dispatch cannot certify portable AMD/Intel QA."""
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    a["cpu_capability"] = b["cpu_capability"] = capability
+    with pytest.raises(ValueError, match="effective capability"):
+        compare_reports(a, b)
+
+
+def test_cpu_capability_mismatch_is_rejected_before_comparison():
     a, b = probe("AMD EPYC"), probe("Intel Xeon")
     b["cpu_capability"] = "AVX2"
-    report = compare_reports(a, b)
-    assert report["cross_vendor_tested"] is True
-    assert report["environment_exact_match"] is False
-    assert report["conclusion"] == "ENVIRONMENT_MISMATCH"
+    with pytest.raises(ValueError, match="effective capability"):
+        compare_reports(a, b)
+
+
+def test_effective_default_cpu_capability_allows_bounded_comparison():
+    a, b = probe("AMD EPYC"), probe("Intel Xeon")
+    assert compare_reports(a, b)["conclusion"] == "FIRST_STEPS_MATCH_CROSS_CPU_NOT_FULL_REPLAY"
 
 
 def test_amd_intel_probe_match_still_not_full_replay():
