@@ -71,7 +71,16 @@ def audit(cal_manifest: Path, hold_manifest: Path, root: Path):
         raise ValueError("Overlapping calibration and holdout sessions")
     if {r[0] for r in cal} & {r[0] for r in hold}:
         raise ValueError("Overlapping WAV paths")
-    if {digest(r[0]) for r in cal} & {digest(r[0]) for r in hold}:
+    # Different paths and session IDs do not establish independent captures.
+    # Exact WAV copies inside a split can double-weight one RF event, inflating
+    # coverage or diluting OOD false accepts without adding new evidence.
+    cal_digests = [digest(row[0]) for row in cal]
+    hold_digests = [digest(row[0]) for row in hold]
+    if len(set(cal_digests)) != len(cal_digests):
+        raise ValueError("Duplicate WAV content within calibration split")
+    if len(set(hold_digests)) != len(hold_digests):
+        raise ValueError("Duplicate WAV content within holdout split")
+    if set(cal_digests) & set(hold_digests):
         raise ValueError("Identical WAV content across split: recording leakage")
     # Different WAVs may still contain an identical excerpt (e.g., trimming
     # or appending a tail). Prevent exact sample reuse across split sessions.
