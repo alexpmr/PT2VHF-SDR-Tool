@@ -18,6 +18,7 @@ $env:PT2VHF_TEST_HELPER = $helper
 $env:PT2VHF_TEST_DIR = $destination
 $env:PT2VHF_TEST_EXE = $installed
 $env:PT2VHF_TEST_VERSION = $Version
+$env:PT2VHF_TEST_OTA_TRACE = '1'
 
 @'
 $ErrorActionPreference = 'Stop'
@@ -52,7 +53,8 @@ function Write-SetupTimeoutDiagnostics {
         'PT2VHF-SDR-Tool-update-result.txt',
         'PT2VHF-SDR-Tool-update-error.txt',
         'PT2VHF-SDR-Tool-setup.log',
-        'PT2VHF-SDR-Tool-ota-helper.log'
+        'PT2VHF-SDR-Tool-ota-helper.log',
+        'PT2VHF-SDR-Tool-ota-helper-trace.log'
     )) {
         $file = Join-Path $env:TEMP $name
         if (Test-Path -LiteralPath $file -PathType Leaf) {
@@ -78,6 +80,7 @@ function Write-SetupTimeoutDiagnostics {
 function Invoke-SetupSmoke([string]$source) {
     $env:PT2VHF_TEST_PACKAGE = $source
     Remove-Item -LiteralPath $resultFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $env:TEMP 'PT2VHF-SDR-Tool-ota-helper-trace.log') -Force -ErrorAction SilentlyContinue
     # Start-Process -Wait aguarda a arvore inteira no Windows, inclusive o helper
     # e o SDR reiniciado (GUI persistente): isso bloqueia o CI indefinidamente.
     # Esperar somente o processo launcher via System.Diagnostics.Process.
