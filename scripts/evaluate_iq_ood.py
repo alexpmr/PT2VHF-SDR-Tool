@@ -22,7 +22,15 @@ SEED = 20261112
 
 
 def ece(confidences: np.ndarray, hits: np.ndarray, bins=10) -> float:
-    """Expected calibration error on top-1 probabilities."""
+    """Expected calibration error; reject missing/invalid samples, never report a fictitious zero."""
+    confidences, hits = np.asarray(confidences), np.asarray(hits)
+    if (type(bins) is not int or bins < 1 or confidences.ndim != 1
+            or hits.ndim != 1 or confidences.size == 0
+            or confidences.shape != hits.shape or hits.dtype.kind != "b"
+            or confidences.dtype.kind not in "fiu"
+            or not np.isfinite(confidences).all()
+            or np.any((confidences < 0) | (confidences > 1))):
+        raise ValueError("Invalid calibration samples or bins")
     error = 0.0
     for j in range(bins):
         lo, hi = j / bins, (j + 1) / bins
@@ -30,6 +38,45 @@ def ece(confidences: np.ndarray, hits: np.ndarray, bins=10) -> float:
         if np.any(mask):
             error += float(np.mean(mask)) * abs(float(np.mean(hits[mask])) - float(np.mean(confidences[mask])))
     return error
+
+
+def checked_prediction(result, *, min_confidence=None) -> tuple[str, float, str]:
+    """Validate raw softmax, confidence and effective decision before OOD metrics.
+
+    A stale confidence value can otherwise make an incorrectly accepted OOD
+    signal appear rejected. Synthetic-only contract check, not RF QA.
+    """
+    probabilities = result.probabilities
+    if not isinstance(probabilities, dict) or set(probabilities) != set(CLASSES):
+        raise ValueError("Invalid OOD probability labels")
+    if any(isinstance(v, (bool, str))
+           or not isinstance(v, (int, float, np.integer, np.floating))
+           for v in probabilities.values()):
+        raise ValueError("Invalid OOD probability type")
+    scores = {label: float(value) for label, value in probabilities.items()}
+    if (not all(np.isfinite(v) and 0 <= v <= 1 for v in scores.values())
+            or not np.isclose(sum(scores.values()), 1.0, rtol=0, atol=1e-4)):
+        raise ValueError("Invalid OOD probability distribution")
+    raw_label = max(scores, key=scores.get)
+    raw_confidence = scores[raw_label]
+    supplied_confidence = result.confidence
+    if (isinstance(supplied_confidence, (bool, str))
+            or not isinstance(supplied_confidence, (int, float, np.integer, np.floating))
+            or not np.isfinite(supplied_confidence)
+            or not 0 <= supplied_confidence <= 1
+            or not np.isclose(supplied_confidence, raw_confidence, rtol=0, atol=1e-6)):
+        raise ValueError("OOD confidence disagrees with softmax maximum")
+    if result.mode not in CLASSES or (result.mode != "UNKNOWN" and result.mode != raw_label):
+        raise ValueError("OOD decision disagrees with softmax argmax")
+    if min_confidence is not None:
+        if (isinstance(min_confidence, (bool, str))
+                or not isinstance(min_confidence, (int, float, np.integer, np.floating))
+                or not np.isfinite(min_confidence) or not 0 <= min_confidence <= 1):
+            raise ValueError("Invalid OOD classifier confidence gate")
+        expected = raw_label if raw_confidence >= min_confidence else "UNKNOWN"
+        if result.mode != expected:
+            raise ValueError("OOD decision disagrees with classifier confidence gate")
+    return raw_label, raw_confidence, result.mode
 
 
 def run(reference_path: Path, candidate_path: Path, count_per_class_snr: int = 40, negatives_per_kind: int = 80, third_model_path: Path | None = None, fourth_model_path: Path | None = None, seed: int = SEED) -> dict:
@@ -57,8 +104,8 @@ def run(reference_path: Path, candidate_path: Path, count_per_class_snr: int = 4
                 if db != snr:
                     continue
                 result = model.predict(iq)
-                chosen = max(result.probabilities, key=result.probabilities.get)
-                confidence = result.confidence
+                chosen, confidence, _mode = checked_prediction(
+                    result, min_confidence=getattr(model, "min_confidence", None))
                 confusion[SUPPORTED.index(truth), CLASSES.index(chosen)] += 1
                 hit = chosen == truth
                 all_probs.append(confidence)
@@ -90,10 +137,11 @@ def run(reference_path: Path, candidate_path: Path, count_per_class_snr: int = 4
                 if candidate_kind != kind:
                     continue
                 result = model.predict(iq)
-                counts[result.mode] += 1
-                predicted_raw = max(result.probabilities, key=result.probabilities.get)
-                negative_predictions.append((predicted_raw, result.confidence))
-                high += int(result.mode != "UNKNOWN" and result.confidence >= 0.80)
+                predicted_raw, confidence, effective_mode = checked_prediction(
+                    result, min_confidence=getattr(model, "min_confidence", None))
+                counts[effective_mode] += 1
+                negative_predictions.append((predicted_raw, confidence))
+                high += int(predicted_raw != "UNKNOWN" and confidence >= 0.80)
             negative_results[kind] = {
                 "samples": negatives_per_kind,
                 "high_confidence_known_class_rate": high / negatives_per_kind,

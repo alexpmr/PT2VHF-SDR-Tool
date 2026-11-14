@@ -416,3 +416,14 @@ etapa do otimizador e os hashes das camadas. Dois relatórios igualmente
 malformados não podem mais ser interpretados como concordância numérica.
 A alteração é coberta por testes com testemunhos artificiais; **não** constitui
 reprodução em processadores AMD e Intel físicos, nem homologação de RF.
+
+## Contrato de confiança do diagnóstico sintético OOD — 14/11/2026
+
+O avaliador `evaluate_iq_ood.py` verifica a normalização e a finitude de
+todas as probabilidades, exige que `confidence` coincida com o máximo da
+softmax e que `mode` respeite o argmax e o limiar configurado. Sem isso,
+um campo `confidence` incorretamente baixo poderia reduzir artificialmente
+a taxa de falsa aceitação de sinais OOD. O erro de calibração (ECE) também
+recusa entradas vazias, não finitas ou inválidas, em vez de retornar zero
+enganoso. Testes com stubs e sinais sintéticos verificam o contrato, **não**
+constituem validação RF genuína ou homologação neural.

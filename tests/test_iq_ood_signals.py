@@ -120,3 +120,48 @@ def test_ood_report_seed_is_configurable_and_reproducible(monkeypatch, tmp_path)
     assert baseline_samples == repeated_samples
     assert baseline_samples != alternate_samples
     assert baseline["models"] == repeated["models"]
+
+
+@pytest.mark.parametrize("confidence,mode,am_probability,error", [
+    (0.1, "AM", 0.9, "confidence disagrees"),
+    (0.9, "CW", 0.9, "decision disagrees"),
+    (0.9, "AM", 0.8, "probability distribution"),
+    (float("nan"), "AM", 0.9, "confidence disagrees"),
+])
+def test_ood_report_rejects_favorable_metrics_from_malformed_model_outputs(
+        monkeypatch, tmp_path, confidence, mode, am_probability, error):
+    """A model stub must not suppress OOD false accepts using stale confidence."""
+    from types import SimpleNamespace
+    from scripts import evaluate_iq_ood
+
+    class MalformedModel:
+        min_confidence = 0.8
+
+        def __init__(self, path, min_confidence=0.8):
+            self.min_confidence = min_confidence
+
+        def predict(self, iq):
+            probabilities = {label: 0.1 / 6 for label in
+                             ("CW", "AM", "NFM", "WFM", "USB", "LSB", "UNKNOWN")}
+            probabilities["AM"] = am_probability
+            return SimpleNamespace(mode=mode, confidence=confidence,
+                                   probabilities=probabilities)
+
+    monkeypatch.setattr(evaluate_iq_ood, "IQClassifier", MalformedModel)
+    with pytest.raises(ValueError, match=error):
+        evaluate_iq_ood.run(tmp_path / "v2.onnx", tmp_path / "v3.onnx",
+                            count_per_class_snr=1, negatives_per_kind=1)
+
+
+@pytest.mark.parametrize("confidences,hits,bins", [
+    ([float("nan")], [True], 10),
+    ([], [], 10),
+    ([0.9], [True], 0),
+    ([0.9], [True, False], 10),
+    ([1.2], [False], 10),
+])
+def test_ood_ece_rejects_invalid_inputs_instead_of_reporting_zero(
+        confidences, hits, bins):
+    from scripts.evaluate_iq_ood import ece
+    with pytest.raises(ValueError, match="Invalid calibration"):
+        ece(np.asarray(confidences), np.asarray(hits), bins=bins)
