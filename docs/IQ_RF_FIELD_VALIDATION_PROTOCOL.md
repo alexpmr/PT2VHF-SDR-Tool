@@ -427,3 +427,20 @@ a taxa de falsa aceitação de sinais OOD. O erro de calibração (ECE) também
 recusa entradas vazias, não finitas ou inválidas, em vez de retornar zero
 enganoso. Testes com stubs e sinais sintéticos verificam o contrato, **não**
 constituem validação RF genuína ou homologação neural.
+
+
+## Contrato de limiar do classificador ONNX — 14/11/2026
+
+A inicialização de `IQClassifier` agora rejeita `min_confidence` não
+numérico, booleano, não finito ou fora de [0, 1], em vez de aplicar
+`np.clip` silenciosamente. Um `NaN` antes era preservado por
+`np.clip`; como toda comparação `confidence >= NaN` é falsa,
+**todas as classes conhecidas eram convertidas em UNKNOWN**, mascarando
+uma configuração inválida de rejeição OOD. Valores fora do intervalo
+também eram ajustados sem aviso. A falha agora é explícita, e o worker
+assíncrono já encerra a inicialização quando o construtor lança erro.
+
+Os 19 casos unitários adicionais usam sessão ONNX simulada, sem pesos
+neurais, SDR ou RF real. Esta é uma proteção de configuração, **não**
+melhora medida de FAR, acurácia, calibração ou homologação. A estabilidade
+nativa Windows e os demais gates permanecem obrigatórios.
