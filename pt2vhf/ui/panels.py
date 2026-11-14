@@ -138,6 +138,22 @@ class ReceiverPanel(QWidget):
         self.direct.addItems(["Desligada", "Ramo I", "Ramo Q (HF RTL-SDR V3)"])
         self.direct.setCurrentIndex(cfg["direct_sampling"])
         gf.addRow("Amostr. direta:", self.direct)
+        self.external_converter = QCheckBox("Usar conversor externo (upconverter)")
+        self.external_converter.setChecked(bool(cfg.get("external_converter_enabled", False)))
+        self.external_converter.setToolTip(
+            "Ex.: conversor +100 MHz: selecionar 7,100 MHz sintoniza 107,100 MHz no SDR. "
+            "Não habilitar para o conversor HF interno do RTL-SDR Blog V4.")
+        self.converter_offset = QDoubleSpinBox()
+        self.converter_offset.setRange(-1500.0, 1500.0)
+        self.converter_offset.setDecimals(6)
+        self.converter_offset.setSingleStep(1.0)
+        self.converter_offset.setSuffix(" MHz")
+        self.converter_offset.setValue(float(cfg.get("external_converter_offset_mhz", 100.0)))
+        self.converter_offset.setToolTip(
+            "Frequência do hardware = frequência exibida + deslocamento. "
+            "Reinicie a recepção após alterar.")
+        gf.addRow(self.external_converter)
+        gf.addRow("Deslocamento externo:", self.converter_offset)
         lay.addWidget(g)
 
         self.info = QLabel("Parado")
@@ -201,6 +217,8 @@ class ReceiverPanel(QWidget):
                 "host": self.host.text(), "port": self.port.value(),
                 "file": self.file_edit.text(), "sample_rate": self.rate.currentData(),
                 "gain": self.current_gain(), "ppm": self.ppm.value(),
+                "external_converter_enabled": self.external_converter.isChecked(),
+                "external_converter_offset_mhz": self.converter_offset.value(),
             })
         else:
             self.stopRequested.emit()
@@ -211,6 +229,8 @@ class ReceiverPanel(QWidget):
         self.start_btn.setText("■  Desligar" if running else "▶  Ligar")
         self.start_btn.blockSignals(False)
         for w in (self.source, self.device, self.rate, self.host, self.port, self.file_edit):
+            w.setEnabled(not running)
+        for w in (self.external_converter, self.converter_offset):
             w.setEnabled(not running)
 
     def current_gain(self):
