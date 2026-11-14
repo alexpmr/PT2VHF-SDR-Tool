@@ -57,3 +57,27 @@ def test_non_tunable_source_rejected():
     physical.tunable = False
     with pytest.raises(ValueError):
         FrequencyTranslatedSource(physical, 100e6)
+
+
+def test_receiver_panel_passes_converter_options_to_source(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from pt2vhf.config import Config
+    from pt2vhf.ui.panels import ReceiverPanel
+
+    app = QApplication.instance() or QApplication([])
+    cfg = Config()
+    panel = ReceiverPanel(cfg)
+    panel.external_converter.setChecked(True)
+    panel.converter_offset.setValue(100.0)
+    received = []
+    panel.startRequested.connect(received.append)
+    panel.start_btn.click()
+    assert len(received) == 1
+    assert received[0]["external_converter_enabled"] is True
+    assert received[0]["external_converter_offset_mhz"] == 100.0
+    panel.set_running(True)
+    assert not panel.converter_offset.isEnabled()
+    panel.set_running(False)
+    assert panel.converter_offset.isEnabled()
+    panel.close()
