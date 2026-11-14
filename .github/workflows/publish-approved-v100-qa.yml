@@ -1,0 +1,90 @@
+name: Publish approved SDR 1.0.0 from pinned Windows QA
+on:
+  push:
+    branches: [release/stable-v1-windows-qa-20261114]
+    paths: [.github/workflows/publish-approved-v100-qa.yml]
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: approved-sdr-v100
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: "533172c614ada1469d0b063b9ce88d424854979c"
+      RUN_ID: "43620259555"
+      ARTIFACT_ID: "14124291136"
+      VERSION: "1.0.0"
+    steps:
+      - name: Verify pinned successful QA run and source SHA
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,os,subprocess
+          repo=os.environ["GITHUB_REPOSITORY"]
+          run=json.loads(subprocess.check_output(["gh","api",f"repos/{repo}/actions/runs/{os.environ['RUN_ID']}"]))
+          assert run["head_sha"]==os.environ["SOURCE_SHA"] and run["conclusion"]=="success"
+          artifact=json.loads(subprocess.check_output(["gh","api",f"repos/{repo}/actions/artifacts/{os.environ['ARTIFACT_ID']}"]))
+          assert artifact["workflow_run"]["id"]==int(os.environ["RUN_ID"])
+          assert artifact["name"]=="PT2VHF-SDR-Tool-1.0.0-windows" and not artifact["expired"]
+          print("APPROVED_QA_PIN_VERIFIED=1")
+          PY
+      - name: Download exact approved QA installers
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name "PT2VHF-SDR-Tool-1.0.0-windows" --dir release
+          ls -lh release
+      - name: Verify SHA-256, sizes and Windows executable signatures
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,os,pathlib,re
+          root=pathlib.Path("release"); v=os.environ["VERSION"]
+          names={f"PT2VHF-SDR-Tool-v{v}-Win11-x64-{k}.exe" for k in ("Setup","Portable")}
+          assert {p.name for p in root.iterdir()}==names|{"SHA256SUMS.txt"}
+          records=root.joinpath("SHA256SUMS.txt").read_text(encoding="utf-8-sig").splitlines()
+          assert len(records)==2
+          seen=set()
+          for line in records:
+              h,n,name=line.split()
+              assert re.fullmatch(r"[0-9a-fA-F]{64}",h) and n.isdecimal()
+              assert name in names and name not in seen;seen.add(name)
+              path=root/name
+              assert int(n)==path.stat().st_size and 20_000_000 <= path.stat().st_size <= 700_000_000
+              with path.open("rb") as f:assert f.read(2)==b"MZ"
+              digest=hashlib.sha256()
+              with path.open("rb") as f:
+                  for block in iter(lambda:f.read(1024*1024),b""):digest.update(block)
+              assert digest.hexdigest()==h.lower(),name
+              print("SHA256_OK="+name)
+          assert seen==names
+          PY
+      - name: Publish GitHub v1.0.0 release without rebuilding
+        run: |
+          set -euo pipefail
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::Tag already exists, refusing overwrite";exit 1
+          fi
+          gh release create "v$VERSION" release/* --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" \
+            --title "PT2VHF SDR Tool v1.0.0 — Windows" \
+            --notes "QA Windows aprovada pelo mantenedor. Inclui correção de sintonia RTL-SDR acima de 30 MHz, compensação de upconverter externo (+100 MHz), ajustes de LCD, checkboxes, CPU/RAM e OTA. IQ/ONNX permanece experimental e fora do produto. Banner de abertura original de sete projetos indisponível nesta build QA; fallback textual habilitado. Exatamente os arquivos da QA aprovada, commit $SOURCE_SHA, run $RUN_ID, hashes SHA256SUMS.txt. Site oficial: https://www.pt2vhf.com."
+      - name: Verify release assets, sizes and SHA-256 via GitHub API
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" > /tmp/sdr_release.json
+          python3 - <<'PY'
+          import hashlib,json,pathlib,os
+          x=json.loads(pathlib.Path("/tmp/sdr_release.json").read_text())
+          assert x["tag_name"]=="v"+os.environ["VERSION"] and not x["draft"] and not x["prerelease"]
+          assert len(x["assets"])==3
+          for a in x["assets"]:
+              p=pathlib.Path("release")/a["name"]
+              assert p.is_file() and a["size"]==p.stat().st_size
+              assert a["digest"]=="sha256:"+hashlib.sha256(p.read_bytes()).hexdigest()
+              print("RELEASE_ASSET_OK="+p.name)
+          PY
