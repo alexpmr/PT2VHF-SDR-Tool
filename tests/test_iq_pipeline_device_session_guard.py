@@ -26,9 +26,12 @@ def test_observations_reports_worst_sdr_session_inference_coverage(monkeypatch):
 
     class PerfectAM:
         def predict(self, iq):
-            return SimpleNamespace(probabilities={
-                name: (1.0 if name == "AM" else 0.0) for name in CLASSES
-            })
+            return SimpleNamespace(
+                mode="AM", confidence=1.0,
+                probabilities={
+                    name: (1.0 if name == "AM" else 0.0) for name in CLASSES
+                },
+            )
 
     monkeypatch.setattr(gate, "read_windows", fake_read_windows)
     rows = [
