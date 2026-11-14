@@ -48,6 +48,23 @@ classes corresponde ao treinamento, nem que os pesos são íntegros ou
 apresentam desempenho suficiente. Manter o PR #2 em rascunho e o gate de
 release fechado até os critérios independentes de RF/Windows/CPU/OOD.
 
+## Integridade do gate de calibração por sessão — 14/11/2026
+
+O gate experimental `scripts/iq_session_gate.py` agora verifica a mesma
+coerência de saída já exigida pelo avaliador RF offline: confiança finita em
+[0, 1], concordância com o máximo da softmax (tolerância absoluta 1e-6),
+modo efetivo válido e modo conhecido igual ao argmax. Se o modelo expuser
+`min_confidence`, sua configuração também deve ser finita e coerente com
+a decisão efetiva (inclusive a rejeição UNKNOWN). Isso impede selecionar
+um limiar a partir de probabilidades aparentemente válidas quando o
+classificador declara um modo ou uma confiança contraditórios.
+
+A curva de calibração continua usando a probabilidade bruta e **não** o
+modo já rejeitado pelo limiar operacional. Os testes novos usam somente
+WAV IQ e classificadores simulados; não validam RF genuíno, CPUs físicas,
+latência, Windows nativo ou a precisão do modelo. O gate de publicação
+permanece fechado.
+
 ## Comparação de modelos e controle de falsos positivos
 
 O relatório separa janelas de sinal conhecido e UNKNOWN. Nos limiares de 80%, 95% e 99%, informa sinais válidos aceitos corretamente, erros aceitos, cobertura e falsa aceitação de UNKNOWN. Uma classe ausente retorna `null`, não zero fictício.
