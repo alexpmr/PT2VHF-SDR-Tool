@@ -499,8 +499,10 @@ class RtlSdrSource(IQSource):
     def _submit(self, name: str, fn):
         # A late UI/engine setter must not touch a USB handle once close()
         # has been requested.  Pre-start configuration remains supported.
-        if getattr(self, "_close_requested", False):
-            log.debug("Ignoring RTL-SDR %s after close requested", name)
+        if getattr(self, "_close_requested", False) or (
+            not self._running and getattr(self, "status", "") == "failed"
+        ):
+            log.debug("Ignoring RTL-SDR %s after close request or watchdog failure", name)
             return
         if self._running:
             self._ctl.put((name, fn))
