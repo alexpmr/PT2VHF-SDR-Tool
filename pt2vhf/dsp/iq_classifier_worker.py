@@ -6,6 +6,13 @@ import time
 import numpy as np
 from .iq_classifier import IQClassifier
 
+# A DSP callback must not copy or enqueue arbitrarily long IQ buffers.
+# 250 ms is a conservative *input budget*, not a measured latency guarantee.
+# The worker's 48 kS/s target yields at most 12,000 output samples; an
+# independent absolute input cap protects against pathological sample rates.
+MAX_WORKER_INPUT_SAMPLES = 768_000
+MAX_WORKER_OUTPUT_SAMPLES = 12_000
+
 class IQClassificationWorker:
     def __init__(self, model_path, on_result, on_error=None, min_confidence=0.8):
         self.on_result, self.on_error = on_result, on_error
@@ -32,12 +39,31 @@ class IQClassificationWorker:
         # Bound pathological ratios before enqueueing expensive FIR work.
         if max(ratio.numerator, ratio.denominator) > 4096:
             return False
+        # Preflight ordinary DSP ndarray/list inputs *before* conversion:
+        # np.asarray() and copy() may otherwise allocate unbounded memory on
+        # the real-time receive thread, even with a one-slot output queue.
+        if isinstance(iq, np.ndarray):
+            count = iq.size
+        elif isinstance(iq, (list, tuple)):
+            count = len(iq)
+        else:
+            count = None
+        if count is not None and count > MAX_WORKER_INPUT_SAMPLES:
+            return False
+        if count is not None and (
+            count * ratio.numerator + ratio.denominator - 1
+        ) // ratio.denominator > MAX_WORKER_OUTPUT_SAMPLES:
+            return False
         # A malformed buffer must not raise into the SDR receive callback.
         try:
             chunk = np.asarray(iq, np.complex64).reshape(-1)
         except (TypeError, ValueError, OverflowError):
             return False
-        if (chunk.size * ratio.numerator + ratio.denominator - 1) // ratio.denominator < 2048:
+        output_count = (
+            chunk.size * ratio.numerator + ratio.denominator - 1
+        ) // ratio.denominator
+        if (chunk.size > MAX_WORKER_INPUT_SAMPLES
+                or not 2048 <= output_count <= MAX_WORKER_OUTPUT_SAMPLES):
             return False
         item = (chunk.copy(), frequency_hz, time.time(),
                 ratio.numerator, ratio.denominator)
