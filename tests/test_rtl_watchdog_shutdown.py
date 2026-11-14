@@ -185,8 +185,8 @@ def test_native_close_is_idempotent_with_concurrent_teardown():
     src._reader = None
     src._reader_cancel_sent = False
     src._watch_thread = None
-    src._close_lock = threading.Lock()
-    src._close_requested = False
+    # Intentionally leave _close_lock absent: simultaneous teardown must
+    # atomically initialize the guard even for lightweight test objects.
     src.sdr = FakeSdr()
 
     gate = threading.Barrier(9)
