@@ -48,6 +48,21 @@ classes corresponde ao treinamento, nem que os pesos são íntegros ou
 apresentam desempenho suficiente. Manter o PR #2 em rascunho e o gate de
 release fechado até os critérios independentes de RF/Windows/CPU/OOD.
 
+## Independência de capturas dentro de cada split — 14/11/2026
+
+O auditor de calibração/holdout rejeita agora WAVs **inteiramente idênticos
+dentro do próprio split**, mesmo que tenham nomes e `session_id` distintos.
+Cópias de uma captura não são novas observações RF: podem duplicar a
+contribuição de uma sessão e enviesar cobertura, calibração ou rejeição
+OOD/UNKNOWN. O SHA-256 é calculado sobre o arquivo completo; o teste de
+regressão copia WAV sintético com outro nome e sessão, separadamente em
+calibração e holdout. A verificação entre splits continua ativa.
+
+**Limite explícito:** hashes de arquivo detectam cópias exatas, não versões
+recortadas, reamostradas ou reencodadas. A inspeção amostral de janelas IQ
+entre splits também não prova independência física. Proveniência e rótulos
+externos permanecem obrigatórios; nenhum resultado sintético homologa RF.
+
 ## Integridade do gate de calibração por sessão — 14/11/2026
 
 O gate experimental `scripts/iq_session_gate.py` agora verifica a mesma
