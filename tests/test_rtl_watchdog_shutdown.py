@@ -342,3 +342,31 @@ def test_native_close_waits_for_pending_async_cancel_worker():
         cancel_thread = getattr(src, "_cancel_thread", None)
         if cancel_thread is not None:
             cancel_thread.join(timeout=2)
+
+
+def test_watchdog_failed_source_rejects_late_native_setter():
+    """After MAX_RECOVER, UI setters must not call a failed USB handle.
+
+    A pre-start source is still configurable. This is a fake-device test,
+    not proof of field-crash root cause or physical-driver stability.
+    """
+    class FakeSdr:
+        def __init__(self):
+            self.calls = []
+
+        def set_gain(self, gain):
+            self.calls.append(gain)
+
+    src = object.__new__(RtlSdrSource)
+    src._running = False
+    src._close_requested = False
+    src.status = "failed"
+    src._ctl = queue.Queue()
+    src.sdr = FakeSdr()
+    src._submit("gain", lambda dev: dev.set_gain(12))
+    assert src.sdr.calls == [], "failed receiver touched native SDR"
+    assert src._ctl.empty()
+
+    src.status = "ok"  # normal pre-start configuration remains available
+    src._submit("gain", lambda dev: dev.set_gain(8))
+    assert src.sdr.calls == [8]
