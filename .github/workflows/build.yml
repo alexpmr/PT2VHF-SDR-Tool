@@ -103,6 +103,9 @@ jobs:
           copy /y COPYING-LGPL %GITHUB_WORKSPACE%\drivers\libwdi-COPYING-LGPL.txt
           %GITHUB_WORKSPACE%\drivers\wdi-simple.exe --help | findstr /C:"WinUSB" || exit /b 1
       - name: PyInstaller (pasta + portátil)
+        env:
+          # Only allow the missing splash in this isolated QA PR, never releases.
+          PT2VHF_QA_ALLOW_MISSING_BANNER: ${{ github.head_ref == 'release/stable-v1-windows-qa-20261114' && '1' || '0' }}
         run: pyinstaller --noconfirm pt2vhf.spec
       - name: Autoteste dos executáveis
         run: |
