@@ -35,11 +35,19 @@ def child(scenario: str, exit_mode: str, frames: int, source_root: Path) -> int:
     os.environ["PT2VHF_NO_STARTUP_DIALOGS"] = "1"
     os.environ["PT2VHF_NO_AUTOCONNECT"] = "1"
 
+    # Lightweight breadcrumbs for intermittent native hangs. The parent captures
+    # partial child stdout on timeout, so the last completed phase is retained.
+    def phase(label: str) -> None:
+        if os.environ.get("PT2VHF_QT_PROBE_TRACE") == "1":
+            print(f"CHILD-PHASE scenario={scenario} phase={label}", flush=True)
+
+    phase("before-qt-import")
     from PySide6.QtCore import QCoreApplication, QEvent
     from PySide6.QtWidgets import QApplication, QWidget
 
     app = QApplication([])
     app.setQuitOnLastWindowClosed(False)
+    phase("qt-app-ready")
     if scenario == "bare":
         widget = QWidget()
         widget.show()
@@ -49,8 +57,11 @@ def child(scenario: str, exit_mode: str, frames: int, source_root: Path) -> int:
     elif scenario in ("graphics", "image"):
         # Isolate pyqtgraph scene creation and ImageItem separately from SDR UI.
         import pyqtgraph as pg
+        phase("before-graphics-widget")
         widget = pg.GraphicsLayoutWidget()
+        phase("graphics-widget-ready")
         plot = widget.addPlot()
+        phase("graphics-plot-ready")
         if scenario == "image":
             import numpy as np
             image = pg.ImageItem()
@@ -62,10 +73,14 @@ def child(scenario: str, exit_mode: str, frames: int, source_root: Path) -> int:
                 )
                 if index % 4 == 0:
                     app.processEvents()
+        phase("before-graphics-show")
         widget.show()
         app.processEvents()
+        phase("after-graphics-events")
         widget.close()
+        phase("after-graphics-close")
         del widget
+        phase("after-graphics-delete")
     elif scenario in ("waterfall-empty", "waterfall", "waterfall-deferred",
                       "waterfall-empty-deferred", "waterfall-empty-hidden",
                       "waterfall-empty-disconnected", "waterfall-empty-explicit-delete",
@@ -145,9 +160,13 @@ def child(scenario: str, exit_mode: str, frames: int, source_root: Path) -> int:
     else:
         raise ValueError(f"Unknown scenario: {scenario}")
 
+    phase("before-final-events")
     app.processEvents()
+    phase("before-final-gc")
     gc.collect()
+    phase("after-final-gc")
     app.processEvents()
+    phase("after-final-events")
     print(f"CHILD-READY scenario={scenario} exit={exit_mode} frames={frames}", flush=True)
     if exit_mode == "hard":
         # ExitProcess still calls native DLL detach handlers on Windows.
@@ -165,6 +184,7 @@ def parent(repeats: int, frames: int, timeout: int, source_root: Path,
     env["PYTHONFAULTHANDLER"] = "1"
     env["PT2VHF_NO_STARTUP_DIALOGS"] = "1"
     env["PT2VHF_NO_AUTOCONNECT"] = "1"
+    env["PT2VHF_QT_PROBE_TRACE"] = "1"
     env["PYTHONPATH"] = str(source_root) + os.pathsep + env.get("PYTHONPATH", "")
     for scenario in scenarios:
         for exit_mode in exit_modes:
@@ -181,7 +201,19 @@ def parent(repeats: int, frames: int, timeout: int, source_root: Path,
                     )
                 except subprocess.TimeoutExpired as exc:
                     failures.append(f"{scenario}/{exit_mode} #{attempt}: TIMEOUT ({timeout}s)")
-                    print(failures[-1], flush=True)
+                    # TimeoutExpired.stdout is bytes even when text=True. Do not
+                    # discard it: a partial CHILD-PHASE log can pinpoint where
+                    # Qt or pyqtgraph stopped making progress.
+                    raw = exc.stdout if exc.stdout is not None else exc.output
+                    if isinstance(raw, bytes):
+                        partial = raw.decode(errors="replace")
+                    else:
+                        partial = str(raw) if raw is not None else ""
+                    print(
+                        f"{failures[-1]}\nCHILD-OUTPUT-BEFORE-TIMEOUT:\n"
+                        f"{partial[-4000:] if partial else '(no child output)'}",
+                        flush=True,
+                    )
                     continue
                 status = f"{proc.returncode} (0x{proc.returncode & 0xffffffff:08X})"
                 print(
