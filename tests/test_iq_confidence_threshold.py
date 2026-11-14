@@ -47,3 +47,14 @@ def test_classifier_rejects_invalid_confidence_gate(model_stub, threshold):
 def test_classifier_preserves_valid_confidence_gate(model_stub, threshold):
     classifier = IQClassifier(model_stub, min_confidence=threshold)
     assert classifier.min_confidence == pytest.approx(float(threshold))
+
+
+@pytest.mark.parametrize("invalid", [float("nan"), -0.1, np.bool_(True)])
+def test_invalid_gate_fails_before_native_onnx_session_load(monkeypatch, tmp_path, invalid):
+    """Bad OOD gates must be rejected before importing/initializing ONNX runtime."""
+    path = tmp_path / "stub.onnx"
+    path.write_bytes(b"synthetic fixture, not an ONNX model")
+    # Import would fail if the constructor reached the native runtime first.
+    monkeypatch.setitem(sys.modules, "onnxruntime", None)
+    with pytest.raises(ValueError, match="min_confidence must be a finite number"):
+        IQClassifier(path, min_confidence=invalid)

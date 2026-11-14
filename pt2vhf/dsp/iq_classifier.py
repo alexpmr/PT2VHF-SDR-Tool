@@ -26,15 +26,6 @@ class IQClassifier:
         path = Path(model_path)
         if not path.is_file():
             raise FileNotFoundError(f"Trained ONNX model missing: {path}")
-        import onnxruntime as ort
-        self.session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
-        inputs = self.session.get_inputs()
-        outputs = self.session.get_outputs()
-        if len(inputs) != 1 or len(outputs) != 1:
-            raise ValueError("Expected one input and one output")
-        if list(inputs[0].shape)[1:] != [2, SAMPLES]:
-            raise ValueError("Expected input shape [batch, 2, 2048]")
-        self.input_name = inputs[0].name
         # A NaN threshold silently rejects every known class because all
         # comparisons with NaN are false. Clamping out-of-range settings can
         # also conceal a misconfigured OOD/UNKNOWN safety gate.
@@ -45,6 +36,15 @@ class IQClassifier:
         if not np.isfinite(threshold) or not 0.0 <= threshold <= 1.0:
             raise ValueError("min_confidence must be a finite number between 0 and 1")
         self.min_confidence = threshold
+        import onnxruntime as ort
+        self.session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        inputs = self.session.get_inputs()
+        outputs = self.session.get_outputs()
+        if len(inputs) != 1 or len(outputs) != 1:
+            raise ValueError("Expected one input and one output")
+        if list(inputs[0].shape)[1:] != [2, SAMPLES]:
+            raise ValueError("Expected input shape [batch, 2, 2048]")
+        self.input_name = inputs[0].name
 
     @staticmethod
     def features(iq) -> np.ndarray:
