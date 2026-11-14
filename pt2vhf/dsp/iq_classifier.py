@@ -35,7 +35,16 @@ class IQClassifier:
         if list(inputs[0].shape)[1:] != [2, SAMPLES]:
             raise ValueError("Expected input shape [batch, 2, 2048]")
         self.input_name = inputs[0].name
-        self.min_confidence = float(np.clip(min_confidence, 0.0, 1.0))
+        # A NaN threshold silently rejects every known class because all
+        # comparisons with NaN are false. Clamping out-of-range settings can
+        # also conceal a misconfigured OOD/UNKNOWN safety gate.
+        if (isinstance(min_confidence, (bool, str))
+                or not isinstance(min_confidence, (int, float, np.integer, np.floating))):
+            raise ValueError("min_confidence must be a finite number between 0 and 1")
+        threshold = float(min_confidence)
+        if not np.isfinite(threshold) or not 0.0 <= threshold <= 1.0:
+            raise ValueError("min_confidence must be a finite number between 0 and 1")
+        self.min_confidence = threshold
 
     @staticmethod
     def features(iq) -> np.ndarray:
