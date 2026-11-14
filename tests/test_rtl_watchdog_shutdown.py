@@ -293,3 +293,52 @@ def test_submit_rejects_late_commands_after_close_requested():
     src._close_requested = False
     src._submit("gain", lambda sdr: sdr.set_gain(8))
     assert src.sdr.calls == [8]
+
+
+
+def test_native_close_waits_for_pending_async_cancel_worker():
+    """Never close the USB handle while cancel_read_async is still executing.
+
+    This reproduces a native-lifetime ordering race with a fake SDR only;
+    it is not evidence of the reported field crash or real hardware stability.
+    """
+    import time
+
+    cancel_entered = threading.Event()
+    release_cancel = threading.Event()
+    native_closed = threading.Event()
+
+    class FakeSdr:
+        def cancel_read_async(self):
+            cancel_entered.set()
+            release_cancel.wait(5)
+
+        def close(self):
+            native_closed.set()
+
+    src = object.__new__(RtlSdrSource)
+    src._running = True
+    src._ctl = queue.Queue()
+    src._ctl_thread = None
+    src._ctl_stop_sent = False
+    src._reader_cancel_sent = False
+    src._reader = None
+    src._watch_thread = None
+    src.CANCEL_CLOSE_JOIN_S = 0.05
+    src.sdr = FakeSdr()
+
+    try:
+        src.close()
+        assert cancel_entered.wait(2), "cancel worker was not started"
+        time.sleep(0.15)
+        assert not native_closed.is_set(), (
+            "native handle closed while cancellation was still running"
+        )
+        release_cancel.set()
+        assert native_closed.wait(2), "native close did not follow cancellation"
+        src.close()
+    finally:
+        release_cancel.set()
+        cancel_thread = getattr(src, "_cancel_thread", None)
+        if cancel_thread is not None:
+            cancel_thread.join(timeout=2)
