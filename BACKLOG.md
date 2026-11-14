@@ -1,5 +1,14 @@
 # Backlog — PT2VHF SDR Tool
 
+## P1 — compensação de upconverter externo +100 MHz (PP5AX) — candidato v1.0 (14/11/2026)
+- **Pedido:** PP5AX (Carlos) utiliza SDR Anauzer com conversor externo que soma nominalmente 100 MHz. Exibir 7,100 MHz quando o hardware estiver em 107,100 MHz.
+- **Implementação candidata:** `pt2vhf/sources/frequency_translation.py` envolve a fonte RF e traduz `set_center_freq`/`check_freq`; a interface, o motor DSP, VFO, memórias e waterfall continuam operando em RF aparente. Controles `Usar conversor externo` e `Deslocamento externo` na aba Receptor, com valor padrão de 100 MHz mas função desativada por padrão; ajustes somente com recepção desligada.
+- **Cálculo:** `f_hardware = f_RF + offset`; suportado deslocamento assinado de ±1500 MHz, sem inversão de espectro. SDRs de arquivo IQ e simulador não recebem a conversão. Correção de direct sampling prioriza frequência *do hardware*, evitando limitar VHF/UHF por uma configuração HF guardada.
+- **Testes:** adaptação unitária determinística e GUI, regressão sem offset, limites da frequência física, caminho do driver real e waterfall. **Não homologado com Anauzer real.** Não confundir com o upconverter *interno* RTL-SDR Blog V4.
+- **Limites conhecidos:** perfil ainda não segregado por dispositivo, necessidade de avaliar mistura com inversão de espectro, ensaio CAT/Scanner/Web/recordings e homologação RF. Somente candidato de código, **não considerar concluído/publicável**.
+- **Issue:** https://github.com/alexpmr/PT2VHF-SDR-Tool/issues/13
+
+
 ## P1 — caixas de seleção desmarcadas invisíveis no tema escuro (12/11/2026)
 - **Falha relatada com captura de tela:** checkboxes de **NB, NR e demais opções** quase desaparecem quando não selecionados; o estado marcado fica visível, mas a borda escura do desmarcado se confunde com o fundo do painel.
 - **Correção candidata:** `STYLE` global de `pt2vhf/ui/main_window.py` define explicitamente `QCheckBox::indicator:unchecked` com borda clara de 2 px, interior contrastante, estado hover laranja e estilos separados para marcado/desabilitado. A regra abrange painéis de áudio, decodificadores e configurações, inclusive versões Windows/Linux/macOS.
