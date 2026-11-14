@@ -18,6 +18,7 @@ $env:PT2VHF_TEST_HELPER = $helper
 $env:PT2VHF_TEST_DIR = $destination
 $env:PT2VHF_TEST_EXE = $installed
 $env:PT2VHF_TEST_VERSION = $Version
+$env:PT2VHF_TEST_OTA_TRACE = '1'
 
 @'
 $ErrorActionPreference = 'Stop'
@@ -44,9 +45,42 @@ function Stop-InstalledGui {
     }
 }
 
+function Write-SetupTimeoutDiagnostics {
+    # Preserve evidence from the Windows runner before cleanup; never print
+    # command lines, environment variables, user paths or secrets.
+    Write-Warning 'P0 OTA Setup: timeout; collecting bounded local diagnostics.'
+    foreach ($name in @(
+        'PT2VHF-SDR-Tool-update-result.txt',
+        'PT2VHF-SDR-Tool-update-error.txt',
+        'PT2VHF-SDR-Tool-setup.log',
+        'PT2VHF-SDR-Tool-ota-helper.log',
+        'PT2VHF-SDR-Tool-ota-helper-trace.log'
+    )) {
+        $file = Join-Path $env:TEMP $name
+        if (Test-Path -LiteralPath $file -PathType Leaf) {
+            Write-Host "[P0-OTA-DIAG] $name (last 25 lines)"
+            Get-Content -LiteralPath $file -Tail 25 -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Host $_ }
+        } else {
+            Write-Host "[P0-OTA-DIAG] ${name}: absent"
+        }
+    }
+    try {
+        $processes = @(Get-CimInstance Win32_Process -ErrorAction Stop |
+            Where-Object { $_.Name -match '^(powershell|pwsh|PT2VHF-SDR-Tool|PT2VHF-SDR-Tool-v.*-Setup|Setup|unins000)\.exe$' } |
+            Select-Object -First 30 ProcessId, ParentProcessId, Name)
+        foreach ($proc in $processes) {
+            Write-Host "[P0-OTA-DIAG] process=$($proc.Name) pid=$($proc.ProcessId) ppid=$($proc.ParentProcessId)"
+        }
+    } catch {
+        Write-Warning 'P0 OTA Setup: process snapshot unavailable.'
+    }
+}
+
 function Invoke-SetupSmoke([string]$source) {
     $env:PT2VHF_TEST_PACKAGE = $source
     Remove-Item -LiteralPath $resultFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $env:TEMP 'PT2VHF-SDR-Tool-ota-helper-trace.log') -Force -ErrorAction SilentlyContinue
     # Start-Process -Wait aguarda a arvore inteira no Windows, inclusive o helper
     # e o SDR reiniciado (GUI persistente): isso bloqueia o CI indefinidamente.
     # Esperar somente o processo launcher via System.Diagnostics.Process.
@@ -63,6 +97,7 @@ function Invoke-SetupSmoke([string]$source) {
         Start-Sleep -Seconds 1
     }
     if (-not (Test-Path -LiteralPath $resultFile)) {
+        Write-SetupTimeoutDiagnostics
         throw 'Helper Setup não concluiu em 100 segundos.'
     }
     return @(Get-Content -LiteralPath $resultFile -Encoding UTF8)

@@ -1,5 +1,13 @@
 # Backlog — PT2VHF SDR Tool
 
+## Windows QA candidate — 14/11/2026
+- Branch `release/stable-windows-qa-20261114`, derivada dos diagnósticos de crash PR #9 e com correção de contraste dos checkboxes do PR #11.
+- Build Windows Setup e Portable solicitado via CI de PR; artefatos de QA somente, sem tag, release pública ou atualização no site.
+- **Versão interna ainda 0.13.3:** não confundir pacote experimental com versão estável; a falha de encerramento 0.13.3 continua sem causa raiz demonstrada.
+- Não inclui splash v1.0 (JPEG original indisponível), mudanças RTL direct-sampling v1.0 nem IA IQ/ONNX experimental.
+- Aceite: build Windows, autoteste, OTA smoke simulados, ausência de falha Qt e testes físicos antes de promoção.
+
+
 ## P1 — duplo clique no waterfall: sintonizar e centralizar (11/11/2026)
 - **Solicitação:** dois cliques sobre um ponto válido do waterfall devem **sintonizar o VFO naquela frequência e centralizar essa frequência na área visível**, mantendo o nível atual de zoom. Isso deve atualizar LCD, passband e marcadores sem mudar o modo nem alterar indevidamente a frequência central RF do dispositivo.
 - **Comportamento anterior:** `SpectrumWaterfall._clicked()` executava `reset_zoom()` para todo duplo clique, sem emitir sintonia. Por isso o comando não sintonizava nem centralizava a frequência selecionada.

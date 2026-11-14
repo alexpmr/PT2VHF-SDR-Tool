@@ -1,0 +1,161 @@
+# Investigação P0 — encerramento inesperado no PT2VHF SDR Tool v0.13.3
+
+**Situação:** regressão relatada pelo usuário em 11/11/2026; causa ainda **não identificada**. Não afirmar que o problema foi corrigido apenas porque testes automatizados passaram.
+
+## Mitigação
+
+- A versão v0.13.3 foi temporariamente retirada do catálogo OTA em `alexpmr/PT2VHF-Site/main/updates.json` no commit `20f3dd57e61bc7e42fd8c839970fcd41110b78c7`, voltando a recomendar v0.13.2 até investigar a falha. O deploy Hostinger pode demorar.
+- O GitHub Release v0.13.3 permanece disponível para auditoria e rastreabilidade, **mas não deve ser recomendado como estável durante a investigação**.
+- Uma instalação já na v0.13.3 não faz downgrade automático. Para reproduzir na v0.13.2, baixar **a mesma modalidade** (Setup ou Portable) do GitHub, salvar antes uma cópia de `%APPDATA%\PT2VHF-SDR-Tool` e não apagar configurações sem backup.
+- Não atualizar o catálogo para v0.13.3 nem gerar v0.13.4 sem evidência da falha resolvida.
+
+## Coleta de evidências
+
+A branch `fix/crash-diagnostics-v0133` instrumenta a próxima build de diagnóstico, **não a v0.13.3 já instalada**. A instrumentação grava localmente:
+
+- `%APPDATA%\PT2VHF-SDR-Tool\crash-diagnostics.log`: hora UTC, PID, versão Python, início, aviso de saída Qt, retorno do event loop, exceções sem tratamento e traces nativos de `faulthandler` (inclusive all_threads).
+- `%APPDATA%\PT2VHF-SDR-Tool\pt2vhf-sdr.log`: log operacional preexistente quando a versão Windows é empacotada sem console.
+- Rotação após 2 MiB, mantendo uma cópia `.1`. **Não há telemetria automática, upload ou exposição pública de logs**.
+
+Para a v0.13.3 atual, coletar o log operacional acima e **Monitor de Confiabilidade do Windows** (`perfmon /rel`) ou Visualizador de Eventos → Logs do Windows → Aplicativo. Registrar hora, evento `Application Error`/`Windows Error Reporting`, módulo com falha e código de exceção; remover dados pessoais antes de compartilhar.
+
+## Testes
+
+- `tests/test_crash_diagnostics.py`: startup, anotação de encerramento, registro de exceções, rotação do log e ausência de falha na interface pela instrumentação.
+- `tests/test_waterfall_click_to_tune.py`: 120 ciclos de atualização IQ sintética, duplo clique, VFO e centralização em Qt, mantendo zoom.
+- CI deve executar Linux Qt e o Windows x64 completo com Setup, Portable, smoke OTA e selftests.
+- Probe P0 adicional no Windows: `python -X faulthandler scripts/probe_qt_native_exit.py --repeats 3 --frames 120`. Ele cria subprocessos separados para Qt mínimo e waterfall sintético, testa saída Python normal **e** `os._exit`, confere o código real de término (incluindo `0xC0000005`/`0xC0000374`) e imprime o stderr do processo. Não usa hardware SDR, não cria release e não atribui automaticamente a falha da produção a Qt. Se falhar, comparar primeiro o mesmo probe nas tags v0.13.2 e v0.13.3 e coletar WER/dump antes de alterar o runtime.
+- Atenção: `scripts/run_tests.py` usa `os._exit` após o pytest para evitar finalizadores Python/Qt. Um resumo `N passed` não prova que a finalização nativa é segura; por isso o probe independente verifica **exit code** e diferencia saída normal e abrupta.
+- A execução Windows [#43144458529](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43144458529) reproduziu **STATUS_HEAP_CORRUPTION `0xC0000374` em 2/3 subprocessos waterfall com saída Python normal**, enquanto Qt mínimo (6/6) e waterfall com `os._exit` (3/3) terminaram com código 0. Isto é prova de falha de finalização nativa no ambiente Windows com a base do PR #9 **sem IA**, mas ainda não demonstra identidade com o incidente do executável v0.13.3.
+- **Comparação A/B concluída no Windows, run [#43145027332](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43145027332), job `130940736015`:** com checkout isolado da tag **v0.13.2**, o probe registrou `0xC0000374` em **2/3** encerramentos normais de waterfall. Na branch PR #9, o mesmo probe registrou `0xC0000374` em **3/3**. Em ambos os códigos, Qt mínimo (normal/hard) e waterfall com `os._exit` passaram **3/3 por modo**. Logo, **esta falha específica de finalização do waterfall já ocorre em v0.13.2**, não é prova de regressão introduzida pela v0.13.3. O aplicativo v0.13.3 ainda pode ter outra causa de encerramento em uso real; não atribuir identidade causal sem log/dump da ocorrência. O script aceita `--source-root` para comparações reprodutíveis no mesmo runner.
+- **Próxima matriz de isolamento P0 (commit `02f0e3fb86a89ce596be4838ae11e54c5f55a8b4`):** o probe compara, em subprocessos, `bare` (Qt puro), `graphics` (GraphicsLayoutWidget), `image` (ImageItem com atualizações), `waterfall-empty` (widget sem frames), `waterfall` (120 frames) e `waterfall-deferred` (deleteLater + processamento de DeferredDelete). Cada cenário testa saída Python normal e `os._exit`, em ambas as bases v0.13.2 e PR #9, no mesmo runner Windows. O objetivo é localizar o menor cenário que reproduz `0xC0000374`, não contornar a falha com `os._exit`. Um resultado positivo para `waterfall-deferred` só indicaria hipótese de ciclo de vida QObject; não constitui correção nem prova de estabilidade do aplicativo em produção.
+- **Matriz concluída em 12/11/2026 (run [#43149249616](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43149249616), job Windows `130954264038`):** no mesmo runner Windows, `bare`, `graphics` (GraphicsLayoutWidget) e `image` (ImageItem atualizado) encerraram normalmente em **3/3** tentativas cada, nas duas bases. Já `waterfall-empty` (SpectrumWaterfall **sem qualquer frame**) terminou com `0xC0000374` em **3/3 na v0.13.2** e **1/3 no PR #9**; `waterfall` com frames falhou em **1/3** e **2/3**, respectivamente. `waterfall-deferred` (fechamento com `deleteLater` e processamento de `DeferredDelete`) terminou **3/3 sem falhas nas duas bases**. Todos os cenários `os._exit` passaram, mas não constituem mitigação. Isto reduz o gatilho mínimo para **construção/finalização do widget composto SpectrumWaterfall**, sem exigir frames, e favorece investigar **ciclo de vida de QObjects / destruição durante finalização do interpretador**. Não identifica a DLL, não demonstra causalidade com encerramento durante uso e não prova que `deleteLater` corrige produção. O CI Windows falhou **corretamente** no gate P0, antes de Setup/OTA; Linux passou.
+- **Experimento de discriminação adicionado no commit `5d73ed70`:** cenários `waterfall-empty-hidden` (widget sem `show`) e `waterfall-empty-deferred` (sem frames com `deleteLater`) isolam, respectivamente, efeito de visibilidade e efeito da destruição diferida sem processamento de dados. Aguardar CI Windows e comparar ambas as bases; amostras pequenas não autorizam alegações de estabilidade. Se persistir, capturar dump WER/WinDbg do subprocesso e obter pilha nativa para identificar módulo antes de alterar o código de produção.
+- A aprovação de CI com sinais sintéticos **não equivale a ensaio de resistência com RTL-SDR/rtl_tcp/SoapySDR físico**. Exigir comparação A/B e reprodução em bancada.
+
+- **Nova matriz concluída em 12/11/2026, run [#43155446490](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43155446490), Windows job `130974198292`:** `waterfall-empty-hidden` (**sem show e sem frames**) reproduziu `0xC0000374` em **3/3 v0.13.2** e **3/3 PR #9**. `waterfall-empty-deferred` (sem frames, `deleteLater` + `DeferredDelete`) terminou **3/3 OK nas duas bases**; `waterfall-deferred` também terminou 3/3 OK em ambas. `waterfall-empty` exibido falhou **3/3 na base v0.13.2** e **0/3 no PR #9**, ilustrando intermitência; `waterfall` com frames falhou **1/3 na base** e **3/3 no PR #9**. `bare`, `graphics`, `image` terminaram OK em todas as tentativas. O job Linux passou **159 testes**; o Windows falhou intencionalmente no gate P0, portanto **Setup/Portable/OTA não foram executados**. A invisibilidade do widget **não previne** a falha; a liberação de QObjects antes da finalização do interpretador é uma hipótese forte, mas não identifica módulo nativo nem prova correção do crash em uso real.
+- **Próximo isolamento apenas no PR #9 (commit `a4e8277`):** comparar `waterfall-empty-disconnected` (desconectar sinais Qt e event filter, sem `deleteLater`) e `waterfall-empty-explicit-delete` (`shiboken6.delete` do QWidget com QApplication viva). Ambos são **experimentos em subprocessos** para distinguir ciclos de referências de destruição tardia; **não são mudanças de produção**. Exigir novos resultados Windows A/B e dump WER/WinDbg antes de propor correção. A hipótese de encerramento espontâneo com SDR físico continua sem prova.
+
+## Hipóteses a investigar — não confirmadas
+
+1. Exceção em callback de Qt, finalizador ou race condition entre GUI e DSP.
+2. Falha nativa de biblioteca C/C++ (RTL-SDR, libusb, PortAudio, Qt/PySide6, pyqtgraph ou biblioteca de áudio).
+3. Comportamento de atualização/encerramento voluntário em `quit_for_update` (possível somente se a rotina OTA for acionada).
+4. Condição específica do hardware, versão do driver, dispositivo SDR ou configuração persistida.
+
+O delta entre as releases v0.13.2 e v0.13.3 é restrito principalmente ao waterfall e tratamento de pacotes OTA; atribuir causa requer logs e testes reais.
+
+Issue de rastreamento: https://github.com/alexpmr/PT2VHF-SDR-Tool/issues/8
+
+- **12/11/2026, CI [#43162162666](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43162162666), Windows job `130995657640`:** no mesmo runner e com 3 repetições por cenário, `waterfall-empty-disconnected` (desconexão combinada de sinais e remoção do event filter) terminou **0/3 falhas** tanto na v0.13.2 quanto no PR #9. `waterfall-empty-explicit-delete` (`shiboken6.delete` com QApplication ativa) também terminou **0/3 falhas** em ambas. O controle `waterfall-empty` ainda reproduziu `0xC0000374` (**1/3 falhas em cada base**); `waterfall-empty-hidden` falhou **2/3 na v0.13.2** e **1/3 no PR #9**; `waterfall` com frames falhou **1/3 no PR #9**. Assim, **desconectar sinais/filtro ou destruir explicitamente o QWidget evitou a falha nesta amostra pequena**, mas o primeiro cenário desconecta múltiplos componentes simultaneamente e não identifica a conexão responsável. Linux passou; Windows foi corretamente bloqueado no gate P0 antes do empacotamento/Setup/OTA. Nenhuma alteração no runtime distribuído.
+- **Isolamento subsequente em branch de diagnóstico, commit [`4540937`](https://github.com/alexpmr/PT2VHF-SDR-Tool/commit/4540937fb17088681692d36db41fa593c3802d9f):** acrescentados cinco cenários independentes que desconectam isoladamente `sigMouseClicked`, `sigRegionChangeFinished`, ambos os sinais `sigRangeChangedManually`, `QTimer.timeout` ou removem somente o `eventFilter`. Repetir A/B Windows nas duas bases. Resultados pendentes; nenhuma correção comprovada. Não inferir que `shiboken6.delete` seja apropriado em produção sem avaliar referências e ownership.
+
+- **12/11/2026, Windows CI [#43173761088](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43173761088), job `131032966734`:** na matriz de desconexões individuais, `waterfall-empty-no-pan-signals` terminou **0/3 falhas nas duas bases** (v0.13.2 e PR #9), enquanto o controle `waterfall-empty` falhou **3/3 na v0.13.2 e 1/3 no PR #9**. Desconectar somente clique, região, timeout do timer ou event filter **não eliminou consistentemente** `0xC0000374`. Os cenários `waterfall-deferred`, `waterfall-empty-deferred` e `waterfall-empty-explicit-delete` também terminaram sem falhas nesta amostra. **Hipótese mais específica, ainda não comprovada:** as duas conexões `sigRangeChangedManually.connect(lambda *_: self._pan_timer.start(350))` podem criar ciclos de referências Python/Qt que atrasam a destruição dos QObjects até a finalização do interpretador. A amostra de 3 execuções é insuficiente; o comportamento também está presente em v0.13.2 e não explica necessariamente o encerramento espontâneo em uso da v0.13.3. O job Windows falhou no gate P0, antes de empacotar Setup/Portable ou testar OTA.
+- **Próxima discriminação, commits [`460a248`](https://github.com/alexpmr/PT2VHF-SDR-Tool/commit/460a2483780e34026833fdd029926566b61de0d4) e [`f354d29`](https://github.com/alexpmr/PT2VHF-SDR-Tool/commit/f354d29baf3056cfdea73c37388c066b0df76aa8):** teste focalizado de **20 repetições por cenário e por base Windows**, com saída normal, compara controle, desconexão de ambos os sinais de pan, desconexão isolada do espectro, desconexão isolada do waterfall e reconexão de callbacks via `weakref` (sem capturar `self` fortemente). O teste é apenas diagnóstico e não altera a aplicação distribuída. **Resultados ainda pendentes.** A próxima decisão técnica deve exigir comparação A/B, preferencialmente dump WER/WinDbg com pilha nativa, e logs da ocorrência real.
+
+
+## 12/11/2026 — 20x A/B e mitigação experimental de ownership Qt (PR #9)
+
+- [Windows CI #43181275371](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43181275371), job `131057585328`, testou **20 subprocessos por cenário e por base** com saída normal, sem SDR físico. Resultados (falhas `0xC0000374`):
+
+  | Cenário | v0.13.2 | PR #9 antes da mitigação |
+  |---|---:|---:|
+  | Waterfall padrão, sem frames | 10/20 | 12/20 |
+  | Desconectar os dois sinais de pan | 0/20 | 0/20 |
+  | Desconectar só o sinal do espectro | 11/20 | 15/20 |
+  | Desconectar só o sinal do waterfall | 10/20 | 9/20 |
+  | Substituir ambos os callbacks por `weakref` | 0/20 | 0/20 |
+
+- Isso fornece evidência mais forte de que **ambos** os callbacks originais `lambda *_: self._pan_timer.start(350)` contribuem para ciclos de referências Qt/Python associados à corrupção de heap **no encerramento**. O CI Linux passou; o Windows foi bloqueado corretamente no gate P0. Ainda não há dump nativo que comprove o mecanismo interno da corrupção, nem vínculo com o fechamento espontâneo durante uso real na v0.13.3.
+- **Mudança experimental somente no PR #9:** commit [`68e6461`](https://github.com/alexpmr/PT2VHF-SDR-Tool/commit/68e6461d038078ed5860829aa1ceff838ea18d33) troca os dois callbacks fortes por uma função que captura apenas `weakref.ref(self._pan_timer)`. Não altera a API de pan nem a duração de debounce (350 ms). Commit [`849a20d`](https://github.com/alexpmr/PT2VHF-SDR-Tool/commit/849a20d64c36601e7c58974e14f5dd394d39d3cb) acrescenta teste de regressão de ambos os sinais. Commit [`1377d2f`](https://github.com/alexpmr/PT2VHF-SDR-Tool/commit/1377d2fe33fc46fc90fcbd710067dbcfda33d216) exige **zero falhas no candidato** e trata as falhas históricas da v0.13.2 como controle observacional, permitindo que o candidato alcance os testes Windows Setup/Portable/OTA **somente se passar no gate**. O job PR não publica release.
+- **Ainda NÃO é correção validada da regressão em uso.** Aguardar novo CI Windows, testes prolongados com hardware SDR e os logs `pt2vhf-sdr.log` / WER do usuário. Não fazer merge, release nem alteração no site enquanto P0 estiver aberto. v0.13.2 continua no catálogo OTA.
+
+
+## 12/11/2026 — Continuous operational Qt soak added (pending Windows CI)
+
+- After [CI #43194052685](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43194052685) passed **100/100 waterfall-empty** and **100/100 waterfall with 120 synthetic frames** on Windows, the next diagnostic gap is **continuous event-loop activity**, not additional short process starts.
+- `scripts/probe_qt_operational_soak.py` runs a real Qt event loop for **45 seconds per subprocess**, generating synthetic FFT frames approximately every 30 ms, emitting manual pan signals and double-click tuning on the waterfall, updating VFO and recentering. It validates minimum event counts and elapsed time, then checks the **native process exit code** after ordinary interpreter shutdown. Exceptions and timeouts fail the candidate.
+- Windows CI compares **one 45-second v0.13.2 baseline** (informational; native shutdown corruption is known) with **two independent 45-second candidate sessions** (both mandatory). The gate runs **before Setup/Portable/OTA packaging**.
+- **Do not equate this with an SDR soak**: no RTL-SDR/Soapy/rtl_tcp USB driver, audio library, live IQ, RF conditions or user-specific configuration is exercised. It also does not isolate the v0.13.3 field crash. Need operational log, WER exception module/code, and A/B test on the same physical receiver.
+- No new stable release, site/OTA change, merge or IA integration is authorized by this test alone.
+
+## 12/11/2026 — CI #43216014382 e correção de falso negativo na comparação A/B
+
+- [CI Windows/Linux #43216014382](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43216014382) concluiu **success**: Linux 160 testes; Windows 160 testes, 100 subprocessos waterfall sem frames, 100 com frames sintéticos, e empacotamento Windows Setup/Portable + smoke OTA automatizado. A etapa de publicação de release foi **skipped**, como exigido para PR de diagnóstico.
+- No Windows, as **duas sessões contínuas de 45 s da candidata** terminaram com exit code 0 e marcador SOAK-READY (cada uma: 1417 ticks, 109 cliques e 83 pans). Isto valida apenas o cenário Qt sintético, **não** o uso com SDR real nem a falha de campo.
+- **Defeito encontrado no teste A/B original:** a sessão de referência v0.13.2 falhou **antes de iniciar o loop** com AttributeError: 'SpectrumWaterfall' object has no attribute 'centerTuneRequested'. O sinal foi introduzido após v0.13.2; portanto, esse resultado **não pode ser contado como crash ou instabilidade da baseline**. O job anterior aceitava essa falha como informativa; essa interpretação seria enganosa.
+- [Commit 2d99af5](https://github.com/alexpmr/PT2VHF-SDR-Tool/commit/2d99af564ccf85a146c10f4ac40f4c0be1c9e6b3) corrige o harness: conecta tuneRequested presente em ambas, envia clique simples e duplo nas duas versões e valida os respectivos contratos (v0.13.2: duplo clique restaura zoom; candidata: duplo clique solicita sintonia centralizada). **CI de revalidação:** [#43226103145](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43226103145). Não inferir resultado antes da conclusão.
+- A comparação continua não perfeitamente idêntica porque a semântica de duplo clique difere entre as versões. É útil para detectar falhas durante uso e saída nativa, mas não prova regressão nem causa raiz. Exigir log operacional real, WER/Monitor de Confiabilidade e soak com receptor físico antes de liberar qualquer release.
+
+
+## 12/11/2026 — CI #43229990194: comparação operacional com a v0.13.3
+
+- [CI #43229990194](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43229990194), Windows job `131222448207` e Linux job `131222448769`, **success**. Linux e Windows: **160 testes por plataforma**; Windows: matriz focal de ownership, 200 encerramentos Qt (100 sem frames + 100 com frames), Setup/Portable, autotestes e smoke OTA concluídos. Etapa de publicação da release: **skipped**.
+- O teste operacional sintético `probe_qt_operational_soak.py` agora comparou três versões no mesmo runner Windows, todas com exit code **0**: **v0.13.2 1×45 s** (1408 ticks, 108 cliques, 82 pans), **v0.13.3 2×45 s** (1412/1421 ticks, 108/109 cliques, 83 pans), **candidata PR #9 2×45 s** (1419/1412 ticks, 109/108 cliques, 83 pans). Resultado: **zero falhas operacionais reproduzidas em qualquer uma das três versões**. Isso é evidência negativa importante: o harness sintético atual **não reproduz a regressão reportada** da v0.13.3. Não afirmar que a v0.13.3 é estável por esse resultado.
+- O teste de encerramento nativo ainda detectou falha na base v0.13.2 (`baseline=1`) e não na candidata (`candidate=0`), coerente com a mitigação experimental de callbacks Qt via `weakref`. Isso é uma falha **de shutdown** distinta da ocorrência real relatada **durante uso** até prova em contrário.
+- Para impedir falso positivo por importação da versão errada, [commit `3b65338`](https://github.com/alexpmr/PT2VHF-SDR-Tool/commit/3b653389e41bc2b4581a4018a6ae629ba8c59f55) adiciona ao harness verificação explícita do caminho de `pt2vhf/ui/waterfall.py` carregado em cada subprocesso; discrepância agora falha o teste. **Esse commit ainda exige nova validação CI**, não assumir aprovação.
+- **Bloqueio P0 permanece:** não há `pt2vhf-sdr.log` da ocorrência, código/módulo WER, reprodução com SDR físico, nem soak prolongado com drivers/audio e OTA real. Não fazer merge, publicar v0.13.3/v0.13.4 ou alterar catálogo OTA. A v0.13.2 permanece oferecida no `PT2VHF-Site/main/updates.json`.
+
+## 12/11/2026 — CI #43244451288: validação da origem real do módulo por versão
+
+- [CI #43244451288](https://github.com/alexpmr/PT2VHF-SDR-Tool/actions/runs/43244451288), Windows job `131273246408` e Linux job `131273244848`: ambos concluídos **success** em 12/11/2026 (UTC ~15h30). **160 testes passaram em cada plataforma**. A verificação `SOAK-SOURCE` introduzida em `3b65338` foi exercitada sem `SOAK-SOURCE-MISMATCH` e o gate operacional terminou com status 0 nas três bases.
+- **Comparação operacional no mesmo runner Windows:** v0.13.2 **1×45 s** (1416 ticks, 108 cliques, 83 pans); v0.13.3 **2×45 s** (1416/1417 ticks, 108/109 cliques, 83 pans); PR #9 **2×45 s** (1418/1413 ticks, 109/108 cliques, 83 pans). Todos os subprocessos encerraram com `0x00000000`, e cada sessão emitiu `SOAK-READY`. Nenhuma dessas sessões reproduziu o encerramento inesperado de campo.
+- **Gate de encerramento nativo:** matriz focal A/B registrou `v0.13.2=1` (falhas históricas esperadas) e `candidate=0`; **100× waterfall sem frames + 100× com frames** na candidata passaram. O defeito de finalização Qt existe na v0.13.2; não foi demonstrado que seja o mesmo incidente da v0.13.3 durante uso.
+- **Empacotamento e OTA simulados:** Windows Setup/Portable, autotestes e smokes `OTA_PORTABLE_SMOKE`, `OTA_PORTABLE_FAILURE_SMOKE`, `OTA_SETUP_SMOKE`, `OTA_SETUP_FAILURE_SMOKE` passaram. Isso **não** substitui atualização OTA real em máquinas de usuários nem ensaio de resistência com SDR/USB/áudio físico. Nenhuma release foi publicada.
+- **Contenção conferida no repositório:** `PT2VHF-Site/main/updates.json` anuncia somente **v0.13.2** para SDR, com Setup SHA-256 `dcb313680493a23fd12de7ab4495082a2a2da21d8ca09a075e4a43637595c0a4` e Portable SHA-256 `f8b63fc28b3afde1cc830cf752787c9a88e72386852eccfcf73b0065c6e66fe1`. Os endpoints públicos não puderam ser reconfirmados nesta execução (timeout); **não afirmar validação ao vivo**.
+- **Bloqueio P0:** sem `%APPDATA%\\PT2VHF-SDR-Tool\\pt2vhf-sdr.log` da ocorrência, módulo/código WER, reprodução no mesmo SDR físico e soak prolongado, a causa raiz da falha em produção segue **desconhecida**. Não fazer merge, release v0.13.4 ou reativar v0.13.3 no site/OTA. IA IQ/ONNX continua isolada no PR #2.
+
+
+## 12/11/2026 — correção da semântica dos marcadores de encerramento
+
+O callback `QApplication.aboutToQuit` era registrado como `CLEAN-EXIT`, embora
+`aboutToQuit` aconteça **antes** da destruição final de objetos Qt/Python.
+Isto podia gerar um falso diagnóstico de saída limpa justamente no cenário de
+corrupção de heap `0xC0000374` observado durante o teardown. A instrumentação
+do PR #9 agora grava `QT-ABOUT-TO-QUIT` e, após `app.exec()` retornar,
+`QT-LOOP-RETURN code=N`. **Nenhum desses marcadores prova que o processo
+terminou normalmente**; a evidência definitiva requer o exit code observado
+externamente e/ou Windows Error Reporting (WER), com módulo e código da falha.
+Ausência de `QT-LOOP-RETURN` não identifica sozinha a causa. Esta alteração
+melhora a fidelidade do diagnóstico, **não corrige** o encerramento espontâneo
+relatado na v0.13.3. O CI de validação desta alteração deve ser conferido antes
+de qualquer conclusão sobre a própria instrumentação.
+
+
+## Coleta local simplificada do Windows (sem instalar nova versão)
+
+O script `scripts/collect_windows_crash_evidence.ps1` pode ser executado
+no Windows com PowerShell 5.1 ou posterior, sem privilégios de administrador.
+Ele consulta os eventos 1000 (Application Error) e 1001 (Windows Error
+Reporting) dos últimos sete dias e salva somente horário UTC, identificador
+do evento, nome do executável, módulo de falha e código de exceção quando
+disponíveis. Não coleta caminhos completos, nomes de usuário, dumps, mensagens
+integrais de eventos, configurações nem envia informações à internet.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\collect_windows_crash_evidence.ps1 -Days 7
+```
+
+Saída padrão: `%TEMP%\PT2VHF-SDR-WER-summary.txt`. Revisar antes de
+compartilhar. Eventos 1001 variam entre versões do Windows e podem não
+conter campos estruturados suficientes: nesses casos o script registra
+somente a presença do evento. A ausência de eventos não comprova
+ausência de falha; o Monitor de Confiabilidade (`perfmon /rel`) continua
+sendo alternativa. Para análise de causa raiz, o arquivo existente
+`%APPDATA%\PT2VHF-SDR-Tool\pt2vhf-sdr.log` também é necessário
+(revisar e remover dados privados antes de compartilhar).
+
+O coletor **não altera** a v0.13.3 instalada, não ativa a instrumentação
+do PR #9 e não é uma correção do incidente.
+
+
+## Instrumentação adicional: fases de fechamento da janela (PR #9, sem release)
+
+A rotina `MainWindow.closeEvent` agora emite `WINDOW-CLOSE stage=begin`,
+`engine-stopped`, `audio-stopped` e `end` no log local. O primeiro marcador
+inclui `ota=0/1` e `qt_spontaneous=0/1`, sem caminhos, configuração ou dados
+pessoais. `qt_spontaneous` indica apenas a origem do evento segundo Qt:
+**não prova que o usuário clicou em Fechar**. A ausência de um marcador
+posterior sugere onde investigar uma interrupção, mas não identifica sua causa.
+Mesmo `stage=end` não garante a destruição nativa bem-sucedida. Os marcadores
+não são retroativos à v0.13.3 distribuída e não corrigem o incidente de campo.

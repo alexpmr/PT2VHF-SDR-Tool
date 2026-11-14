@@ -54,6 +54,15 @@ QPushButton { background: #252d37; border: 1px solid #39444f; border-radius: 4px
 QPushButton:hover { background: #2f3945; }
 QPushButton:checked { background: #c9871e; color: #120c02; border-color: #f0b44a; font-weight: bold; }
 QPushButton#powerButton:checked { background: #1f8a3b; color: white; border-color: #3fd46a; }
+/* Visible unchecked checkbox indicator in dark interface (QA candidate). */
+QCheckBox { spacing: 6px; }
+QCheckBox::indicator:unchecked {
+  width: 15px; height: 15px; border: 2px solid #9dacbc;
+  border-radius: 3px; background: #11161c;
+}
+QCheckBox::indicator:unchecked:hover { border-color: #f0b44a; background: #1d2732; }
+QCheckBox::indicator:unchecked:disabled { border-color: #697582; background: #222831; }
+QCheckBox:disabled { color: #87929d; }
 QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTreeWidget, QTableWidget {
   background: #0f1216; border: 1px solid #2e3742; border-radius: 3px; padding: 2px;
   selection-background-color: #c9871e; selection-color: #120c02; }
@@ -1458,6 +1467,8 @@ class MainWindow(QMainWindow):
 
     def quit_for_update(self):
         """Fecha tudo para o auxiliar externo instalar a atualização (ele reabre o programa)."""
+        from ..crash_diagnostics import mark_update_exit
+        mark_update_exit()
         self._quitting_for_update = True
         self.close()
         from PySide6.QtWidgets import QApplication
@@ -2326,6 +2337,11 @@ class MainWindow(QMainWindow):
             " Ctrl+1…6 abas; F11 modo apresentação; Esc sai da apresentação ou para a varredura."))
 
     def closeEvent(self, ev):
+        from ..crash_diagnostics import mark_window_close
+        # Observe deliberate OTA vs. Qt/window-system close events, and locate
+        # cleanup-stage failures without changing close behavior or logging paths.
+        mark_window_close("begin", ota=bool(getattr(self, "_quitting_for_update", False)),
+                          spontaneous=bool(ev.spontaneous()))
         self._stop_sonde()
         self.rigctl_panel.stop()
         if self.web is not None:
@@ -2357,8 +2373,11 @@ class MainWindow(QMainWindow):
         self.bank.save()
         self.occupancy.flush(force=True)
         self.engine.stop()
+        mark_window_close("engine-stopped")
         self.audio.stop()
+        mark_window_close("audio-stopped")
         super().closeEvent(ev)
+        mark_window_close("end")
 
 
 def _scroll(w):

@@ -26,6 +26,11 @@ def main():
     if args.selftest:
         sys.exit(selftest())
 
+    # Start native/Python crash capture before loading Qt or DSP libraries.
+    # Logs are local-only at %APPDATA%/PT2VHF-SDR-Tool/crash-diagnostics.log.
+    from .crash_diagnostics import enable, mark_qt_quit_requested, mark_qt_loop_return
+    enable()
+
     if sys.platform == "win32":  # o instalador (AppMutex) detecta o programa aberto
         import ctypes
         ctypes.windll.kernel32.CreateMutexW(None, False, "PT2VHF_SDR_Tool_Running")
@@ -39,6 +44,7 @@ def main():
     from .ui.main_window import MainWindow
 
     app = QApplication(sys.argv)
+    app.aboutToQuit.connect(mark_qt_quit_requested)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName("PT2VHF")
     w = MainWindow()
@@ -49,9 +55,19 @@ def main():
     if args.screenshot:
         def shot():
             w._auto_levels()
-            QTimer.singleShot(1500, lambda: (w.grab().save(args.screenshot), app.quit()))
+
+            def save_and_close():
+                w.grab().save(args.screenshot)
+                # Exercise the actual MainWindow.closeEvent cleanup in the
+                # packaged-GUI diagnostic smoke, not only QApplication.quit().
+                w.close()
+                app.quit()
+
+            QTimer.singleShot(1500, save_and_close)
         QTimer.singleShot(int(10_000), shot)
-    sys.exit(app.exec())
+    exit_code = app.exec()
+    mark_qt_loop_return(exit_code)
+    sys.exit(exit_code)
 
 
 def selftest() -> int:
