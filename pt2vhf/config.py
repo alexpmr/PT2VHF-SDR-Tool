@@ -41,6 +41,8 @@ DEFAULTS = {
     "ppm": 0,
     "bias_tee": False,
     "direct_sampling": 0,
+    "external_converter_enabled": False,
+    "external_converter_offset_mhz": 100.0,
     "volume": 0.5,
     "squelch": -150.0,
     "agc": True,
