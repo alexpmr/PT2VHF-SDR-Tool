@@ -127,7 +127,7 @@ def test_fail_closed_end_to_end(tmp_path):
     b=manifest(tmp_path,"hold.json","hold",1700)
     class AlwaysAM:
         def predict(self, iq):
-            return Classification("AM", .99,
+            return Classification("AM", 1.0,
                 {k:(1.0 if k=="AM" else 0.0) for k in CLASSES})
     output=run(a,b,tmp_path,AlwaysAM())
     assert output["decision"]=="NO_ACCEPTABLE_THRESHOLD"
@@ -295,7 +295,7 @@ def test_observations_account_for_silent_and_dc_rejections(tmp_path):
     class Guarded:
         def predict(self, iq):
             IQClassifier.features(iq)
-            return Classification("AM", .99,
+            return Classification("AM", 1.0,
                                   {k: (1.0 if k == "AM" else 0.0) for k in CLASSES})
 
     accounting = {}
