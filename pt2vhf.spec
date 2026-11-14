@@ -33,10 +33,13 @@ datas += [("scripts/apply-update.ps1", "scripts")]
 # The same PyInstaller spec works for Linux/macOS if these builds are enabled.
 banner_path = os.path.join("pt2vhf", "assets", "branding", "welcome-banner.jpg")
 if not os.path.isfile(banner_path):
-    raise FileNotFoundError(
-        "PT2VHF splash banner missing. Run scripts/prepare_splash.py with "
-        "the supplied 7-project PT2VHF image before packaging.")
-datas.append((banner_path, "pt2vhf/assets/branding"))
+    # Explicit QA-only override; never set this on public releases.
+    if os.environ.get("PT2VHF_QA_ALLOW_MISSING_BANNER") != "1":
+        raise FileNotFoundError(
+            "PT2VHF splash banner missing. Run scripts/prepare_splash.py with "
+            "the supplied 7-project PT2VHF image before packaging.")
+else:
+    datas.append((banner_path, "pt2vhf/assets/branding"))
 for f in ("drivers/wdi-simple.exe", "drivers/libwdi-COPYING-LGPL.txt"):
     if os.path.isfile(f):
         datas.append((f, "drivers"))
