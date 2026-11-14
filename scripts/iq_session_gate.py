@@ -132,7 +132,36 @@ def observations(rows, model, max_windows, *, accounting=None):
                                 rel_tol=0.0, abs_tol=1e-4):
                 raise ValueError("Model probabilities are not normalized")
             predicted = max(scores, key=scores.get)
-            data.append((label, predicted, scores[predicted], session, _device))
+            top_score = scores[predicted]
+            # Threshold selection uses raw softmax, but it must not certify a
+            # classifier whose reported confidence or effective mode contradicts
+            # those probabilities. The offline RF evaluator enforces the same
+            # contract; the session-based calibration/holdout gate must too.
+            confidence = result.confidence
+            if (isinstance(confidence, (bool, str))
+                    or not isinstance(confidence, Real)
+                    or not math.isfinite(float(confidence))
+                    or not 0 <= float(confidence) <= 1):
+                raise ValueError("Invalid model confidence")
+            if not math.isclose(float(confidence), top_score,
+                                rel_tol=0.0, abs_tol=1e-6):
+                raise ValueError("Classifier confidence disagrees with softmax maximum")
+            mode = result.mode
+            if not isinstance(mode, str) or mode not in CLASSES:
+                raise ValueError("Invalid classifier mode")
+            if mode != "UNKNOWN" and mode != predicted:
+                raise ValueError("Classifier mode disagrees with softmax argmax")
+            gate = getattr(model, "min_confidence", None)
+            if gate is not None:
+                if (isinstance(gate, (bool, str))
+                        or not isinstance(gate, Real)
+                        or not math.isfinite(float(gate))
+                        or not 0 <= float(gate) <= 1):
+                    raise ValueError("Invalid classifier confidence threshold")
+                expected_mode = predicted if top_score >= float(gate) else "UNKNOWN"
+                if mode != expected_mode:
+                    raise ValueError("Classifier mode disagrees with configured confidence gate")
+            data.append((label, predicted, top_score, session, _device))
             found += 1
         selected_total += stats["selected"]
         silent_total += stats["skipped_silence"]
