@@ -80,7 +80,7 @@ def test_aggregate_report_does_not_expose_session_names(tmp_path):
     make_wav(tmp_path/"a.wav")
     class Stub:
         def predict(self,iq):
-            return Classification("AM",0.99,{k:(1 if k=="AM" else 0) for k in CLASSES})
+            return Classification("AM",1.0,{k:(1 if k=="AM" else 0) for k in CLASSES})
     report=evaluate(manifest(tmp_path),tmp_path,Stub())
     assert report["sample_windows"]==4
     assert report["sessions"]==1
@@ -159,7 +159,7 @@ def test_acceptance_metrics_with_unknown_and_comparison(tmp_path):
     m.write_text(json.dumps(data))
     class AlwaysAM:
         def predict(self,iq):
-            return Classification("AM",.99,{k:(1 if k=="AM" else 0) for k in CLASSES})
+            return Classification("AM",1.0,{k:(1 if k=="AM" else 0) for k in CLASSES})
     reports=evaluate_multiple_models(m,tmp_path,{"v2":AlwaysAM(),"v3":AlwaysAM()})
     assert set(reports["models"])=={"v2","v3"}
     x=reports["models"]["v2"]
@@ -175,7 +175,7 @@ def test_acceptance_metrics_when_all_known_or_unknown(tmp_path):
     make_wav(tmp_path/"a.wav")
     class Stub:
         def predict(self,iq):
-            return Classification("AM",.99,{k:(1 if k=="AM" else 0) for k in CLASSES})
+            return Classification("AM",1.0,{k:(1 if k=="AM" else 0) for k in CLASSES})
     known=evaluate(manifest(tmp_path),tmp_path,Stub())
     assert known["acceptance_curve"]["0.8"]["unknown_false_accept_rate"] is None
     unknown=evaluate(manifest(tmp_path,label="UNKNOWN"),tmp_path,Stub())
@@ -210,7 +210,7 @@ def test_offline_report_session_ci_is_private_and_session_based(tmp_path):
     m.write_text(json.dumps(doc))
     class AlwaysAM:
         def predict(self, iq):
-            return Classification("AM", .99,
+            return Classification("AM", 1.0,
                                   {k: (1 if k == "AM" else 0) for k in CLASSES})
     report = evaluate(m, tmp_path, AlwaysAM())
     assert report["session_macro_accuracy"] == pytest.approx(2 / 3)
@@ -315,7 +315,7 @@ def test_mixed_signal_and_dc_coverage_does_not_inflate_unknown_recall(tmp_path):
     class Guarded:
         def predict(self, iq):
             IQClassifier.features(iq)
-            return Classification("AM", .99,
+            return Classification("AM", 1.0,
                                   {k: (1 if k == "AM" else 0) for k in CLASSES})
 
     report = evaluate(m, tmp_path, Guarded())
@@ -381,7 +381,7 @@ def test_multi_model_comparison_rejects_different_inferred_cohorts(tmp_path):
             is_low = float(np.sqrt(np.mean(np.abs(iq)**2))) < 0.15
             if is_low == self.low:
                 raise ValueError("No usable RF signal (DC-only or unresolved carrier)")
-            return Classification("AM", 0.99,
+            return Classification("AM", 1.0,
                                   {k: (1 if k == "AM" else 0) for k in CLASSES})
 
     m = manifest(tmp_path, filename="varying.wav")
@@ -505,7 +505,7 @@ def test_offline_mode_consistency_with_softmax_and_unknown_gate(
     class Stub:
         def predict(self, iq):
             return Classification(
-                effective_mode, 0.99,
+                effective_mode, 1.0,
                 {name: (1.0 if name == "AM" else 0.0) for name in CLASSES},
             )
 
