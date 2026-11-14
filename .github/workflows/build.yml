@@ -32,7 +32,7 @@ jobs:
 
   windows-exe:
     # Manual ou commit explícito [build-windows] (não compilar em cada push).
-    if: (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'release/stable-') || startsWith(github.head_ref, 'fix/ota-'))) || (github.event_name == 'workflow_dispatch' && inputs.build_windows) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build-windows]'))
+    if: (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'release/stable-') || startsWith(github.head_ref, 'fix/ota-') || startsWith(github.head_ref, 'fix/crash-'))) || (github.event_name == 'workflow_dispatch' && inputs.build_windows) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build-windows]'))
     permissions:
       contents: write
     runs-on: windows-2022  # validação obrigatória para distribuição Windows, independente do Qt Linux
@@ -51,6 +51,90 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Testes no Windows
         run: python scripts/run_tests.py
+      - name: P0 - smoke do coletor local de eventos Windows (sem telemetria)
+        run: |
+          $path = Join-Path $env:TEMP "pt2vhf-wer-ci.txt"
+          .\\scripts\\collect_windows_crash_evidence.ps1 -Days 1 -OutputFile $path
+          if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) { throw "WER collector failed" }
+          if (-not (Test-Path -LiteralPath $path)) { throw "WER summary missing" }
+          $data = Get-Content -LiteralPath $path -Raw
+          if (-not $data.Contains("PT2VHF SDR Tool - Windows crash event summary")) { throw "WER summary invalid" }
+          Remove-Item -LiteralPath $path -Force
+          .\\scripts\\test_windows_crash_evidence.ps1
+      - uses: actions/checkout@v4
+        with:
+          ref: v0.13.2
+          path: baseline-v0132
+      - name: P0 - focused pan callback lifetime A/B (20 repeats per case)
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $cases = @("waterfall-empty", "waterfall-empty-no-pan-signals", "waterfall-empty-no-spec-pan-signal", "waterfall-empty-no-wf-pan-signal", "waterfall-empty-pan-weakrefs")
+          python -X faulthandler scripts/probe_qt_native_exit.py --source-root baseline-v0132 --repeats 20 --scenarios $cases --exit-modes normal
+          $baseline = $LASTEXITCODE
+          python -X faulthandler scripts/probe_qt_native_exit.py --repeats 20 --scenarios $cases --exit-modes normal
+          $candidate = $LASTEXITCODE
+          Write-Host "P0 focused diagnostic (expected baseline failures): v0.13.2=$baseline candidate=$candidate"
+          # The baseline is expected to fail; the candidate must pass all focused cases.
+          if ($candidate -ne 0) { throw "P0 candidate failed focused pan lifetime matrix" }
+      - name: P0 - extended Windows Qt shutdown soak (100x, candidate only)
+        run: |
+          # Process-level exit status catches native heap corruption after pytest finishes.
+          # Synthetic Qt only: does not replace a prolonged real-SDR hardware soak.
+          python -X faulthandler scripts/probe_qt_native_exit.py --repeats 100 --scenarios waterfall-empty waterfall --exit-modes normal
+          if ($LASTEXITCODE -ne 0) { throw "P0 candidate failed 100x Windows native shutdown soak" }
+      - uses: actions/checkout@v4
+        with:
+          ref: v0.13.3
+          path: baseline-v0133
+      - name: P0 - focused native Qt shutdown matrix on released v0.13.3
+        run: |
+          # Compare the reported release with v0.13.2 and the candidate using
+          # the same five scenarios and 20 subprocesses per scenario.
+          # This is a shutdown-only synthetic A/B, not the field crash.
+          $PSNativeCommandUseErrorActionPreference = $false
+          $cases = @("waterfall-empty", "waterfall-empty-no-pan-signals", "waterfall-empty-no-spec-pan-signal", "waterfall-empty-no-wf-pan-signal", "waterfall-empty-pan-weakrefs")
+          python -X faulthandler scripts/probe_qt_native_exit.py --source-root baseline-v0133 --repeats 20 --scenarios $cases --exit-modes normal
+          $released133 = $LASTEXITCODE
+          Write-Host "P0 focused released v0.13.3 diagnostic: exit=$released133 (0=all passed; 1=native failures)"
+          # Baseline is observational: retain the real nonzero result in the log,
+          # but do not let pwsh's implicit 'exit $LASTEXITCODE' abort later QA.
+          # Only the candidate is a mandatory gate in the preceding step.
+          if ($released133 -ne 0) {
+            Write-Warning "Historical v0.13.3 native Qt failures reproduced (exit=$released133); candidate still requires full QA."
+          }
+          $global:LASTEXITCODE = 0
+      - name: P0 - continuous Qt operational soak (v0.13.2 / v0.13.3 / candidate)
+        run: |
+          # Same 45-second synthetic workload on both released tags and candidate.
+          # Historical runs are diagnostic only: native shutdown corruption exists in v0.13.2.
+          # Candidate must survive both sessions and normal process teardown.
+          $PSNativeCommandUseErrorActionPreference = $false
+          python -X faulthandler scripts/probe_qt_operational_soak.py --source-root baseline-v0132 --seconds 45 --repeats 1
+          $baseline132 = $LASTEXITCODE
+          python -X faulthandler scripts/probe_qt_operational_soak.py --source-root baseline-v0133 --seconds 45 --repeats 2
+          $baseline133 = $LASTEXITCODE
+          python -X faulthandler scripts/probe_qt_operational_soak.py --seconds 45 --repeats 2
+          $candidate = $LASTEXITCODE
+          Write-Host "P0 continuous Qt soak: v0.13.2=$baseline132 v0.13.3=$baseline133 candidate=$candidate"
+          # A nonzero historical status does not establish a field crash root cause.
+          if ($candidate -ne 0) { throw "P0 candidate failed continuous operational Qt soak" }
+      - name: P0 - longer continuous Qt UI soak (candidate 2x180s)
+        run: |
+          # Six minutes of live event-loop activity, synthetic frames, pans and
+          # waterfall clicks. Native process status is checked after Qt teardown.
+          # NOT a real RTL-SDR/audio driver or field-crash certification.
+          python -X faulthandler scripts/probe_qt_operational_soak.py --seconds 180 --repeats 2
+          if ($LASTEXITCODE -ne 0) { throw "P0 candidate failed 2x180s active Qt UI soak" }
+      - name: P0 - compare native Qt shutdown against v0.13.2
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          python -X faulthandler scripts/probe_qt_native_exit.py --source-root baseline-v0132 --repeats 3 --frames 120
+          $baseline = $LASTEXITCODE
+          python -X faulthandler scripts/probe_qt_native_exit.py --repeats 3 --frames 120
+          $candidate = $LASTEXITCODE
+          Write-Host "Native exit probe: v0.13.2=$baseline candidate=$candidate"
+          # Historical v0.13.2 failures are recorded but must not mask candidate validation.
+          if ($candidate -ne 0) { throw "P0 candidate native Qt shutdown probe failed" }
       - name: Smoke OTA portátil (helper, backup e falha segura)
         run: .\scripts\test_ota_windows.ps1
       - name: Versão
@@ -128,6 +212,12 @@ jobs:
           $p = Start-Process -FilePath "$dir\PT2VHF-SDR-Tool.exe" -ArgumentList "--selftest" -Wait -PassThru
           Get-Content "$env:TEMP\pt2vhf-sdr-selftest.log"
           if ($p.ExitCode -ne 0) { throw "Programa instalado falhou no autoteste" }
+      - name: P0 - packaged GUI crash diagnostics (Portable + Setup, synthetic simulator)
+        run: |
+          .\scripts\test_packaged_crash_diagnostics.ps1 -Executables @(
+            "dist\PT2VHF-SDR-Tool-Portable.exe",
+            (Join-Path $env:LOCALAPPDATA "Programs\PT2VHF SDR Tool\PT2VHF-SDR-Tool.exe")
+          )
       - name: Smoke OTA Setup real (instalação, restart e falha segura)
         run: .\scripts\test_ota_setup_windows.ps1 -Version "${{ steps.ver.outputs.version }}"
       - name: Pacotes finais e SHA-256

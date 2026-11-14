@@ -17,6 +17,17 @@ $setupLog = Join-Path $env:TEMP 'PT2VHF-SDR-Tool-setup.log'
 $status = 'erro'
 $detail = ''
 
+function Write-TestOtaPhase([string]$phase) {
+    # CI-only phase markers; no paths, PIDs, arguments or configuration values.
+    if ($env:PT2VHF_TEST_OTA_TRACE -ne '1') { return }
+    try {
+        $trace = Join-Path $env:TEMP 'PT2VHF-SDR-Tool-ota-helper-trace.log'
+        "$(Get-Date -Format o) $phase" | Add-Content -LiteralPath $trace -Encoding UTF8
+    } catch {
+        # Diagnostics must never alter update behavior.
+    }
+}
+
 function Get-Descendants([int]$root) {
     # Instantaneo da arvore enquanto o app ainda existe (PIDs dos filhos e netos).
     $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Select-Object ProcessId, ParentProcessId)
@@ -46,8 +57,11 @@ function Wait-Exit([int[]]$pids, [int]$seconds) {
 }
 
 try {
+    Write-TestOtaPhase 'start'
     $children = @(Get-Descendants $WaitPid | Where-Object { $_ -ne $PID })
+    Write-TestOtaPhase 'wait-parent-start'
     $left = Wait-Exit (@($WaitPid) + $children) 90
+    Write-TestOtaPhase 'wait-parent-end'
     if ($left.Count -gt 0) {
         # Somente processos que eram filhos do SDR Tool; nunca de outros programas.
         foreach ($childProcessId in $left) {
@@ -59,10 +73,12 @@ try {
         if ($left -contains $WaitPid) { throw 'O PT2VHF SDR Tool nao fechou a tempo. Feche-o e instale manualmente.' }
     }
     if ($Mode -eq 'Setup') {
+        Write-TestOtaPhase 'setup-start'
         if (-not (Test-Path -LiteralPath $Package -PathType Leaf)) { throw 'Instalador ausente.' }
         $setupArgs = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/CLOSEAPPLICATIONS', "/LOG=`"$setupLog`"")
         if ($Destination) { $setupArgs += "/DIR=`"$Destination`"" }
         $p = Start-Process -FilePath $Package -ArgumentList $setupArgs -Wait -PassThru
+        Write-TestOtaPhase 'setup-process-exited'
         if ($p.ExitCode -ne 0) { throw "Instalador terminou com codigo $($p.ExitCode) (log: $setupLog)" }
     } else {
         if (-not (Test-Path -LiteralPath $Package -PathType Leaf) -or
@@ -88,14 +104,18 @@ try {
         }
         # Configuracoes e memorias ficam em %APPDATA%\PT2VHF-SDR-Tool e nunca sao tocadas.
     }
+    Write-TestOtaPhase 'apply-success'
     $status = 'ok'
     $detail = "Atualizado para a versao $Version."
 } catch {
+    Write-TestOtaPhase 'apply-error'
     $detail = $_.Exception.Message
     "Falha ao instalar atualizacao PT2VHF SDR Tool: $detail" | Out-File -FilePath (Join-Path $env:TEMP 'PT2VHF-SDR-Tool-update-error.txt') -Encoding UTF8
 } finally {
+    Write-TestOtaPhase 'result-write'
     "$status`n$Version`n$detail" | Out-File -FilePath $resultFile -Encoding UTF8
     if ($Executable -and (Test-Path -LiteralPath $Executable)) {
+        Write-TestOtaPhase 'relaunch-start'
         Start-Process -FilePath $Executable
     }
 }
