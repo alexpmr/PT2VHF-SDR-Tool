@@ -163,6 +163,9 @@ def tuning_range(tuner: str, blog_lib: bool, direct_sampling: int, product: str 
 
 
 class RtlSdrSource(IQSource):
+    # Shared only for lazy initialization in legacy/lightweight test objects.
+    # Normal instances initialize their own lock in __init__.
+    _close_init_lock = threading.Lock()
     name = "RTL-SDR"
     supports_gain = True
     supports_ppm = True
@@ -196,6 +199,8 @@ class RtlSdrSource(IQSource):
         self._watch_thread: threading.Thread | None = None
         self._busy_since = 0.0
         self._recovering = threading.Lock()
+        self._close_lock = threading.Lock()
+        self._close_requested = False
         self.library = ""
         self.sdr = self._open()
         self.tuner = self._tuner_name()
@@ -398,8 +403,13 @@ class RtlSdrSource(IQSource):
         # Calling librtlsdr.close twice on the same native handle is unsafe.
         lock = getattr(self, "_close_lock", None)
         if lock is None:  # permits lightweight object.__new__ test doubles
-            lock = threading.Lock()
-            self._close_lock = lock
+            # Atomic publication: two concurrent close() callers must not
+            # create distinct locks and both release the same native handle.
+            with RtlSdrSource._close_init_lock:
+                lock = getattr(self, "_close_lock", None)
+                if lock is None:
+                    lock = threading.Lock()
+                    self._close_lock = lock
         with lock:
             if getattr(self, "_close_requested", False):
                 return
