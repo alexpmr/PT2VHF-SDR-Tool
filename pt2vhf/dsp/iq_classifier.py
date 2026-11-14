@@ -52,7 +52,8 @@ class IQClassifier:
             batch = shape[0]
             valid_batch = (batch is None or type(batch) is int and batch == 1
                            or isinstance(batch, str) and bool(batch))
-            return valid_batch and list(shape[1:]) == trailing
+            return valid_batch and all(type(value) is int and value == expected
+                                       for value, expected in zip(shape[1:], trailing))
 
         if not valid_batch_shape(inputs[0].shape, [2, SAMPLES]):
             raise ValueError("Expected input shape [batch, 2, 2048]")
