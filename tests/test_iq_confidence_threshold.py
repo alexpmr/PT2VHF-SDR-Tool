@@ -16,10 +16,10 @@ def model_stub(monkeypatch, tmp_path):
             assert providers == ["CPUExecutionProvider"]
 
         def get_inputs(self):
-            return [SimpleNamespace(name="iq", shape=[1, 2, 2048])]
+            return [SimpleNamespace(name="iq", shape=[1, 2, 2048], type="tensor(float)")]
 
         def get_outputs(self):
-            return [SimpleNamespace(name="logits", shape=[1, 7])]
+            return [SimpleNamespace(name="logits", shape=[1, 7], type="tensor(float)")]
 
     monkeypatch.setitem(
         sys.modules, "onnxruntime",
