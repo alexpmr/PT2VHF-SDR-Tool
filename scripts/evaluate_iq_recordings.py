@@ -187,6 +187,12 @@ def evaluate(manifest: Path, root: Path, model, max_windows=100,
             # never a separately supplied/stale confidence field.
             top_label = max(scores, key=scores.get)
             top_score = scores[top_label]
+            # Reject inconsistent model metadata instead of merely ignoring it.
+            # The RF report must not certify a classifier that misstates its
+            # own confidence, even when the threshold sweep uses raw softmax.
+            if not math.isclose(float(result.confidence), top_score,
+                                rel_tol=0.0, abs_tol=1e-6):
+                raise ValueError("Classifier confidence disagrees with softmax maximum")
             predicted = result.mode
             if predicted not in CLASSES:
                 raise ValueError("Invalid classifier mode")

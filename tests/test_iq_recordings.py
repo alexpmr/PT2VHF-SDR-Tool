@@ -440,8 +440,9 @@ def test_offline_evaluation_rejects_invalid_confidence(tmp_path, bad_confidence)
         evaluate(manifest(tmp_path), tmp_path, Broken())
 
 
-def test_offline_threshold_sweep_uses_softmax_not_stale_confidence(tmp_path):
-    """A stale low confidence must not falsely suppress UNKNOWN acceptance."""
+@pytest.mark.parametrize("stale_confidence", [0.01, 0.99, np.float32(0.5)])
+def test_offline_threshold_sweep_rejects_stale_confidence(tmp_path, stale_confidence):
+    """Reject contradictory model metadata before publishing RF acceptance rates."""
     make_wav(tmp_path / "a.wav")
     make_wav(tmp_path / "b.wav")
     m = manifest(tmp_path)
@@ -455,14 +456,38 @@ def test_offline_threshold_sweep_uses_softmax_not_stale_confidence(tmp_path):
 
     class StaleConfidence:
         def predict(self, iq):
-            return Classification("AM", 0.01,
+            return Classification("AM", stale_confidence,
                                   {name: (1.0 if name == "AM" else 0.0)
                                    for name in CLASSES})
 
-    report = evaluate(m, tmp_path, StaleConfidence())
+    with pytest.raises(ValueError, match="confidence disagrees with softmax maximum"):
+        evaluate(m, tmp_path, StaleConfidence())
+
+    class ConsistentConfidence:
+        def predict(self, iq):
+            return Classification("AM", 1.0,
+                                  {name: (1.0 if name == "AM" else 0.0)
+                                   for name in CLASSES})
+
+    report = evaluate(m, tmp_path, ConsistentConfidence())
     assert report["acceptance_curve"]["0.99"]["unknown_false_accept_rate"] == 1.0
     assert report["acceptance_curve"]["0.99"]["known_coverage"] == 1.0
     assert report["high_confidence_error_rate"] == 0.5
+
+
+def test_offline_evaluation_allows_small_float32_confidence_rounding(tmp_path):
+    """A small representation difference is not a stale confidence field."""
+    make_wav(tmp_path / "a.wav")
+
+    class RoundedConfidence:
+        def predict(self, iq):
+            return Classification("AM", np.float32(0.9999997),
+                                  {name: (1.0 if name == "AM" else 0.0)
+                                   for name in CLASSES})
+
+    report = evaluate(manifest(tmp_path), tmp_path, RoundedConfidence())
+    assert report["windows_inferred"] > 0
+    assert report["accuracy_top1"] == 1.0
 
 
 @pytest.mark.parametrize(("effective_mode", "expected_error"), [
