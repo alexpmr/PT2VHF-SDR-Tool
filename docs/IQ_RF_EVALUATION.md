@@ -30,6 +30,24 @@ O relatório traz matriz de confusão, recall por classe, erros com confiança e
 Não faça commit dos WAV, manifestos privados ou capturas contendo informações sensíveis.
 
 
+## Verificação antecipada do contrato ONNX (14/11/2026)
+
+O construtor experimental `IQClassifier` valida os metadados do modelo
+antes de receber a primeira janela IQ: exatamente uma entrada e uma saída,
+entrada `tensor(float)` (float32) com forma `[batch, 2, 2048]` e
+saída `tensor(float)` com forma `[batch, 7]`. A dimensão de lote
+deve ser 1 ou dinâmica; as demais dimensões devem ser inteiros exatos.
+Formas ou tipos incompatíveis geram `ValueError` antes da primeira
+inferência, evitando que um modelo errado seja aceito na inicialização
+e falhe apenas durante a recepção. Os 18 testes adicionados usam somente
+stubs sintéticos do runtime; **não** executam pesos ONNX, RF real,
+comparação AMD/Intel, latência ou QA Windows nativo.
+
+Essa verificação de interface não comprova que a ordem semântica das sete
+classes corresponde ao treinamento, nem que os pesos são íntegros ou
+apresentam desempenho suficiente. Manter o PR #2 em rascunho e o gate de
+release fechado até os critérios independentes de RF/Windows/CPU/OOD.
+
 ## Comparação de modelos e controle de falsos positivos
 
 O relatório separa janelas de sinal conhecido e UNKNOWN. Nos limiares de 80%, 95% e 99%, informa sinais válidos aceitos corretamente, erros aceitos, cobertura e falsa aceitação de UNKNOWN. Uma classe ausente retorna `null`, não zero fictício.
