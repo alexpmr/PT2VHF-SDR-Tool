@@ -45,8 +45,8 @@ function Stop-InstalledGui {
 }
 
 function Write-SetupTimeoutDiagnostics {
-    # Preserve evidence from the Windows runner before cleanup. Do not print
-    # process command lines, user profiles, environment values or secrets.
+    # Preserve evidence from the Windows runner before cleanup; never print
+    # command lines, environment variables, user paths or secrets.
     Write-Warning 'P0 OTA Setup: timeout; collecting bounded local diagnostics.'
     foreach ($name in @(
         'PT2VHF-SDR-Tool-update-result.txt',
@@ -60,69 +60,12 @@ function Write-SetupTimeoutDiagnostics {
             Get-Content -LiteralPath $file -Tail 25 -ErrorAction SilentlyContinue |
                 ForEach-Object { Write-Host $_ }
         } else {
-            Write-Host "[P0-OTA-DIAG] $name: absent"
+            Write-Host "[P0-OTA-DIAG] ${name}: absent"
         }
     }
     try {
         $processes = @(Get-CimInstance Win32_Process -ErrorAction Stop |
-            Where-Object { $_.Name -match '^(powershell|pwsh|PT2VHF-SDR-Tool|PT2VHF-SDR-Tool-v.*-Setup|Setup|unins000)\.exe
-    $env:PT2VHF_TEST_PACKAGE = $source
-    Remove-Item -LiteralPath $resultFile -Force -ErrorAction SilentlyContinue
-    # Start-Process -Wait aguarda a arvore inteira no Windows, inclusive o helper
-    # e o SDR reiniciado (GUI persistente): isso bloqueia o CI indefinidamente.
-    # Esperar somente o processo launcher via System.Diagnostics.Process.
-    $p = Start-Process -FilePath $powershell -ArgumentList @(
-        '-NoProfile', '-NonInteractive', '-File', ('"' + $launcher + '"')
-    ) -PassThru
-    if (-not $p.WaitForExit(30000)) {
-        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-        throw 'Launcher Setup excedeu 30 segundos.'
-    }
-    if ($p.ExitCode -ne 0) { throw "Launcher Setup falhou: $($p.ExitCode)" }
-    for ($i = 0; $i -lt 100; $i++) {
-        if (Test-Path -LiteralPath $resultFile) { break }
-        Start-Sleep -Seconds 1
-    }
-    if (-not (Test-Path -LiteralPath $resultFile)) {
-        Write-SetupTimeoutDiagnostics
-        throw 'Helper Setup não concluiu em 100 segundos.'
-    }
-    return @(Get-Content -LiteralPath $resultFile -Encoding UTF8)
-}
-
-try {
-    $result = Invoke-SetupSmoke $setup
-    if ($result[0].Trim() -ne 'ok') {
-        throw "OTA Setup real falhou: $($result -join ' | ')"
-    }
-    Start-Sleep -Seconds 3
-    $reopened = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object { $_.ExecutablePath -and $_.ExecutablePath -ieq $installed })
-    if ($reopened.Count -eq 0) {
-        throw 'Instalador OTA terminou, mas o aplicativo não foi reaberto.'
-    }
-    Stop-InstalledGui
-    if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne $originalHash) {
-        throw 'Reinstalação da mesma versão alterou o executável inesperadamente.'
-    }
-    $p = Start-Process -FilePath $installed -ArgumentList '--selftest' -Wait -PassThru
-    if ($p.ExitCode -ne 0) { throw "Autoteste pós-OTA Setup falhou: $($p.ExitCode)" }
-    Write-Host 'OTA_SETUP_SMOKE=PASS (Inno, helper, restart e selftest)'
-
-    $result = Invoke-SetupSmoke (Join-Path $root 'missing-setup.exe')
-    if ($result[0].Trim() -ne 'erro') {
-        throw "Pacote Setup ausente deveria falhar: $($result -join ' | ')"
-    }
-    if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne $originalHash) {
-        throw 'Falha OTA Setup alterou executável instalado.'
-    }
-    Stop-InstalledGui
-    Write-Host 'OTA_SETUP_FAILURE_SMOKE=PASS (pacote ausente preserva instalação)'
-} finally {
-    Stop-InstalledGui
-    Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
-}
- } |
+            Where-Object { $_.Name -match '^(powershell|pwsh|PT2VHF-SDR-Tool|PT2VHF-SDR-Tool-v.*-Setup|Setup|unins000)\.exe$' } |
             Select-Object -First 30 ProcessId, ParentProcessId, Name)
         foreach ($proc in $processes) {
             Write-Host "[P0-OTA-DIAG] process=$($proc.Name) pid=$($proc.ProcessId) ppid=$($proc.ParentProcessId)"
@@ -151,6 +94,7 @@ function Invoke-SetupSmoke([string]$source) {
         Start-Sleep -Seconds 1
     }
     if (-not (Test-Path -LiteralPath $resultFile)) {
+        Write-SetupTimeoutDiagnostics
         throw 'Helper Setup não concluiu em 100 segundos.'
     }
     return @(Get-Content -LiteralPath $resultFile -Encoding UTF8)
