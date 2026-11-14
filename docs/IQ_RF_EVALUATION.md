@@ -252,3 +252,22 @@ mas impede a falsa normalização de portadoras estáticas/espúrios DC.
 Isso não resolve a identificação de CW/AM em zero beat, nem separa
 portadora RF verdadeira do desvio DC do receptor. Essa distinção continua
 a exigir sintonia deslocada e confirmação independente.
+
+
+## Cobertura mínima por gravação WAV — revisão experimental de 14/11/2026
+
+O gate RF offline já impedia que uma sessão ou um SDR com baixa cobertura
+de inferência fosse ocultado por outros. Porém, **duas gravações do mesmo
+SDR e da mesma sessão** podiam apresentar cobertura agregada acima de 80%
+mesmo que uma das gravações tivesse apenas 10% de janelas inferíveis.
+Isso é especialmente relevante para CW/AM fracos, portadoras sem modulação
+e capturas com trechos rejeitados pelo pré-processamento.
+
+A avaliação agora registra `minimum_recording_pipeline_coverage` e o
+número agregado de gravações, sem divulgar nomes de arquivos ou IDs. O gate
+aplica `min_pipeline_coverage` também à **pior gravação individual** de
+calibração e holdout, além dos piores estratos por sessão e SDR/sessão.
+Uma gravação com baixa cobertura resulta em
+`HOLDOUT_INSUFFICIENT_PIPELINE_COVERAGE`, mesmo quando a matriz de
+confusão condicional às janelas inferidas é perfeita. Testes de regressão
+usam stubs sintéticos e **não** medem sensibilidade real de CW/AM ou RF.

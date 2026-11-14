@@ -104,6 +104,7 @@ def observations(rows, model, max_windows, *, accounting=None):
     selected_total = silent_total = rejected_total = inferred_total = 0
     per_session = {}
     per_device_session = {}
+    per_recording_coverage = []
     for path, label, session, _device in rows:
         found = 0
         stats = {"selected": 0, "skipped_silence": 0}
@@ -166,6 +167,10 @@ def observations(rows, model, max_windows, *, accounting=None):
         selected_total += stats["selected"]
         silent_total += stats["skipped_silence"]
         inferred_total += found
+        # Two WAVs from one SDR/session can conceal a nearly unusable
+        # capture behind a much longer clean recording. Keep each recording
+        # as an independent minimum-coverage stratum, without exposing paths.
+        per_recording_coverage.append(found / stats["selected"] if stats["selected"] else 0.0)
         session_counts = per_session.setdefault(session, [0, 0])
         session_counts[0] += stats["selected"]
         session_counts[1] += found
@@ -192,6 +197,8 @@ def observations(rows, model, max_windows, *, accounting=None):
             "minimum_device_session_pipeline_coverage": (
                 min(cell_coverages) if cell_coverages else 0.0),
             "device_session_cells": len(per_device_session),
+            "minimum_recording_pipeline_coverage": min(per_recording_coverage) if per_recording_coverage else 0.0,
+            "recordings": len(per_recording_coverage),
             "sessions": len(per_session),
             "session_ids_excluded": True,
         })
@@ -498,6 +505,12 @@ def run(cal_manifest, hold_manifest, root, model, max_windows=100,
                 calibration_accounting["minimum_session_pipeline_coverage"]),
             holdout_accounting.get(
                 "minimum_device_session_pipeline_coverage",
+                holdout_accounting["minimum_session_pipeline_coverage"]),
+            calibration_accounting.get(
+                "minimum_recording_pipeline_coverage",
+                calibration_accounting["minimum_session_pipeline_coverage"]),
+            holdout_accounting.get(
+                "minimum_recording_pipeline_coverage",
                 holdout_accounting["minimum_session_pipeline_coverage"]),
         ) < min_pipeline_coverage:
             result["decision"] = "HOLDOUT_INSUFFICIENT_PIPELINE_COVERAGE"
