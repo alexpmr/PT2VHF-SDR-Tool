@@ -10,7 +10,8 @@ param(
     [string]$Executable,
     [ValidateSet('Portable','Setup')][string]$Mode,
     [string]$Version = '',
-    [string]$ReadyFile = ''
+    [string]$ReadyFile = '',
+    [switch]$ProbeOnly
 )
 $ErrorActionPreference = 'Stop'
 $resultFile = Join-Path $env:TEMP 'PT2VHF-SDR-Tool-update-result.txt'
@@ -24,6 +25,14 @@ function Write-Phase([string]$phase, [string]$detail = '') {
     } catch { }
 }
 Write-Phase 'LAUNCHED' ('mode=' + $Mode + ' wait_pid=' + $WaitPid + ' version=' + $Version)
+# Native packed-exe QA: exercise PowerShell 5.1 parser, process-creation
+# flags, real bundled script and READY handshake, WITHOUT installing anything.
+if ($ProbeOnly) {
+    if (-not $ReadyFile) { throw 'OTA probe sem arquivo READY.' }
+    Set-Content -LiteralPath $ReadyFile -Value 'READY' -Encoding UTF8
+    Write-Phase 'PROBE_READY' 'Auxiliar validado; nenhuma instalação realizada.'
+    exit 0
+}
 
 function Get-Descendants([int]$root) {
     # Instantaneo da arvore enquanto o app ainda existe (PIDs dos filhos e netos).
