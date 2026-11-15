@@ -1,0 +1,65 @@
+name: Publish validated PT2VHF SDR Tool v1.0.3 OTA hotfix
+on:
+  push:
+    branches: [release/publish-v1.0.3-20261115]
+    paths:
+      - .github/workflows/publish-v103-validated.yml
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: pt2vhf-sdr-publish-v103
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SOURCE_RUN_ID: "43718907872"
+      SOURCE_SHA: "789452e115e82aa2736b9b8774b693194cf46bbe"
+      VERSION: "1.0.3"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact tested build and binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          actual="$(gh api "repos/$repo/actions/runs/$SOURCE_RUN_ID" --jq '.head_sha')"
+          result="$(gh api "repos/$repo/actions/runs/$SOURCE_RUN_ID" --jq '.conclusion')"
+          test "$actual" = "$SOURCE_SHA"
+          test "$result" = "success"
+          gh run download "$SOURCE_RUN_ID" --repo "$repo" \
+            --name "PT2VHF-SDR-Tool-$VERSION-windows" --dir release
+          for flavor in Setup Portable; do
+            test -s "release/PT2VHF-SDR-Tool-v$VERSION-Win11-x64-$flavor.exe"
+          done
+          test -s "release/SHA256SUMS.txt"
+          cd release
+          sed '1s/^\xef\xbb\xbf//' SHA256SUMS.txt | tr -d '\r' | \
+            awk 'NF == 3 {print $1 "  " $3}' | sha256sum --check --strict
+          test "$(awk 'NF == 3 {n++} END {print n}' SHA256SUMS.txt)" -eq 2
+      - name: Publish OTA hotfix with field-validation warning
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          if gh api "repos/$repo/releases/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::Release v$VERSION already exists; refusing to overwrite"
+            exit 1
+          fi
+          gh release create "v$VERSION" release/*.exe release/SHA256SUMS.txt \
+            --repo "$repo" --target "$SOURCE_SHA" \
+            --title "PT2VHF SDR Tool v$VERSION — Windows OTA hotfix" \
+            --notes "v$VERSION: Fix candidate for recurring Windows OTA error ('PowerShell exited before update'). Replaces DETACHED_PROCESS with redirected CREATE_NO_WINDOW PowerShell launcher, writes pre-execution diagnostics to %TEMP%/PT2VHF-SDR-Tool-ota-launch.log, captures exit code and helper stderr, includes native packaged --ota-helper-qa probe. Windows Setup and Portable both passed native helper launch probe, 240 Qt/Linux tests, Windows tests, Setup install and OTA smoke on CI run $SOURCE_RUN_ID at SHA $SOURCE_SHA. FIELD VALIDATION REQUIRED: this fixes a suspected launch issue, not yet confirmed on the reporting user's own Windows. Because previous OTA is broken, install v$VERSION MANUALLY ONCE; next version can be used to test automatic update. Retains v1.0.2 features including experimental SDRplay/Mirics detection, which still requires external drivers and physical validation. No native RSP plug-and-play drivers embedded, no neural IQ/ONNX model. Splash remains textual fallback."
+          tag_sha="$(gh api "repos/$repo/git/ref/tags/v$VERSION" --jq '.object.sha')"
+          test "$tag_sha" = "$SOURCE_SHA"
+          gh api "repos/$repo/releases/tags/v$VERSION" > /tmp/release.json
+          jq -e --arg v "$VERSION" '
+            .draft == false and .prerelease == false and
+            ([.assets[].name] | index("SHA256SUMS.txt") != null) and
+            ([.assets[].name] | index("PT2VHF-SDR-Tool-v"+$v+"-Win11-x64-Setup.exe") != null) and
+            ([.assets[].name] | index("PT2VHF-SDR-Tool-v"+$v+"-Win11-x64-Portable.exe") != null)
+          ' /tmp/release.json
+          echo "PT2VHF_SDR_V103_PUBLISHED=$tag_sha"
