@@ -23,10 +23,12 @@ from ..dsp.receiver import MODES, SAMPLE_RATES
 from ..memory import BAND_PLAN, MemoryBank, MemoryChannel
 from ..memory_regions import RegionMemoryStore
 from ..sources.network_sources import soapy_devices
+from ..sources.mirics import (SOURCE_NAME as MIRICS_SOURCE, enumerate_rsp_devices,
+                              is_rsp_device, MISSING_DRIVER)
 from ..sources.rtlsdr_source import list_devices
 
 STEPS = [10, 50, 100, 500, 1000, 2500, 5000, 6250, 8330, 9000, 10000, 12500, 25000, 50000, 100000]
-SOURCES = ["RTL-SDR", "Simulador", "rtl_tcp", "SoapySDR", "Arquivo IQ"]
+SOURCES = ["RTL-SDR", MIRICS_SOURCE, "Simulador", "rtl_tcp", "SoapySDR", "Arquivo IQ"]
 
 
 def fmt_freq(hz: float) -> str:
@@ -184,6 +186,22 @@ class ReceiverPanel(QWidget):
         self.file_btn.setVisible(fil)
         self.file_label.setVisible(fil)
         self.rate.setEnabled(not fil)
+        # 2.4 MS/s is both a typical Mirics-compatible rate and a multiple
+        # of the receiver's 240 kHz DSP intermediate rate. Other rates in
+        # the generic RTL list are not necessarily supported by MSi2500.
+        if name == MIRICS_SOURCE:
+            index = self.rate.findData(2_400_000)
+            if index >= 0:
+                self.rate.setCurrentIndex(index)
+            self.rate.setToolTip(
+                "2,4 MS/s é o valor inicial; confirme as taxas aceitas pelo driver "
+                "SDRplay ou Mirics do dispositivo.")
+            self.direct.setEnabled(False)
+            self.bias.setEnabled(False)
+        else:
+            self.rate.setToolTip("")
+            self.direct.setEnabled(name == "RTL-SDR")
+            self.bias.setEnabled(name in ("RTL-SDR", "rtl_tcp"))
         self.refresh_devices()
 
     def refresh_devices(self):
@@ -192,6 +210,23 @@ class ReceiverPanel(QWidget):
         if name == "RTL-SDR":
             devs = list_devices()
             self.device.addItems(devs or ["(nenhum RTL-SDR encontrado)"])
+        elif name == MIRICS_SOURCE:
+            self.device.setEditable(False)
+            devices = enumerate_rsp_devices()
+            if devices:
+                preferred = str(self.cfg.get("soapy_args", ""))
+                preferred_index = 0
+                for index, (label, descriptor) in enumerate(devices):
+                    self.device.addItem(label, descriptor)
+                    if descriptor == preferred:
+                        preferred_index = index
+                self.device.setCurrentIndex(preferred_index)
+            else:
+                self.device.addItem("(Nenhum RSP detectado — SDRplay API ou Mirics)", "")
+            self.device.setToolTip(
+                "Receptores listados conforme os drivers realmente disponíveis: "
+                "SDRplay API + SoapySDRPlay3, ou Mirics + SoapyMiri. "
+                "Selecione o backend desejado, sem trocar o driver USB.")
         elif name == "SoapySDR":
             devs = soapy_devices()
             self.device.setEditable(True)
@@ -200,7 +235,7 @@ class ReceiverPanel(QWidget):
             self.device.addItem({"Simulador": "Banda de 2 m sintética",
                                  "rtl_tcp": "Servidor remoto",
                                  "Arquivo IQ": "WAV estéreo I/Q"}[name])
-        self.device.setEnabled(name in ("RTL-SDR", "SoapySDR"))
+        self.device.setEnabled(name in ("RTL-SDR", MIRICS_SOURCE, "SoapySDR"))
 
     def _browse(self):
         p, _ = QFileDialog.getOpenFileName(self, "Abrir gravação IQ", "", "WAV IQ (*.wav)")
@@ -210,10 +245,18 @@ class ReceiverPanel(QWidget):
     def _toggle(self, on):
         if on:
             dev = self.device.currentText()
+            rsp = self.source.currentText() == MIRICS_SOURCE
+            selected_args = str(self.device.currentData() or "") if rsp else dev
+            if rsp:
+                props = dict(pair.split("=", 1) for pair in selected_args.split(",") if "=" in pair)
+                if not is_rsp_device(props):
+                    QMessageBox.warning(self, "MSi-SDR / RSP1", MISSING_DRIVER)
+                    self.start_btn.setChecked(False)
+                    return
             self.startRequested.emit({
                 "source": self.source.currentText(),
                 "device_index": int(dev.split(":")[0]) if dev[:1].isdigit() else 0,
-                "soapy_args": dev if self.source.currentText() == "SoapySDR" else "",
+                "soapy_args": selected_args if self.source.currentText() in ("SoapySDR", MIRICS_SOURCE) else "",
                 "host": self.host.text(), "port": self.port.value(),
                 "file": self.file_edit.text(), "sample_rate": self.rate.currentData(),
                 "gain": self.current_gain(), "ppm": self.ppm.value(),

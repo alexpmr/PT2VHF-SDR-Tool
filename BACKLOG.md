@@ -1,5 +1,21 @@
 # Backlog — PT2VHF SDR Tool
 
+## SDRplay API + Mirics: detecção por dois backends — extensão do P1 RSP (14/11/2026)
+- O usuário esclareceu que um operador utiliza a API oficial SDRplay (https://sdrplay.com/hardware-api/), mas outros utilizam o driver Mirics. **Não impor uma pilha USB a todos**.
+- A opção no app deve ser **SDRplay / MSi-SDR (RSP)**, com dispositivos identificados por backend `SDRplay API` (driver SoapySDRPlay3, `driver=sdrplay`) ou `Mirics` (SoapyMiri/libmirisdr, `driver=miri/soapymiri/mirisdr`). A enumeração usa os descritores informados pelo driver, nunca apenas o nome comercial "RSP1".
+- Quando ambos os módulos detectarem dispositivos, oferecer ambos no seletor, sem privilegiar um backend ou modificar driver USB. Se nenhum for identificado, informar dependências e permitir diagnóstico.
+- A API SDRplay 3.15 é disponibilizada pela SDRplay para seus receptores compatíveis; uso de sua API **não prova** que clones funcionem. Confirmar compatibilidade real com o operador, licença/distribuição de bibliotecas proprietárias e empacotamento Windows. `SoapySDRPlay3` é uma camada de conexão separada da SDRplay Hardware API.
+- Requer validação com unidade física, `SoapySDRUtil --find`, streams IQ, taxa de amostragem, troca de backend, reinicialização e preservação de outros SDRs. Não publicar como PnP completo até homologado.
+
+
+## P1 — MSI-SDR / MSi.SDR RSP1 clone (MSi2500 + MSi001) na lista de receptores (14/11/2026)
+- **Origem:** usuário enviou captura de anúncio de um MSI-SDR RSP1 compatível anunciado com 10 kHz–2 GHz, TCXO 0,5 ppm e ADC 12 bits. Essas são alegações do anúncio, não medidas validadas neste dispositivo.
+- **Implementação candidata:** fonte explícita `MSi-SDR (RSP1 clone)` na lista do receptor, detecção pelo SoapySDR usando `driver=miri` ou `driver=soapyMiri`, sem confundir com RTL-SDR ou a API proprietária SDRplay. Nenhum dispositivo falso aparece como conectável se o driver não detectar hardware. Mensagem de orientação quando faltarem módulo/driver.
+- **Limitação de plug and play:** o código de interface e de descoberta está pronto, mas não existe ainda empacotamento Windows de módulo SoapyMiri/libmirisdr e de driver USB. Portanto NÃO anunciar como plug and play real nesta etapa. Instalar/alterar driver USB exige escolha explícita por VID/PID e não pode substituir drivers de outros SDRs, inclusive o RTL-SDR atual.
+- **QA e aceite:** Windows real com esta unidade: identificar VID/PID no Gerenciador de Dispositivos, validar `SoapySDRUtil --find`, abrir/fechar 100 ciclos, medir frequências HF, VHF e UHF, taxa efetiva, IQ (resolução anunciada não equivale necessariamente à taxa/precisão real), áudio, scanner, waterfall, estabilidade/temperatura. Confirmar legalidade e disponibilidade dos drivers para distribuição.
+- **Estado:** detecção e entrada UI em PR experimental; testes automatizados sem hardware; driver/empacotamento/QA de RF ainda pendentes. Não inserir na v1.0.0 publicada nem ativar OTA com mudanças experimentais.
+
+
 ## P1 — compensação de upconverter externo +100 MHz (PP5AX) — candidato v1.0 (14/11/2026)
 - **Pedido:** PP5AX (Carlos) utiliza SDR Anauzer com conversor externo que soma nominalmente 100 MHz. Exibir 7,100 MHz quando o hardware estiver em 107,100 MHz.
 - **Implementação candidata:** `pt2vhf/sources/frequency_translation.py` envolve a fonte RF e traduz `set_center_freq`/`check_freq`; a interface, o motor DSP, VFO, memórias e waterfall continuam operando em RF aparente. Controles `Usar conversor externo` e `Deslocamento externo` na aba Receptor, com valor padrão de 100 MHz mas função desativada por padrão; ajustes somente com recepção desligada.
