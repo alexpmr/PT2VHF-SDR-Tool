@@ -185,6 +185,21 @@ class ReceiverPanel(QWidget):
         self.file_btn.setVisible(fil)
         self.file_label.setVisible(fil)
         self.rate.setEnabled(not fil)
+        # 2.4 MS/s is both a typical Mirics-compatible rate and a multiple
+        # of the receiver's 240 kHz DSP intermediate rate. Other rates in
+        # the generic RTL list are not necessarily supported by MSi2500.
+        if name == MIRICS_SOURCE:
+            index = self.rate.findData(2_400_000)
+            if index >= 0:
+                self.rate.setCurrentIndex(index)
+            self.rate.setToolTip(
+                "Preferir 2,4 MS/s para MSi2500; verificar taxas reais aceitas pelo driver.")
+            self.direct.setEnabled(False)
+            self.bias.setEnabled(False)
+        else:
+            self.rate.setToolTip("")
+            self.direct.setEnabled(name == "RTL-SDR")
+            self.bias.setEnabled(name in ("RTL-SDR", "rtl_tcp"))
         self.refresh_devices()
 
     def refresh_devices(self):
