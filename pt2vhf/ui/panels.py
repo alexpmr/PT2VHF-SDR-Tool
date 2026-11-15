@@ -23,10 +23,11 @@ from ..dsp.receiver import MODES, SAMPLE_RATES
 from ..memory import BAND_PLAN, MemoryBank, MemoryChannel
 from ..memory_regions import RegionMemoryStore
 from ..sources.network_sources import soapy_devices
+from ..sources.mirics import SOURCE_NAME as MIRICS_SOURCE, enumerate_mirics, MISSING_DRIVER
 from ..sources.rtlsdr_source import list_devices
 
 STEPS = [10, 50, 100, 500, 1000, 2500, 5000, 6250, 8330, 9000, 10000, 12500, 25000, 50000, 100000]
-SOURCES = ["RTL-SDR", "Simulador", "rtl_tcp", "SoapySDR", "Arquivo IQ"]
+SOURCES = ["RTL-SDR", MIRICS_SOURCE, "Simulador", "rtl_tcp", "SoapySDR", "Arquivo IQ"]
 
 
 def fmt_freq(hz: float) -> str:
@@ -192,6 +193,13 @@ class ReceiverPanel(QWidget):
         if name == "RTL-SDR":
             devs = list_devices()
             self.device.addItems(devs or ["(nenhum RTL-SDR encontrado)"])
+        elif name == MIRICS_SOURCE:
+            self.device.setEditable(False)
+            devices = enumerate_mirics()
+            self.device.addItems(devices or ["(MSi-SDR não detectado — instalar driver SoapyMiri)"])
+            self.device.setToolTip(
+                "MSi2500/MSi001 (RSP1 clone). SoapySDR com driver=miri ou "
+                "driver=soapyMiri é necessário. Não utilizar o driver RTL-SDR.")
         elif name == "SoapySDR":
             devs = soapy_devices()
             self.device.setEditable(True)
@@ -200,7 +208,7 @@ class ReceiverPanel(QWidget):
             self.device.addItem({"Simulador": "Banda de 2 m sintética",
                                  "rtl_tcp": "Servidor remoto",
                                  "Arquivo IQ": "WAV estéreo I/Q"}[name])
-        self.device.setEnabled(name in ("RTL-SDR", "SoapySDR"))
+        self.device.setEnabled(name in ("RTL-SDR", MIRICS_SOURCE, "SoapySDR"))
 
     def _browse(self):
         p, _ = QFileDialog.getOpenFileName(self, "Abrir gravação IQ", "", "WAV IQ (*.wav)")
@@ -210,10 +218,14 @@ class ReceiverPanel(QWidget):
     def _toggle(self, on):
         if on:
             dev = self.device.currentText()
+            if self.source.currentText() == MIRICS_SOURCE and "driver=" not in dev:
+                QMessageBox.warning(self, "MSi-SDR / RSP1 clone", MISSING_DRIVER)
+                self.start_btn.setChecked(False)
+                return
             self.startRequested.emit({
                 "source": self.source.currentText(),
                 "device_index": int(dev.split(":")[0]) if dev[:1].isdigit() else 0,
-                "soapy_args": dev if self.source.currentText() == "SoapySDR" else "",
+                "soapy_args": dev if self.source.currentText() in ("SoapySDR", MIRICS_SOURCE) else "",
                 "host": self.host.text(), "port": self.port.value(),
                 "file": self.file_edit.text(), "sample_rate": self.rate.currentData(),
                 "gain": self.current_gain(), "ppm": self.ppm.value(),
