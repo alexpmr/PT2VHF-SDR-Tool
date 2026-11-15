@@ -706,7 +706,7 @@ class MainWindow(QMainWindow):
     def start_source(self, opts: dict):
         self._stop_sonde()
         from ..sources.network_sources import RtlTcpSource, SoapySource
-        from ..sources.mirics import SOURCE_NAME as MIRICS_SOURCE, MISSING_DRIVER, is_mirics_device
+        from ..sources.mirics import SOURCE_NAME as MIRICS_SOURCE, MISSING_DRIVER, is_rsp_device
         from ..sources.rtlsdr_source import RtlSdrSource
         from ..sources.sim_sources import SimulatorSource, WavIQSource
         name = opts["source"]
@@ -748,11 +748,12 @@ class MainWindow(QMainWindow):
             elif name == MIRICS_SOURCE:
                 descriptor = opts["soapy_args"]
                 props = dict(pair.split("=", 1) for pair in descriptor.split(",") if "=" in pair)
-                if not is_mirics_device(props):
+                if not is_rsp_device(props):
                     raise SourceError(MISSING_DRIVER)
                 try:
                     src = SoapySource(fs, center, descriptor, opts["gain"], opts["ppm"])
-                    src.name = MIRICS_SOURCE
+                    src.name = ("SDRplay API" if str(props.get("driver", "")).lower() in ("sdrplay", "sdrplay3")
+                                else "Mirics / MSi-SDR")
                 except Exception as exc:
                     raise SourceError(f"{MISSING_DRIVER}\n\nDiagnóstico: {exc}") from exc
                 self.cfg["soapy_args"] = opts["soapy_args"]
@@ -2395,7 +2396,7 @@ class MainWindow(QMainWindow):
     def _auto_reconnect(self):
         c = self.cfg
         if (not c.get("reconnect_on_start", True) or not c.get("rx_was_on")
-                or c.get("source") not in ("RTL-SDR", "rtl_tcp", "SoapySDR", "MSi-SDR (RSP1 clone)") or self.engine.running):
+                or c.get("source") not in ("RTL-SDR", "rtl_tcp", "SoapySDR", MIRICS_SOURCE) or self.engine.running):
             return
         rp = self.rx_panel
         if rp.source.currentText() != c["source"]:
@@ -2498,7 +2499,7 @@ class MainWindow(QMainWindow):
         s.setValue("geometry", self.saveGeometry())
         s.setValue("split_v05", self.main_split.saveState())
         s.setValue("audio_panel", "true" if self.audio_action.isChecked() else "false")
-        self.cfg["rx_was_on"] = bool(self.engine.running and self.cfg.get("source") in ("RTL-SDR", "rtl_tcp", "SoapySDR"))
+        self.cfg["rx_was_on"] = bool(self.engine.running and self.cfg.get("source") in ("RTL-SDR", "rtl_tcp", "SoapySDR", "MSi-SDR (RSP1 clone)"))
         self.cfg["vfo_freq"] = self.vfos["A"]["freq"] if self.active_vfo != "A" else self.engine.vfo
         self.cfg["fft_size"] = self.engine.fft_size
         self.cfg["my_locator"] = self.dec_panel.locator.text()
