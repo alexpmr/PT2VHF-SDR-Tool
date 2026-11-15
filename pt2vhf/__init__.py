@@ -1,4 +1,4 @@
 """PT2VHF SDR Tool - receptor SDR com interface estilo radioamador."""
 
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 APP_NAME = "PT2VHF SDR Tool"

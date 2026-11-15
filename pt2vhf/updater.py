@@ -232,16 +232,22 @@ def helper_script() -> Path:
 
 
 def update_script_args(helper: Path, *, pid: int, package: Path, destination: Path, exe: Path,
-                       portable: bool, version: str = "", ready_file: Path | None = None) -> list:
+                       portable: bool, version: str = "", ready_file: Path | None = None,
+                       probe_only: bool = False) -> list:
     ps = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     return [str(ps), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
             "-File", str(helper), "-WaitPid", str(pid), "-Package", str(package), "-Destination", str(destination),
             "-Executable", str(exe), "-Mode", "Portable" if portable else "Setup", "-Version", str(version),
-            *(["-ReadyFile", str(ready_file)] if ready_file is not None else [])]
+            *(["-ReadyFile", str(ready_file)] if ready_file is not None else []),
+            *(["-ProbeOnly"] if probe_only else [])]
 
 
-def apply(path: Path, kind: str, version: str = "") -> None:
-    """Inicia o auxiliar externo. O programa deve fechar logo em seguida."""
+def apply(path: Path, kind: str, version: str = "", *, probe_only: bool = False) -> None:
+    """Inicia o auxiliar externo, registra falhas e aguarda confirmação READY.
+
+    probe_only exercises the actual packed PowerShell script and spawn flags
+    without closing the app or running an installer. CI and --ota-helper-qa use it.
+    """
     if sys.platform != "win32" or not getattr(sys, "frozen", False):
         raise UpdateError("A atualização automática só funciona nos executáveis Windows.")
     if path.suffix.lower() != ".exe" or not path.is_file():
@@ -256,20 +262,46 @@ def apply(path: Path, kind: str, version: str = "") -> None:
     # not merely that CreateProcess returned successfully.
     ready = path.parent / ("ota-helper-ready-" + uuid.uuid4().hex + ".txt")
     args = update_script_args(helper, pid=os.getpid(), package=path, destination=exe.parent, exe=exe,
-                              portable=(kind == "portable"), version=version, ready_file=ready)
-    flags = (getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+                              portable=(kind == "portable"), version=version, ready_file=ready,
+                              probe_only=probe_only)
+    # DETACHED_PROCESS can leave Windows PowerShell 5.1 without valid standard
+    # handles; on some real PCs it exits before even parsing the .ps1. Use a
+    # console-free process with explicit stdin/stdout/stderr handles instead.
+    # This also captures parser/AV/runtime failures *before* Write-Phase runs.
+    flags = (getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+             | getattr(subprocess, "CREATE_NO_WINDOW", 0)
              | getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0))
+    diagnostic = Path(tempfile.gettempdir()) / "PT2VHF-SDR-Tool-ota-launch.log"
+    worker = None
     try:
-        try:
-            worker = subprocess.Popen(args, close_fds=True, creationflags=flags)
-        except OSError:
-            worker = subprocess.Popen(
-                args, close_fds=True,
-                creationflags=flags & ~getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0))
+        with diagnostic.open("a", encoding="utf-8") as output:
+            output.write(f"\n--- OTA {time.strftime('%Y-%m-%d %H:%M:%S')} mode={kind} version={version} "
+                         f"probe={probe_only} ---\n")
+            output.write(f"powershell={args[0]} helper={helper} ready={ready}\n")
+            output.flush()
+            try:
+                try:
+                    worker = subprocess.Popen(
+                        args, close_fds=True, creationflags=flags,
+                        stdin=subprocess.DEVNULL, stdout=output,
+                        stderr=subprocess.STDOUT)
+                except OSError as first:
+                    output.write(f"CREATE_BREAKAWAY_FROM_JOB unavailable: {first}\n")
+                    output.flush()
+                    worker = subprocess.Popen(
+                        args, close_fds=True,
+                        creationflags=flags & ~getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0),
+                        stdin=subprocess.DEVNULL, stdout=output,
+                        stderr=subprocess.STDOUT)
+            except OSError as exc:
+                output.write(f"CREATE_PROCESS_FAILED: {exc}\n")
+                output.flush()
+                raise UpdateError(f"Não foi possível iniciar o auxiliar OTA: {exc}. "
+                                  f"Veja o diagnóstico em {diagnostic}") from exc
     except OSError as exc:
-        raise UpdateError(f"Não foi possível iniciar o auxiliar OTA: {exc}") from exc
+        raise UpdateError(f"Falha ao criar diagnóstico do OTA ({diagnostic}): {exc}") from exc
     try:
-        until = time.monotonic() + 12.0
+        until = time.monotonic() + 25.0
         while time.monotonic() < until:
             if ready.is_file():
                 # PowerShell creates the file before completing Set-Content:
@@ -279,22 +311,40 @@ def apply(path: Path, kind: str, version: str = "") -> None:
                 except OSError:
                     response = ""
                 if response == "READY":
+                    if probe_only:
+                        # CI must prove that the PowerShell process actually
+                        # completed the harmless probe, not merely wrote ACK.
+                        try:
+                            code = worker.wait(timeout=10)
+                        except subprocess.TimeoutExpired as exc:
+                            worker.terminate()
+                            raise UpdateError(
+                                f"OTA probe did not exit safely. Veja {diagnostic}") from exc
+                        if code != 0:
+                            raise UpdateError(
+                                f"OTA probe returned code {code}. Veja {diagnostic}")
                     return
                 if response:
                     raise UpdateError("Auxiliar OTA respondeu incorretamente. O aplicativo permanecerá aberto.")
-            if worker.poll() is not None:
-                raise UpdateError("O PowerShell encerrou antes de iniciar a atualização. "
-                                  "Consulte PT2VHF-SDR-Tool-ota-helper.log em %TEMP%.")
+            code = worker.poll()
+            if code is not None:
+                try:
+                    tail = diagnostic.read_text(encoding="utf-8", errors="replace")[-1200:]
+                except OSError:
+                    tail = "(diagnóstico indisponível)"
+                raise UpdateError(
+                    f"O PowerShell encerrou antes da confirmação READY (código {code}). "
+                    f"Consulte {diagnostic}. Últimas mensagens:\n{tail}")
             time.sleep(0.15)
-        # On timeout the detached helper must be stopped. Otherwise it might
+        # On timeout the external helper must be stopped. Otherwise it might
         # eventually install over a still-running GUI despite a rejected ACK.
         try:
             if worker.poll() is None:
                 worker.terminate()
         except OSError:
             pass
-        raise UpdateError("O auxiliar OTA não confirmou inicialização em 12 segundos; "
-                          "o aplicativo permanecerá aberto. Consulte o log OTA em %TEMP%.")
+        raise UpdateError("O auxiliar OTA não confirmou inicialização em 25 segundos; "
+                          f"o aplicativo permanecerá aberto. Consulte {diagnostic}.")
     finally:
         ready.unlink(missing_ok=True)
 
