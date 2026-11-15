@@ -2394,6 +2394,7 @@ class MainWindow(QMainWindow):
 
     # ================================================================== reconectar ao abrir
     def _auto_reconnect(self):
+        from ..sources.mirics import SOURCE_NAME as MIRICS_SOURCE
         c = self.cfg
         if (not c.get("reconnect_on_start", True) or not c.get("rx_was_on")
                 or c.get("source") not in ("RTL-SDR", "rtl_tcp", "SoapySDR", MIRICS_SOURCE) or self.engine.running):
