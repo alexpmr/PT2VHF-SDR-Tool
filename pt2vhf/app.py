@@ -82,10 +82,10 @@ def ota_helper_qa() -> int:
             package = Path(root) / "probe-package.exe"
             package.write_bytes(b"probe: never execute or install")
             updater.apply(package, "installer", "qa-only", probe_only=True)
-        output.write_text("OTA_HELPER_PROBE=PASS\\n", encoding="utf-8")
+        output.write_text("OTA_HELPER_PROBE=PASS\n", encoding="utf-8")
         return 0
     except Exception as exc:
-        output.write_text("OTA_HELPER_PROBE=FAIL: " + str(exc) + "\\n", encoding="utf-8")
+        output.write_text("OTA_HELPER_PROBE=FAIL: " + str(exc) + "\n", encoding="utf-8")
         return 1
 
 
