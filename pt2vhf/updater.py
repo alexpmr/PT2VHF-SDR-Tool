@@ -311,6 +311,18 @@ def apply(path: Path, kind: str, version: str = "", *, probe_only: bool = False)
                 except OSError:
                     response = ""
                 if response == "READY":
+                    if probe_only:
+                        # CI must prove that the PowerShell process actually
+                        # completed the harmless probe, not merely wrote ACK.
+                        try:
+                            code = worker.wait(timeout=10)
+                        except subprocess.TimeoutExpired as exc:
+                            worker.terminate()
+                            raise UpdateError(
+                                f"OTA probe did not exit safely. Veja {diagnostic}") from exc
+                        if code != 0:
+                            raise UpdateError(
+                                f"OTA probe returned code {code}. Veja {diagnostic}")
                     return
                 if response:
                     raise UpdateError("Auxiliar OTA respondeu incorretamente. O aplicativo permanecerá aberto.")
@@ -324,7 +336,7 @@ def apply(path: Path, kind: str, version: str = "", *, probe_only: bool = False)
                     f"O PowerShell encerrou antes da confirmação READY (código {code}). "
                     f"Consulte {diagnostic}. Últimas mensagens:\n{tail}")
             time.sleep(0.15)
-        # On timeout the detached helper must be stopped. Otherwise it might
+        # On timeout the external helper must be stopped. Otherwise it might
         # eventually install over a still-running GUI despite a rejected ACK.
         try:
             if worker.poll() is None:
