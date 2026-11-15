@@ -104,7 +104,7 @@ jobs:
           %GITHUB_WORKSPACE%\drivers\wdi-simple.exe --help | findstr /C:"WinUSB" || exit /b 1
       - name: PyInstaller (pasta + portátil)
         env:
-          PT2VHF_RELEASE_TEXT_SPLASH: ${{ github.head_ref == 'release/stable-v1.0.2-rsp1-20261115' && '1' || '0' }}
+          PT2VHF_RELEASE_TEXT_SPLASH: ${{ (github.head_ref == 'release/stable-v1.0.2-rsp1-20261115' || github.head_ref == 'fix/ota-launch-103-20261115') && '1' || '0' }}
           # Only allow the missing splash in this isolated QA PR, never releases.
           PT2VHF_QA_ALLOW_MISSING_BANNER: ${{ (github.head_ref == 'release/stable-v1-windows-qa-20261114' || github.head_ref == 'release/stable-v1-upconverter-fix-20261114') && '1' || '0' }}
         run: pyinstaller --noconfirm pt2vhf.spec
@@ -114,6 +114,22 @@ jobs:
             $p = Start-Process -FilePath $exe -ArgumentList "--selftest" -Wait -PassThru
             Get-Content "$env:TEMP\pt2vhf-sdr-selftest.log"
             if ($p.ExitCode -ne 0) { throw "Autoteste falhou: $exe" }
+          }
+      - name: Native OTA helper launch probe in packaged Setup and Portable executables
+        run: |
+          foreach ($exe in @("dist\\PT2VHF-SDR-Tool\\PT2VHF-SDR-Tool.exe", "dist\\PT2VHF-SDR-Tool-Portable.exe")) {
+            $log = Join-Path $env:TEMP "PT2VHF-SDR-Tool-ota-probe-result.txt"
+            Remove-Item -LiteralPath $log -Force -ErrorAction SilentlyContinue
+            $p = Start-Process -FilePath $exe -ArgumentList "--ota-helper-qa" -Wait -PassThru
+            if ($p.ExitCode -ne 0) {
+              Get-Content "$env:TEMP\\PT2VHF-SDR-Tool-ota-launch.log" -ErrorAction SilentlyContinue
+              Get-Content $log -ErrorAction SilentlyContinue
+              throw "OTA real PowerShell spawn/ACK probe failed: $exe, code $($p.ExitCode)"
+            }
+            if (-not (Test-Path $log)) { throw "OTA probe report missing" }
+            $result = Get-Content $log -Raw
+            if ($result -notmatch 'OTA_HELPER_PROBE=PASS') { throw "OTA probe did not pass: $result" }
+            Write-Host "OTA_HELPER_NATIVE_PROBE=PASS for $exe"
           }
       - name: Instalador (Inno Setup)
         run: |
