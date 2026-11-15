@@ -9,7 +9,7 @@ from __future__ import annotations
 
 MIRICS_DRIVERS = frozenset(("miri", "soapymiri", "mirisdr"))
 SDRPLAY_DRIVERS = frozenset(("sdrplay", "sdrplay3"))
-SOURCE_NAME = "MSi-SDR (RSP1 clone)"
+SOURCE_NAME = "SDRplay / MSi-SDR (RSP)"
 MISSING_DRIVER = (
     "Nenhum receptor RSP1/MSi-SDR foi reconhecido pelos módulos SoapySDR. "
     "Há duas opções: SDRplay API com módulo SoapySDRPlay3 (se o dispositivo "
