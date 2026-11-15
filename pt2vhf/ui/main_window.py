@@ -752,6 +752,7 @@ class MainWindow(QMainWindow):
                     raise SourceError(MISSING_DRIVER)
                 try:
                     src = SoapySource(fs, center, descriptor, opts["gain"], opts["ppm"])
+                    src.name = MIRICS_SOURCE
                 except Exception as exc:
                     raise SourceError(f"{MISSING_DRIVER}\n\nDiagnóstico: {exc}") from exc
                 self.cfg["soapy_args"] = opts["soapy_args"]
