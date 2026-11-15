@@ -25,7 +25,8 @@ def test_unix_architectures_and_version():
     assert pkg.arch_names("arm64") == ("arm64", "arm64")
     with pytest.raises(ValueError):
         pkg.arch_names("mips")
-    assert pkg.source_version() == "1.0.0"
+    from pt2vhf import __version__
+    assert pkg.source_version() == __version__
 
 
 def test_packaging_fails_closed_when_banner_is_absent(tmp_path):

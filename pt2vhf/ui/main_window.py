@@ -575,6 +575,11 @@ class MainWindow(QMainWindow):
         rp.ppmChanged.connect(lambda v: self._src_call("set_ppm", v, cfg="ppm"))
         rp.biasTeeChanged.connect(lambda v: self._src_call("set_bias_tee", v, cfg="bias_tee"))
         rp.directSamplingChanged.connect(self._direct_sampling_selected)
+        self._converter_restart_timer = QTimer(self)
+        self._converter_restart_timer.setSingleShot(True)
+        self._converter_restart_timer.setInterval(400)
+        self._converter_restart_timer.timeout.connect(self._apply_converter_configuration)
+        rp.converterConfigurationChanged.connect(self._converter_configuration_changed)
 
         mp.modeChanged.connect(self.choose_mode)
         mp.bandwidthChanged.connect(self.set_bandwidth)
@@ -703,6 +708,40 @@ class MainWindow(QMainWindow):
             QShortcut(QKeySequence(keys), self, activated=fn)
 
     # ================================================================== fonte
+    def _converter_configuration_changed(self):
+        """Apply UI changes without ever retuning a running IQ stream mid-block."""
+        rp = self.rx_panel
+        self.cfg["external_converter_enabled"] = rp.external_converter.isChecked()
+        self.cfg["external_converter_offset_mhz"] = rp.converter_offset.value()
+        rp.update_converter_preview(self.engine.vfo)
+        self._refresh_band_keys()
+        # Group quick checkbox/spin edits into one safe receiver restart.
+        if self.engine.running:
+            self.statusBar().showMessage(
+                "Conversor externo alterado: reiniciando o receptor com a nova sintonia…",
+                4000)
+            self._converter_restart_timer.start()
+        else:
+            self.cfg.save()
+
+    def _apply_converter_configuration(self):
+        if not self.engine.running:
+            self.cfg.save()
+            return
+        opts = self.rx_panel.source_options()
+        # stop_source also closes the capture/scan and releases the native SDR.
+        # Reopen only after the former source has been stopped.
+        self.stop_source()
+        self.start_source(opts)
+        self.cfg.save()
+        self.rx_panel.update_converter_preview(self.engine.vfo)
+        if self.engine.running:
+            self.statusBar().showMessage(
+                "Conversor externo aplicado; receptor reiniciado com segurança.", 7000)
+        else:
+            self.statusBar().showMessage(
+                "O SDR não reiniciou. Confira o offset e a faixa do hardware.", 12000)
+
     def start_source(self, opts: dict):
         self._stop_sonde()
         from ..sources.network_sources import RtlTcpSource, SoapySource
@@ -786,6 +825,7 @@ class MainWindow(QMainWindow):
             self.engine.vfo = 145.570e6
             self.vfos[self.active_vfo]["freq"] = self.engine.vfo
         self.engine.start(src)
+        self.rx_panel.update_converter_preview(self.engine.vfo)
         self._apply_receiver_settings()
         self._set_running_ui(True)
         tuner = getattr(src, "tuner", "")
@@ -850,7 +890,8 @@ class MainWindow(QMainWindow):
         self.cfg["hf_direct_sampling_mode"] = mode
         src = self.engine.source
         if (mode and src is not None and src.name == "RTL-SDR"
-                and self.engine.vfo + (src.sample_rate / 8 if src.sample_rate >= 900_000 else 0)
+                and self.engine.vfo + float(getattr(src, "offset_hz", 0.0))
+                + (src.sample_rate / 8 if src.sample_rate >= 900_000 else 0)
                 > 28_800_000):
             self._set_rtl_sampling_state(0)
             if getattr(src, "direct_sampling", 0):
@@ -2157,6 +2198,7 @@ class MainWindow(QMainWindow):
         self._update_lcd()
 
     def _update_lcd(self):
+        self.rx_panel.update_converter_preview(self.engine.vfo)
         self.fav_bar.mark_current(self.engine.vfo)
         lcd = self.lcd
         lcd.set_freq(self.engine.vfo)

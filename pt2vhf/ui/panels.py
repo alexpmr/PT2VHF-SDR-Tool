@@ -52,6 +52,7 @@ class ReceiverPanel(QWidget):
     ppmChanged = Signal(int)
     biasTeeChanged = Signal(bool)
     directSamplingChanged = Signal(int)
+    converterConfigurationChanged = Signal()
 
     def __init__(self, cfg, parent=None):
         super().__init__(parent)
@@ -141,8 +142,9 @@ class ReceiverPanel(QWidget):
         self.external_converter = QCheckBox("Usar conversor externo (upconverter)")
         self.external_converter.setChecked(bool(cfg.get("external_converter_enabled", False)))
         self.external_converter.setToolTip(
-            "Ex.: conversor +100 MHz: selecionar 7,100 MHz sintoniza 107,100 MHz no SDR. "
-            "Não habilitar para o conversor HF interno do RTL-SDR Blog V4.")
+            "Conversor EXTERNO: RF 7,100 MHz usa 107,100 MHz no hardware com +100 MHz. "
+            "É possível ligar/desligar durante a recepção; o SDR será reiniciado. "
+            "Não usar para o conversor HF interno do RTL-SDR Blog V4.")
         self.converter_offset = QDoubleSpinBox()
         self.converter_offset.setRange(-1500.0, 1500.0)
         self.converter_offset.setDecimals(6)
@@ -150,10 +152,19 @@ class ReceiverPanel(QWidget):
         self.converter_offset.setSuffix(" MHz")
         self.converter_offset.setValue(float(cfg.get("external_converter_offset_mhz", 100.0)))
         self.converter_offset.setToolTip(
-            "Frequência do hardware = frequência exibida + deslocamento. "
-            "Reinicie a recepção após alterar.")
+            "Frequência do hardware = RF exibida + deslocamento externo. "
+            "Pode ser alterado durante a recepção; o receptor reiniciará automaticamente.")
         gf.addRow(self.external_converter)
         gf.addRow("Deslocamento externo:", self.converter_offset)
+        self.converter_preview = QLabel()
+        self.converter_preview.setObjectName("converterPreview")
+        self.converter_preview.setWordWrap(True)
+        self.converter_preview.setStyleSheet("color:#d8dee6; font-size:12px;")
+        gf.addRow("Sintonia RF / SDR:", self.converter_preview)
+        self.converter_hint = QLabel("A alteração do conversor reinicia o SDR automaticamente quando ligado.")
+        self.converter_hint.setWordWrap(True)
+        self.converter_hint.setStyleSheet("color:#9aa6b2;font-size:11px;")
+        gf.addRow(self.converter_hint)
         lay.addWidget(g)
 
         self.info = QLabel("Parado")
@@ -171,8 +182,24 @@ class ReceiverPanel(QWidget):
         self.ppm.valueChanged.connect(self.ppmChanged)
         self.bias.toggled.connect(self.biasTeeChanged)
         self.direct.currentIndexChanged.connect(self.directSamplingChanged)
+        self.external_converter.toggled.connect(self._converter_changed)
+        self.converter_offset.valueChanged.connect(self._converter_changed)
         self._source_changed(self.source.currentText())
         self._update_gain_label()
+        self.update_converter_preview(float(cfg.get("vfo_freq", 145.570e6)))
+
+    def _converter_changed(self, *_):
+        self.update_converter_preview(float(self.cfg.get("vfo_freq", 145.570e6)))
+        self.converterConfigurationChanged.emit()
+
+    def update_converter_preview(self, rf_hz: float):
+        enabled = self.external_converter.isChecked() and self.source.currentText() in (
+            "RTL-SDR", "rtl_tcp", "SoapySDR")
+        offset_hz = self.converter_offset.value() * 1e6 if enabled else 0.0
+        self.converter_preview.setText(
+            f"RF: {rf_hz / 1e6:.6f} MHz  |  SDR: {(rf_hz + offset_hz) / 1e6:.6f} MHz"
+            + ("  (+ conversor externo)" if enabled else "  (sem conversor)")
+        )
 
     def _source_changed(self, name):
         net = name == "rtl_tcp"
@@ -184,6 +211,10 @@ class ReceiverPanel(QWidget):
         self.file_btn.setVisible(fil)
         self.file_label.setVisible(fil)
         self.rate.setEnabled(not fil)
+        supported = name in ("RTL-SDR", "rtl_tcp", "SoapySDR")
+        self.external_converter.setEnabled(supported)
+        self.converter_offset.setEnabled(supported)
+        self.update_converter_preview(float(self.cfg.get("vfo_freq", 145.570e6)))
         self.refresh_devices()
 
     def refresh_devices(self):
@@ -207,19 +238,22 @@ class ReceiverPanel(QWidget):
         if p:
             self.file_edit.setText(p)
 
+    def source_options(self):
+        dev = self.device.currentText()
+        return {
+            "source": self.source.currentText(),
+            "device_index": int(dev.split(":")[0]) if dev[:1].isdigit() else 0,
+            "soapy_args": dev if self.source.currentText() == "SoapySDR" else "",
+            "host": self.host.text(), "port": self.port.value(),
+            "file": self.file_edit.text(), "sample_rate": self.rate.currentData(),
+            "gain": self.current_gain(), "ppm": self.ppm.value(),
+            "external_converter_enabled": self.external_converter.isChecked(),
+            "external_converter_offset_mhz": self.converter_offset.value(),
+        }
+
     def _toggle(self, on):
         if on:
-            dev = self.device.currentText()
-            self.startRequested.emit({
-                "source": self.source.currentText(),
-                "device_index": int(dev.split(":")[0]) if dev[:1].isdigit() else 0,
-                "soapy_args": dev if self.source.currentText() == "SoapySDR" else "",
-                "host": self.host.text(), "port": self.port.value(),
-                "file": self.file_edit.text(), "sample_rate": self.rate.currentData(),
-                "gain": self.current_gain(), "ppm": self.ppm.value(),
-                "external_converter_enabled": self.external_converter.isChecked(),
-                "external_converter_offset_mhz": self.converter_offset.value(),
-            })
+            self.startRequested.emit(self.source_options())
         else:
             self.stopRequested.emit()
 
@@ -230,8 +264,12 @@ class ReceiverPanel(QWidget):
         self.start_btn.blockSignals(False)
         for w in (self.source, self.device, self.rate, self.host, self.port, self.file_edit):
             w.setEnabled(not running)
+        # Converter settings remain editable while receiving. MainWindow
+        # stops/restarts the source synchronously on a change to avoid mixing
+        # two different local-oscillator mappings in a live IQ stream.
+        supported = self.source.currentText() in ("RTL-SDR", "rtl_tcp", "SoapySDR")
         for w in (self.external_converter, self.converter_offset):
-            w.setEnabled(not running)
+            w.setEnabled(supported)
 
     def current_gain(self):
         return None if self.tuner_agc.isChecked() else self.gain.value() / 10

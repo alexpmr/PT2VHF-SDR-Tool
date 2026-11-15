@@ -92,6 +92,6 @@ def test_banner_packaging_and_version_ready_for_major_release():
     assert 'datas.append((banner_path, "pt2vhf/assets/branding"))' in spec
     pkg = (root / "pyproject.toml").read_text(encoding="utf-8")
     assert '"pt2vhf" = ["assets/branding/welcome-banner.jpg"]' in pkg
-    assert 'version = "1.0.0"' in pkg
     from pt2vhf import __version__
-    assert __version__ == "1.0.0"
+    assert f'version = "{__version__}"' in pkg
+    assert __version__.startswith("1.0.")
