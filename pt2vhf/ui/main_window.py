@@ -706,6 +706,7 @@ class MainWindow(QMainWindow):
     def start_source(self, opts: dict):
         self._stop_sonde()
         from ..sources.network_sources import RtlTcpSource, SoapySource
+        from ..sources.mirics import SOURCE_NAME as MIRICS_SOURCE, MISSING_DRIVER, is_mirics_device
         from ..sources.rtlsdr_source import RtlSdrSource
         from ..sources.sim_sources import SimulatorSource, WavIQSource
         name = opts["source"]
@@ -714,7 +715,7 @@ class MainWindow(QMainWindow):
         # Applies only to tunable hardware; never to simulator/IQ recordings.
         offset_hz = (float(opts.get("external_converter_offset_mhz", 100.0)) * 1e6
                      if opts.get("external_converter_enabled") and
-                     name in ("RTL-SDR", "rtl_tcp", "SoapySDR") else 0.0)
+                     name in ("RTL-SDR", "rtl_tcp", "SoapySDR", MIRICS_SOURCE) else 0.0)
         center = self.engine.vfo + fs / 8 + offset_hz
         try:
             if name == "Simulador":
@@ -744,6 +745,15 @@ class MainWindow(QMainWindow):
                 self.cfg["rtl_tcp_host"], self.cfg["rtl_tcp_port"] = opts["host"], opts["port"]
             elif name == "SoapySDR":
                 src = SoapySource(fs, center, opts["soapy_args"], opts["gain"], opts["ppm"])
+            elif name == MIRICS_SOURCE:
+                descriptor = opts["soapy_args"]
+                props = dict(pair.split("=", 1) for pair in descriptor.split(",") if "=" in pair)
+                if not is_mirics_device(props):
+                    raise SourceError(MISSING_DRIVER)
+                try:
+                    src = SoapySource(fs, center, descriptor, opts["gain"], opts["ppm"])
+                except Exception as exc:
+                    raise SourceError(f"{MISSING_DRIVER}\n\nDiagnóstico: {exc}") from exc
                 self.cfg["soapy_args"] = opts["soapy_args"]
             else:
                 src = WavIQSource(opts["file"])
@@ -795,7 +805,7 @@ class MainWindow(QMainWindow):
         self.status_src.setText(f"● {src.name} {src.sample_rate / 1e6:g} MS/s")
         self.hdr_summary.setText(f"● {src.name} {tuner} — {src.sample_rate / 1e6:g} MS/s")
         self.cfg.update(device_index=opts.get("device_index", 0), device_name=self.rx_panel.device.currentText())
-        if name in ("RTL-SDR", "rtl_tcp", "SoapySDR"):
+        if name in ("RTL-SDR", "rtl_tcp", "SoapySDR", MIRICS_SOURCE):
             self.cfg["rx_ever_connected"] = True
         self._update_lcd()
 
@@ -2384,7 +2394,7 @@ class MainWindow(QMainWindow):
     def _auto_reconnect(self):
         c = self.cfg
         if (not c.get("reconnect_on_start", True) or not c.get("rx_was_on")
-                or c.get("source") not in ("RTL-SDR", "rtl_tcp", "SoapySDR") or self.engine.running):
+                or c.get("source") not in ("RTL-SDR", "rtl_tcp", "SoapySDR", "MSi-SDR (RSP1 clone)") or self.engine.running):
             return
         rp = self.rx_panel
         if rp.source.currentText() != c["source"]:
