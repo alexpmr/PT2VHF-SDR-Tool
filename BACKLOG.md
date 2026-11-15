@@ -1,5 +1,13 @@
 # Backlog — PT2VHF SDR Tool
 
+## SDRplay API + Mirics: detecção por dois backends — extensão do P1 RSP (14/11/2026)
+- O usuário esclareceu que um operador utiliza a API oficial SDRplay (https://sdrplay.com/hardware-api/), mas outros utilizam o driver Mirics. **Não impor uma pilha USB a todos**.
+- A opção no app deve ser **SDRplay / MSi-SDR (RSP)**, com dispositivos identificados por backend `SDRplay API` (driver SoapySDRPlay3, `driver=sdrplay`) ou `Mirics` (SoapyMiri/libmirisdr, `driver=miri/soapymiri/mirisdr`). A enumeração usa os descritores informados pelo driver, nunca apenas o nome comercial "RSP1".
+- Quando ambos os módulos detectarem dispositivos, oferecer ambos no seletor, sem privilegiar um backend ou modificar driver USB. Se nenhum for identificado, informar dependências e permitir diagnóstico.
+- A API SDRplay 3.15 é disponibilizada pela SDRplay para seus receptores compatíveis; uso de sua API **não prova** que clones funcionem. Confirmar compatibilidade real com o operador, licença/distribuição de bibliotecas proprietárias e empacotamento Windows. `SoapySDRPlay3` é uma camada de conexão separada da SDRplay Hardware API.
+- Requer validação com unidade física, `SoapySDRUtil --find`, streams IQ, taxa de amostragem, troca de backend, reinicialização e preservação de outros SDRs. Não publicar como PnP completo até homologado.
+
+
 ## P1 — MSI-SDR / MSi.SDR RSP1 clone (MSi2500 + MSi001) na lista de receptores (14/11/2026)
 - **Origem:** usuário enviou captura de anúncio de um MSI-SDR RSP1 compatível anunciado com 10 kHz–2 GHz, TCXO 0,5 ppm e ADC 12 bits. Essas são alegações do anúncio, não medidas validadas neste dispositivo.
 - **Implementação candidata:** fonte explícita `MSi-SDR (RSP1 clone)` na lista do receptor, detecção pelo SoapySDR usando `driver=miri` ou `driver=soapyMiri`, sem confundir com RTL-SDR ou a API proprietária SDRplay. Nenhum dispositivo falso aparece como conectável se o driver não detectar hardware. Mensagem de orientação quando faltarem módulo/driver.
