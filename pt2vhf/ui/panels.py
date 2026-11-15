@@ -214,8 +214,13 @@ class ReceiverPanel(QWidget):
             self.device.setEditable(False)
             devices = enumerate_rsp_devices()
             if devices:
-                for label, descriptor in devices:
+                preferred = str(self.cfg.get("soapy_args", ""))
+                preferred_index = 0
+                for index, (label, descriptor) in enumerate(devices):
                     self.device.addItem(label, descriptor)
+                    if descriptor == preferred:
+                        preferred_index = index
+                self.device.setCurrentIndex(preferred_index)
             else:
                 self.device.addItem("(Nenhum RSP detectado — SDRplay API ou Mirics)", "")
             self.device.setToolTip(
