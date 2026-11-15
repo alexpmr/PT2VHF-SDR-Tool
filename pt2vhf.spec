@@ -33,8 +33,11 @@ datas += [("scripts/apply-update.ps1", "scripts")]
 # The same PyInstaller spec works for Linux/macOS if these builds are enabled.
 banner_path = os.path.join("pt2vhf", "assets", "branding", "welcome-banner.jpg")
 if not os.path.isfile(banner_path):
-    # Explicit QA-only override; never set this on public releases.
-    if os.environ.get("PT2VHF_QA_ALLOW_MISSING_BANNER") != "1":
+    # The approved v1.0.2 RSP experiment keeps the existing text-only
+    # splash when the original 7-project JPG is unavailable. This is an
+    # explicit, release-scoped choice, not a silent placeholder image.
+    allow_text = os.environ.get("PT2VHF_RELEASE_TEXT_SPLASH") == "1"
+    if os.environ.get("PT2VHF_QA_ALLOW_MISSING_BANNER") != "1" and not allow_text:
         raise FileNotFoundError(
             "PT2VHF splash banner missing. Run scripts/prepare_splash.py with "
             "the supplied 7-project PT2VHF image before packaging.")
