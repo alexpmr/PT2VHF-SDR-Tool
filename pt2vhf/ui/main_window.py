@@ -2499,7 +2499,7 @@ class MainWindow(QMainWindow):
         s.setValue("geometry", self.saveGeometry())
         s.setValue("split_v05", self.main_split.saveState())
         s.setValue("audio_panel", "true" if self.audio_action.isChecked() else "false")
-        self.cfg["rx_was_on"] = bool(self.engine.running and self.cfg.get("source") in ("RTL-SDR", "rtl_tcp", "SoapySDR", "MSi-SDR (RSP1 clone)"))
+        self.cfg["rx_was_on"] = bool(self.engine.running and self.cfg.get("source") in ("RTL-SDR", "rtl_tcp", "SoapySDR", "SDRplay / MSi-SDR (RSP)"))
         self.cfg["vfo_freq"] = self.vfos["A"]["freq"] if self.active_vfo != "A" else self.engine.vfo
         self.cfg["fft_size"] = self.engine.fft_size
         self.cfg["my_locator"] = self.dec_panel.locator.text()
