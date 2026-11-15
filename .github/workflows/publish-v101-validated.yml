@@ -1,0 +1,72 @@
+name: Publish validated SDR v1.0.1 Windows artifacts
+on:
+  push:
+    branches: [release/stable-v1-upconverter-fix-20261114]
+    paths:
+      - .github/workflows/publish-v101-validated.yml
+permissions:
+  contents: write
+concurrency:
+  group: pt2vhf-sdr-publish-v1-validated
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SOURCE_RUN_ID: "43656092211"
+      SOURCE_SHA: "75369d1fdad78a4f557bed8b883477cca50f3a31"
+      VERSION: "1.0.1"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify exact previously tested Windows build
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(gh api "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID" --jq '.head_sha')"
+          result="$(gh api "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID" --jq '.conclusion')"
+          test "$actual" = "$SOURCE_SHA"
+          for i in $(seq 1 80); do
+            result="$(gh api "repos/${{ github.repository }}/actions/runs/$SOURCE_RUN_ID" --jq '.conclusion // "pending"')"
+            if [ "$result" = success ]; then break; fi
+            if [ "$result" != pending ] && [ "$result" != null ]; then echo "::error::QA run failed: $result"; exit 1; fi
+            sleep 20
+          done
+          test "$result" = success
+          test "$SOURCE_SHA" != "${{ github.sha }}"
+          gh run download "$SOURCE_RUN_ID" --repo "${{ github.repository }}" \
+            --name "PT2VHF-SDR-Tool-$VERSION-windows" --dir release
+          ls -lh release
+          for flavor in Setup Portable; do
+            file="PT2VHF-SDR-Tool-v$VERSION-Win11-x64-$flavor.exe"
+            test -s "release/$file"
+          done
+          test -s release/SHA256SUMS.txt
+          cd release
+          sed '1s/^\xef\xbb\xbf//' SHA256SUMS.txt | tr -d '\r' | \
+            awk 'NF == 3 {print $1 "  " $3}' | sha256sum -c -
+          test "$(awk 'NF==3 {n++} END{print n}' SHA256SUMS.txt)" -eq 2
+      - name: Publish immutable v1.0.0 GitHub Release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh api "repos/${{ github.repository }}/releases/tags/v$VERSION" > /tmp/existing.json 2>/dev/null; then
+            echo "::error::v$VERSION exists; refusing to replace existing release"
+            exit 1
+          fi
+          gh release create "v$VERSION" release/*.exe release/SHA256SUMS.txt \
+            --repo "${{ github.repository }}" --target "$SOURCE_SHA" \
+            --title "PT2VHF SDR Tool v$VERSION (Windows x64)" --latest \
+            --notes "Windows Setup and Portable for v1.0.1 built by successful Actions run $SOURCE_RUN_ID at exact SHA $SOURCE_SHA; validated by user. Corrige checkbox do upconverter: pode alterar habilitação e offset durante recepção, com reinício controlado do SDR e apresentação separada RF/SDR. Mantém RTL R820T VHF/UHF, LCD, CPU/RAM e OTA da v1.0. The original splash banner is absent in this validated QA build; the text fallback is shown. No neural IQ classifier is included. Physical hardware and long-duration stability can vary; retain backup of settings and report failures."
+          actual="$(gh api "repos/${{ github.repository }}/git/ref/tags/v$VERSION" --jq '.object.sha')"
+          test "$actual" = "$SOURCE_SHA"
+          gh api "repos/${{ github.repository }}/releases/tags/v$VERSION" > /tmp/release.json
+          jq -e --arg v "$VERSION" '
+            (.draft == false) and (.prerelease == false) and
+            ([.assets[].name] | index("SHA256SUMS.txt") != null) and
+            ([.assets[].name] | index("PT2VHF-SDR-Tool-v"+$v+"-Win11-x64-Setup.exe") != null) and
+            ([.assets[].name] | index("PT2VHF-SDR-Tool-v"+$v+"-Win11-x64-Portable.exe") != null)
+          ' /tmp/release.json
