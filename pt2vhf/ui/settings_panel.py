@@ -69,6 +69,7 @@ class SettingsPanel(QWidget):
         self.smeter = QDoubleSpinBox()
         self.smeter.setRange(-60, 60)
         self.smeter.setSuffix(" dB")
+        self.smeter.setMaximumWidth(150)
         self.smeter.setValue(float(cfg.get("s_meter_cal", 0.0)))
         self.smeter.setToolTip("Somado à leitura do S-meter para calibrar com um gerador ou rádio de referência")
         self.rtl_lib = QComboBox()
@@ -115,6 +116,7 @@ class SettingsPanel(QWidget):
         self.web_lan.setChecked(bool(cfg.get("web_allow_lan", False)))
         self.web_port = QSpinBox()
         self.web_port.setRange(1024, 65535)
+        self.web_port.setMaximumWidth(125)
         self.web_port.setValue(int(cfg.get("web_port", 8095)))
         row.addWidget(self.web_lan, 1)
         row.addWidget(QLabel("Porta TCP"))
@@ -167,6 +169,12 @@ class SettingsPanel(QWidget):
             sig.connect(lambda *_: self.webApply.emit())
         b_open.clicked.connect(self.webOpen)
         b_copy.clicked.connect(self.webCopy)
+
+        # Avoid full-width stretched fields in maximized windows while
+        # preserving label wrapping and useful content widths in small ones.
+        for form in self.findChildren(QFormLayout):
+            form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+            form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
 
     def _browse(self):
         d = QFileDialog.getExistingDirectory(self, "Pasta de gravações", self.rec_dir.text())
