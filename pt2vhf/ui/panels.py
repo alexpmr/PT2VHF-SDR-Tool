@@ -79,6 +79,9 @@ class ReceiverPanel(QWidget):
         self.refresh.setFixedWidth(30)
         self.refresh.setToolTip("Procurar dispositivos")
         dev_row.addWidget(self.refresh)
+        self.rsp_diag = QPushButton("Diagnóstico RSP")
+        self.rsp_diag.setToolTip("Mostra backends SoapySDRPlay3/Mirics encontrados, sem instalar drivers.")
+        dev_row.addWidget(self.rsp_diag)
         dev_row.addStretch(1)
         form.addRow("Dispositivo:", dev_row)
 
@@ -177,6 +180,7 @@ class ReceiverPanel(QWidget):
 
         self.source.currentTextChanged.connect(self._source_changed)
         self.refresh.clicked.connect(self.refresh_devices)
+        self.rsp_diag.clicked.connect(self.show_rsp_diagnostics)
         self.file_btn.clicked.connect(self._browse)
         self.start_btn.toggled.connect(self._toggle)
         self.gain.valueChanged.connect(self._gain)
@@ -213,6 +217,7 @@ class ReceiverPanel(QWidget):
         self.file_btn.setVisible(fil)
         self.file_label.setVisible(fil)
         self.rate.setEnabled(not fil)
+        self.rsp_diag.setVisible(name == RSP_SOURCE)
         supported = name in ("RTL-SDR", "rtl_tcp", "SoapySDR", RSP_SOURCE)
         # Mirics / RSP drivers advertise differing rates. 2.4 MS/s is
         # a conservative default compatible with the app's 240 kHz IF DSP.
@@ -263,6 +268,23 @@ class ReceiverPanel(QWidget):
                                  "rtl_tcp": "Servidor remoto",
                                  "Arquivo IQ": "WAV estéreo I/Q"}[name])
         self.device.setEnabled(name in ("RTL-SDR", "SoapySDR", RSP_SOURCE))
+
+    def show_rsp_diagnostics(self):
+        """Report the Soapy backends actually visible, without touching USB drivers."""
+        devices = enumerate_rsp_devices()
+        if devices:
+            lines = [f"{label} | {descriptor}" for label, descriptor in devices]
+            summary = ("Backends encontrados: " + str(len(devices))
+                       + "\\n\\n" + "\\n".join(lines))
+        else:
+            summary = (
+                "Nenhum backend RSP/Mirics encontrado pelo SoapySDR.\\n\\n"
+                "A API SDRplay por si só não instala o plugin SoapySDRPlay3. "
+                "Para dispositivos Mirics, consulte SoapyMiri/libmirisdr. "
+                "Verifique as dependências com SoapySDRUtil --find.\\n\\n"
+                "Não substitua um driver USB que já funciona com outro software.")
+        QMessageBox.information(self, "Diagnóstico SDRplay / Mirics", summary)
+        return summary
 
     def _browse(self):
         p, _ = QFileDialog.getOpenFileName(self, "Abrir gravação IQ", "", "WAV IQ (*.wav)")
@@ -448,18 +470,36 @@ class ModePanel(QWidget):
 
 # =============================================================================
 def _compact(widget):
-    """Formulários quebram em duas linhas quando o painel é estreito (rótulo em cima)."""
+    """Keep controls content-sized, left aligned and responsive to small screens.
+
+    Unlike AllNonFixedFieldsGrow, this preserves meaningful widths when the
+    user maximizes the app. Existing user-defined maxima take precedence.
+    Sliders alone remain elastic since they show a continuous value.
+    """
     from PySide6.QtWidgets import QSizePolicy
     for form in widget.findChildren(QFormLayout):
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
-        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-    widgets = [w for cls in (QComboBox, QDoubleSpinBox, QSpinBox, QSlider) for w in widget.findChildren(cls)]
+        form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
+    widgets = [w for cls in (QComboBox, QDoubleSpinBox, QSpinBox, QSlider)
+               for w in widget.findChildren(cls)]
     for w in widgets:
         w.setMinimumWidth(40)
         if w.sizePolicy().horizontalPolicy() == QSizePolicy.Fixed:
             continue
-        w.setSizePolicy(QSizePolicy.Preferred if isinstance(w, QComboBox) else QSizePolicy.Expanding,
-                        w.sizePolicy().verticalPolicy())
+        if isinstance(w, QSlider):
+            w.setSizePolicy(QSizePolicy.Expanding, w.sizePolicy().verticalPolicy())
+            continue
+        if isinstance(w, QComboBox):
+            w.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+            if w.maximumWidth() > 420:
+                w.setMaximumWidth(420)
+        elif isinstance(w, (QSpinBox, QDoubleSpinBox)):
+            if w.maximumWidth() > 180:
+                w.setMaximumWidth(180)
+        w.setSizePolicy(QSizePolicy.Preferred, w.sizePolicy().verticalPolicy())
+    for w in widget.findChildren(QLineEdit):
+        if w.maximumWidth() > 430:
+            w.setMaximumWidth(430)
 
 
 class AudioPanel(QWidget):

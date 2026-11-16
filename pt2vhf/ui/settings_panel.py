@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog
 class SettingsPanel(QWidget):
     changed = Signal(str, object)        # chave, valor
     checkUpdatesNow = Signal()
+    testOtaHelper = Signal()
     webApply = Signal()
     webOpen = Signal()
     webCopy = Signal()
@@ -68,6 +69,7 @@ class SettingsPanel(QWidget):
         self.smeter = QDoubleSpinBox()
         self.smeter.setRange(-60, 60)
         self.smeter.setSuffix(" dB")
+        self.smeter.setMaximumWidth(150)
         self.smeter.setValue(float(cfg.get("s_meter_cal", 0.0)))
         self.smeter.setToolTip("Somado à leitura do S-meter para calibrar com um gerador ou rádio de referência")
         self.rtl_lib = QComboBox()
@@ -95,8 +97,13 @@ class SettingsPanel(QWidget):
         self.auto_update.setToolTip("Ao detectar versão nova: baixa, confere tamanho e SHA-256 e instala quando "
                                     "o programa estiver livre (sem gravação ou varredura)")
         now = QPushButton("Verificar agora")
+        self.test_ota_btn = QPushButton("Testar auxiliar OTA (sem instalar)")
+        self.test_ota_btn.setToolTip(
+            "Executa somente a confirmação de inicialização do PowerShell. "
+            "Não baixa, instala nem altera a versão atual.")
         f.addWidget(self.auto_update)
         f.addWidget(now)
+        f.addWidget(self.test_ota_btn)
         col1.addWidget(g)
         col1.addStretch(1)
 
@@ -109,6 +116,7 @@ class SettingsPanel(QWidget):
         self.web_lan.setChecked(bool(cfg.get("web_allow_lan", False)))
         self.web_port = QSpinBox()
         self.web_port.setRange(1024, 65535)
+        self.web_port.setMaximumWidth(125)
         self.web_port.setValue(int(cfg.get("web_port", 8095)))
         row.addWidget(self.web_lan, 1)
         row.addWidget(QLabel("Porta TCP"))
@@ -156,10 +164,17 @@ class SettingsPanel(QWidget):
         self.reconnect.toggled.connect(lambda v: self.changed.emit("reconnect_on_start", v))
         self.pres_minimal.toggled.connect(lambda v: self.changed.emit("presentation_minimal", v))
         now.clicked.connect(self.checkUpdatesNow)
+        self.test_ota_btn.clicked.connect(self.testOtaHelper)
         for sig in (self.web_on.toggled, self.web_lan.toggled, self.web_key.toggled, self.web_port.valueChanged):
             sig.connect(lambda *_: self.webApply.emit())
         b_open.clicked.connect(self.webOpen)
         b_copy.clicked.connect(self.webCopy)
+
+        # Avoid full-width stretched fields in maximized windows while
+        # preserving label wrapping and useful content widths in small ones.
+        for form in self.findChildren(QFormLayout):
+            form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+            form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
 
     def _browse(self):
         d = QFileDialog.getExistingDirectory(self, "Pasta de gravações", self.rec_dir.text())

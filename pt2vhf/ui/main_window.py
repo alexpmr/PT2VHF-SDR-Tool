@@ -522,6 +522,9 @@ class MainWindow(QMainWindow):
         a = QAction("Verificar atualizações…", self)
         a.triggered.connect(lambda: self.updates.check(manual=True))
         h.addAction(a)
+        a = QAction("Testar auxiliar OTA (sem instalar)…", self)
+        a.triggered.connect(self.updates.probe_helper)
+        h.addAction(a)
         a = QAction("Atalhos de teclado", self)
         a.triggered.connect(self._show_shortcuts)
         h.addAction(a)
@@ -674,6 +677,7 @@ class MainWindow(QMainWindow):
         sp2 = self.settings_panel
         sp2.changed.connect(self._setting_changed)
         sp2.checkUpdatesNow.connect(lambda: self.updates.check(manual=True))
+        sp2.testOtaHelper.connect(self.updates.probe_helper)
         sp2.webApply.connect(self._web_apply)
         sp2.webOpen.connect(self._web_open)
         sp2.webCopy.connect(self._web_copy)
