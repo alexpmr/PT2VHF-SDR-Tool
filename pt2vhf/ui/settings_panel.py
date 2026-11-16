@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog
 class SettingsPanel(QWidget):
     changed = Signal(str, object)        # chave, valor
     checkUpdatesNow = Signal()
+    testOtaHelper = Signal()
     webApply = Signal()
     webOpen = Signal()
     webCopy = Signal()
@@ -95,8 +96,13 @@ class SettingsPanel(QWidget):
         self.auto_update.setToolTip("Ao detectar versão nova: baixa, confere tamanho e SHA-256 e instala quando "
                                     "o programa estiver livre (sem gravação ou varredura)")
         now = QPushButton("Verificar agora")
+        self.test_ota_btn = QPushButton("Testar auxiliar OTA (sem instalar)")
+        self.test_ota_btn.setToolTip(
+            "Executa somente a confirmação de inicialização do PowerShell. "
+            "Não baixa, instala nem altera a versão atual.")
         f.addWidget(self.auto_update)
         f.addWidget(now)
+        f.addWidget(self.test_ota_btn)
         col1.addWidget(g)
         col1.addStretch(1)
 
@@ -156,6 +162,7 @@ class SettingsPanel(QWidget):
         self.reconnect.toggled.connect(lambda v: self.changed.emit("reconnect_on_start", v))
         self.pres_minimal.toggled.connect(lambda v: self.changed.emit("presentation_minimal", v))
         now.clicked.connect(self.checkUpdatesNow)
+        self.test_ota_btn.clicked.connect(self.testOtaHelper)
         for sig in (self.web_on.toggled, self.web_lan.toggled, self.web_key.toggled, self.web_port.valueChanged):
             sig.connect(lambda *_: self.webApply.emit())
         b_open.clicked.connect(self.webOpen)
