@@ -1,5 +1,28 @@
 # Backlog — PT2VHF SDR Tool
 
+## v1.0.4 — Entregas verificáveis e pendências (16/11/2026)
+
+**Origem:** branch `release/stable-v1.0.4-backlog-20261116`, derivada da release v1.0.3 publicada; não confundir código novo com release homologada. Release só pode ser anunciada com testes CI Windows/Linux, instaladores, SHA256 e URLs públicos confirmados.
+
+### Implementações desta candidata
+- **P0 OTA — diagnóstico do auxiliar acessível:** botão em Configurações → Atualizações e Ajuda → Testar auxiliar OTA. Usa o PowerShell empacotado com `-ProbeOnly` para confirmar `READY` sem download, instalação, alteração de programas, reinício ou substituição do executável. Registra falhas em `%TEMP%/PT2VHF-SDR-Tool-ota-launch.log`; o resultado deixa explícito que o teste isolado não equivale à atualização completa entre versões. Requer execução em Windows de campo do operador antes de fechar issue #18.
+- **P0 RS41 — diagnóstico dos pré-requisitos:** botão `Verificar decodificadores` localiza `fsk_demod` e `rs41mod` sem executá-los; diferencia binários externos ausentes de ausência de frames RF e permite copiar o log. Isso NÃO implementa um decodificador RS41 nativo nem comprova quadro RF válido. Issue #1 permanece aberta até IQ e telemetria reais.
+- **P1 SDRplay/Mirics — diagnóstico do backend:** botão na aba Receptor lista identificadores de drivers SoapySDRPlay3 ou SoapyMiri detectados, e orienta quando não encontra nenhum. Não altera drivers USB, não inclui dependências nativas e não declara plug and play completo. Homologação física e empaquetamento seguem pendentes.
+- **P1 formulários — dimensões compactas:** controles dos formulários de Áudio/DSP e Configurações deixam de crescer indefinidamente quando maximiza; mantém rolagem adaptativa em telas estreitas, maximizando legibilidade e evitando campos ocupando a largura inteira.
+- **Regressões novas:** `tests/test_v104_backlog.py` cobre pré-requisitos RS41, cópia de diagnóstico, botão OTA, forma dos formulários e dois backends RSP. Manter testes pré-existentes e CI Windows com o script real de OTA.
+
+### Bloqueios que NÃO devem ser anunciados como resolvidos
+1. **Estabilidade Windows:** issue #8 sem conclusão confirmada em longas sessões de SDR físico.
+2. **OTA:** v1.0.3 corrigida em CI, mas falta validação real no Windows do usuário e uma atualização efetiva entre duas versões.
+3. **MSi-SDR RSP1:** SoapySDR/SoapySDRPlay3/SoapyMiri e USB drivers ausentes no pacote; recepção física não homologada.
+4. **RS41 e outras radiossondas:** decodificadores externos ainda necessários e RF válido não comprovado.
+5. **IQ/ONNX:** permanece experimental no PR #2, sem rótulos de RF reais suficientes; não integrar automaticamente.
+6. **Mac/Linux:** ausência de pipelines de distribuição homologados e de imagem splash original. Banner textual é substituto temporário reconhecido, não requisito visual final.
+7. **Histórico:** `main` ainda está na linha v0.13.x; release tag/PRs permanecem separados. Consolidar main e fechar PRs só após revisão de histórico e estratégia de merge.
+
+---
+
+
 ## P0 — v1.0.1: checkbox do upconverter externo desabilitado durante recepção (14/11/2026)
 - **Relato do mantenedor:** checkbox do conversor aparece desligado/inacessível na v1.0.0 quando o SDR está ligado. `ReceiverPanel.set_running(True)` desabilitava checkbox e spinbox por design, sem permitir reconfiguração enquanto recebia.
 - **Correção candidata no PR #16:** controles continuam habilitados para fontes RTL-SDR/rtl_tcp/SoapySDR; alteração dispara debounce Qt de 400 ms e `stop_source()` seguido de `start_source(source_options())`, evitando mudar frequência de LO durante bloco IQ. Durante troca o scanner e gravação são interrompidos; os parâmetros são salvos e novo estado é indicado na barra de status.
