@@ -126,3 +126,42 @@ def test_settings_exposes_native_ota_probe(qt_lifecycle):
         assert "sem instalar" in panel.test_ota_btn.text()
     finally:
         panel.close()
+
+
+def test_rsp_diagnostics_lists_only_detected_soapy_backends(qt_lifecycle, monkeypatch):
+    import pt2vhf.ui.panels as panels
+
+    messages = []
+    monkeypatch.setattr(panels, "enumerate_rsp_devices", lambda: [
+        ("SDRplay API — RSP1", "driver=sdrplay,serial=demo"),
+        ("Mirics — MSi2500", "driver=miri,serial=demo2"),
+    ])
+    monkeypatch.setattr(QMessageBox, "information",
+                        lambda *_a: messages.append(_a[-1]))
+    receiver = panels.ReceiverPanel(Config())
+    try:
+        receiver.source.setCurrentText(panels.RSP_SOURCE)
+        assert receiver.rsp_diag.isVisible() or not receiver.isVisible()
+        summary = receiver.show_rsp_diagnostics()
+        assert "SDRplay API" in summary and "Mirics" in summary
+        assert "driver=sdrplay" in summary and "driver=miri" in summary
+        assert messages and messages[-1] == summary
+    finally:
+        receiver.close()
+
+
+def test_rsp_diagnostics_preserve_usb_drivers(qt_lifecycle, monkeypatch):
+    import pt2vhf.ui.panels as panels
+
+    notices = []
+    monkeypatch.setattr(panels, "enumerate_rsp_devices", lambda: [])
+    monkeypatch.setattr(QMessageBox, "information",
+                        lambda *_a: notices.append(_a[-1]))
+    receiver = panels.ReceiverPanel(Config())
+    try:
+        result = receiver.show_rsp_diagnostics()
+        assert "Nenhum backend" in result
+        assert "Não substitua um driver USB" in result
+        assert notices
+    finally:
+        receiver.close()
