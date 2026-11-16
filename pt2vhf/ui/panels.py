@@ -448,18 +448,36 @@ class ModePanel(QWidget):
 
 # =============================================================================
 def _compact(widget):
-    """Formulários quebram em duas linhas quando o painel é estreito (rótulo em cima)."""
+    """Keep controls content-sized, left aligned and responsive to small screens.
+
+    Unlike AllNonFixedFieldsGrow, this preserves meaningful widths when the
+    user maximizes the app. Existing user-defined maxima take precedence.
+    Sliders alone remain elastic since they show a continuous value.
+    """
     from PySide6.QtWidgets import QSizePolicy
     for form in widget.findChildren(QFormLayout):
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
-        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-    widgets = [w for cls in (QComboBox, QDoubleSpinBox, QSpinBox, QSlider) for w in widget.findChildren(cls)]
+        form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
+    widgets = [w for cls in (QComboBox, QDoubleSpinBox, QSpinBox, QSlider)
+               for w in widget.findChildren(cls)]
     for w in widgets:
         w.setMinimumWidth(40)
         if w.sizePolicy().horizontalPolicy() == QSizePolicy.Fixed:
             continue
-        w.setSizePolicy(QSizePolicy.Preferred if isinstance(w, QComboBox) else QSizePolicy.Expanding,
-                        w.sizePolicy().verticalPolicy())
+        if isinstance(w, QSlider):
+            w.setSizePolicy(QSizePolicy.Expanding, w.sizePolicy().verticalPolicy())
+            continue
+        if isinstance(w, QComboBox):
+            w.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+            if w.maximumWidth() > 420:
+                w.setMaximumWidth(420)
+        elif isinstance(w, (QSpinBox, QDoubleSpinBox)):
+            if w.maximumWidth() > 180:
+                w.setMaximumWidth(180)
+        w.setSizePolicy(QSizePolicy.Preferred, w.sizePolicy().verticalPolicy())
+    for w in widget.findChildren(QLineEdit):
+        if w.maximumWidth() > 430:
+            w.setMaximumWidth(430)
 
 
 class AudioPanel(QWidget):
