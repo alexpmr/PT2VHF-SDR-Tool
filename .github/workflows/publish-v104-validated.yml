@@ -1,7 +1,7 @@
 name: Publish validated PT2VHF SDR Tool v1.0.4 backlog improvements
 on:
   push:
-    branches: [release/publish-v1.0.4-20261115]
+    branches: [release/publish-v1.0.4-20261116]
     paths:
       - .github/workflows/publish-v104-validated.yml
 permissions:
