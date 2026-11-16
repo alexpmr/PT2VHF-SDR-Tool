@@ -1,0 +1,65 @@
+name: Publish validated PT2VHF SDR Tool v1.0.4 backlog improvements
+on:
+  push:
+    branches: [release/publish-v1.0.4-20261115]
+    paths:
+      - .github/workflows/publish-v104-validated.yml
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: pt2vhf-sdr-publish-v104
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SOURCE_RUN_ID: "43945630719"
+      SOURCE_SHA: "e10865f87959379c0424551b64609333866753f8"
+      VERSION: "1.0.4"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact tested build and binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          actual="$(gh api "repos/$repo/actions/runs/$SOURCE_RUN_ID" --jq '.head_sha')"
+          result="$(gh api "repos/$repo/actions/runs/$SOURCE_RUN_ID" --jq '.conclusion')"
+          test "$actual" = "$SOURCE_SHA"
+          test "$result" = "success"
+          gh run download "$SOURCE_RUN_ID" --repo "$repo" \
+            --name "PT2VHF-SDR-Tool-$VERSION-windows" --dir release
+          for flavor in Setup Portable; do
+            test -s "release/PT2VHF-SDR-Tool-v$VERSION-Win11-x64-$flavor.exe"
+          done
+          test -s "release/SHA256SUMS.txt"
+          cd release
+          sed '1s/^\xef\xbb\xbf//' SHA256SUMS.txt | tr -d '\r' | \
+            awk 'NF == 3 {print $1 "  " $3}' | sha256sum --check --strict
+          test "$(awk 'NF == 3 {n++} END {print n}' SHA256SUMS.txt)" -eq 2
+      - name: Publish verified v1.0.4 release with honest hardware caveats
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          if gh api "repos/$repo/releases/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::Release v$VERSION already exists; refusing to overwrite"
+            exit 1
+          fi
+          gh release create "v$VERSION" release/*.exe release/SHA256SUMS.txt \
+            --repo "$repo" --target "$SOURCE_SHA" \
+            --title "PT2VHF SDR Tool v$VERSION — Windows x64" \
+            --notes "v$VERSION: Adds safe built-in OTA PowerShell readiness test in Settings and Help (no installation), RS41 decoder prerequisite checks for fsk_demod/rs41mod with copyable diagnostics, SDRplay/Mirics Soapy backend diagnostics without altering USB drivers, and compact responsive form fields. Linux/Qt CI: 248 tests passed; Windows unit suite, packaged Setup/Portable executable selftests, native OTA helper probe, silent Setup install and OTA Setup smoke passed on Actions run $SOURCE_RUN_ID, exact commit $SOURCE_SHA. Integrity SHA256SUMS included. Existing SDRplay/Mirics receiver selection remains experimental: Soapy native modules/USB drivers are NOT bundled and physical reception has not been validated. RS41 still REQUIRES external decoder binaries and actual RF IQ validation; no native decoder is claimed. Known Windows stability #8 and OTA field validation #18 remain OPEN. IQ/ONNX classifier remains experimental and excluded. Splash remains text-only fallback until original graphic is available."
+          tag_sha="$(gh api "repos/$repo/git/ref/tags/v$VERSION" --jq '.object.sha')"
+          test "$tag_sha" = "$SOURCE_SHA"
+          gh api "repos/$repo/releases/tags/v$VERSION" > /tmp/release.json
+          jq -e --arg v "$VERSION" '
+            .draft == false and .prerelease == false and
+            ([.assets[].name] | index("SHA256SUMS.txt") != null) and
+            ([.assets[].name] | index("PT2VHF-SDR-Tool-v"+$v+"-Win11-x64-Setup.exe") != null) and
+            ([.assets[].name] | index("PT2VHF-SDR-Tool-v"+$v+"-Win11-x64-Portable.exe") != null)
+          ' /tmp/release.json
+          echo "PT2VHF_SDR_V104_PUBLISHED=$tag_sha"
