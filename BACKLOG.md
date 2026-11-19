@@ -1,4 +1,12 @@
 # Backlog — PT2VHF SDR Tool
+\n## v1.0.5 — Consolidação de código aprovado (19/11/2026)
+
+- **Escopo:** preservar integralmente os recursos já aprovados e publicados na v1.0.4, partindo da tag v1.0.4, sem reescrever DSP, drivers ou OTA que passaram no CI.
+- **Novo contrato de regressão:** `tests/test_v105_stable_contract.py` verifica metadados de versão, RTL/Soapy/RSP, OTA PowerShell `-ProbeOnly`, diagnósticos RS41, waterfall, display e exclusão intencional da IA IQ experimental.
+- **Aceite obrigatório:** CI Linux/Windows da SHA exata v1.0.5, executáveis Setup/Portable, SHA-256, smoke tests e disponibilização pública GitHub. OTA Hostinger é aceite separado; não confundir commit no repositório do site com publicação de `update.php`.
+- **Sem falso status:** RF real do RSP1 e RS41, integração de drivers nativos RSP, Windows crash #8 e OTA em computador real #18 NÃO foram homologados; PR IQ/ONNX #2 permanece experimental.
+- **Notas de versão e evidências:** `docs/RELEASE_1.0.5_STABLE.md`.
+
 
 ## v1.0.4 — Entregas verificáveis e pendências (16/11/2026)
 
