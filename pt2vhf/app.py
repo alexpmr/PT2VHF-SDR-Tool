@@ -13,6 +13,7 @@ def main():
     ap.add_argument("--sim", action="store_true", help="liga o simulador ao iniciar")
     ap.add_argument("--screenshot", metavar="PNG", help="(teste) salva captura de tela e sai")
     ap.add_argument("--selftest", action="store_true", help="verifica a instalação (DSP, decodificadores, interface) e sai")
+    ap.add_argument("--ota-helper-qa", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
     fmt = "%(asctime)s %(levelname)s %(name)s: %(message)s"
     level = logging.DEBUG if args.debug else logging.INFO
@@ -25,6 +26,12 @@ def main():
         logging.basicConfig(level=level, format=fmt)
     if args.selftest:
         sys.exit(selftest())
+    if args.ota_helper_qa:
+        sys.exit(ota_helper_qa())
+
+    # QA P0: local-only native/Python crash evidence before importing Qt.
+    from .crash_diagnostics import enable, mark_qt_quit_requested, mark_qt_loop_return
+    enable()
 
     if sys.platform == "win32":  # o instalador (AppMutex) detecta o programa aberto
         import ctypes
@@ -39,6 +46,7 @@ def main():
     from .ui.main_window import MainWindow
 
     app = QApplication(sys.argv)
+    app.aboutToQuit.connect(mark_qt_quit_requested)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName("PT2VHF")
     w = MainWindow()
@@ -51,7 +59,34 @@ def main():
             w._auto_levels()
             QTimer.singleShot(1500, lambda: (w.grab().save(args.screenshot), app.quit()))
         QTimer.singleShot(int(10_000), shot)
-    sys.exit(app.exec())
+    exit_code = app.exec()
+    mark_qt_loop_return(exit_code)
+    sys.exit(exit_code)
+
+
+
+def ota_helper_qa() -> int:
+    """Exercise the bundled PowerShell helper without installing or closing GUI.
+
+    This is intentionally limited to frozen Windows builds, with a dummy .exe
+    and the helper's -ProbeOnly switch. The real helper's parser and process
+    launch flags are both covered, without touching an installed executable.
+    """
+    import tempfile
+    from pathlib import Path
+    from . import updater
+
+    output = Path(tempfile.gettempdir()) / "PT2VHF-SDR-Tool-ota-probe-result.txt"
+    try:
+        with tempfile.TemporaryDirectory(prefix="pt2vhf_ota_probe_") as root:
+            package = Path(root) / "probe-package.exe"
+            package.write_bytes(b"probe: never execute or install")
+            updater.apply(package, "installer", "qa-only", probe_only=True)
+        output.write_text("OTA_HELPER_PROBE=PASS\n", encoding="utf-8")
+        return 0
+    except Exception as exc:
+        output.write_text("OTA_HELPER_PROBE=FAIL: " + str(exc) + "\n", encoding="utf-8")
+        return 1
 
 
 def selftest() -> int:

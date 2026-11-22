@@ -102,6 +102,14 @@ class AudioOutput:
                 self._primed = False
 
 
+# WAV RIFF is limited to 32-bit chunk sizes. Reserve 64 KiB for headers/chunks.
+MAX_RIFF_DATA_BYTES = 0xFFFFFFFF - 65536
+
+
+class WavSizeLimitError(OSError):
+    """The next write would exceed the safe RIFF/WAV file size."""
+
+
 class WavRecorder:
     """Grava WAV PCM 16 bits (mono = áudio, estéreo = IQ)."""
 
@@ -115,8 +123,16 @@ class WavRecorder:
         self.w.setframerate(rate)
         self.started = time.time()
         self.samples = 0
+        self.max_data_bytes = MAX_RIFF_DATA_BYTES
 
     def write(self, x: np.ndarray):
+        # Preflight before allocating or calling wave.writeframes(), which would
+        # otherwise fail/overflow once the RIFF 32-bit size field is exhausted.
+        new_bytes = len(x) * self.channels * 2
+        existing_bytes = self.samples * self.channels * 2
+        if new_bytes > self.max_data_bytes - existing_bytes:
+            raise WavSizeLimitError(
+                "WAV RIFF perto do limite de 4 GiB; gravação encerrada sem corromper arquivo")
         if self.channels == 2:
             inter = np.empty(len(x) * 2, np.float32)
             inter[0::2] = x.real

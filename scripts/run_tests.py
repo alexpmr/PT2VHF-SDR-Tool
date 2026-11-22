@@ -15,11 +15,59 @@ import sys
 
 def main():
     import pytest
-    result = pytest.main(["-q"])
+    probe = None
+    if os.environ.get("PT2VHF_CI_NATIVE_LIFECYCLE") == "1":
+        from ci_native_lifecycle import report as probe
+        probe("before-pytest")
+    result = pytest.main(["-q", *sys.argv[1:]])
+    if probe is not None:
+        probe("after-pytest")
+    if os.environ.get("PT2VHF_CI_QT_DISPOSE_AFTER_PYTEST") == "1":
+        # A few regression tests invoke this runner *inside* the active pytest
+        # process with a mocked pytest.main(). Never dispose the live suite's
+        # Qt objects from those nested calls. Only the outer CI process may
+        # perform this experimental teardown after pytest has fully returned.
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            print("CI-QT-DISPOSAL skipped=nested-pytest-runner", flush=True)
+        else:
+            from ci_native_lifecycle import dispose_qt_top_levels
+            dispose_qt_top_levels()
+            if probe is not None:
+                probe("after-qt-disposal")
     sys.stdout.flush()
     sys.stderr.flush()
+    # Diagnostic-only alternative: compare ordinary Python/Qt shutdown with
+    # the legacy hard exit on Windows. Never enable for release builds.
+    exit_mode = os.environ.get("PT2VHF_TEST_EXIT_MODE", "hard")
+    if exit_mode == "normal":
+        return int(result)
+    if exit_mode != "hard":
+        raise ValueError("PT2VHF_TEST_EXIT_MODE must be 'hard' or 'normal'")
+    # Experimental CI timing probe only: determine whether native background
+    # activity at pytest shutdown is time-sensitive. Default remains zero.
+    delay_raw = os.environ.get("PT2VHF_TEST_EXIT_DELAY_MS", "0")
+    if delay_raw not in {"0", "250", "1000", "2000"}:
+        raise ValueError("PT2VHF_TEST_EXIT_DELAY_MS must be 0, 250, 1000 or 2000")
+    if delay_raw != "0":
+        import time
+        time.sleep(int(delay_raw) / 1000)
+        sys.stdout.flush()
+        sys.stderr.flush()
+    if probe is not None:
+        probe("before-hard-exit")
+    # pytest.main() has returned and its status is final. On Windows, the
+    # DLL detach performed by os._exit raises a first-chance access violation
+    # that a native module handles itself: the process still exits with the
+    # pytest status (CI A/B run 45079275950: exit=0 on this branch *and* on
+    # main, with or without -X faulthandler). faulthandler's vectored handler
+    # prints such handled exceptions too, so it is turned off only here,
+    # after every test has run. Crashes during tests are still reported.
+    import faulthandler
+    if faulthandler.is_enabled():
+        faulthandler.disable()
+        print("CI-FAULTHANDLER disabled=before-hard-exit", flush=True)
     os._exit(int(result))
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

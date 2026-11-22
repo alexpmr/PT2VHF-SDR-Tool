@@ -202,6 +202,8 @@ class UpdateController(QObject):
     _checked = Signal(object, str, bool)
     _progress = Signal(int, int)
     _downloaded = Signal(object, str)
+    _helper_ack = Signal(str)  # thread-safe handshake result; UI remains responsive
+    _probe_finished = Signal(bool, str)  # native probe, no installation
 
     def __init__(self, window, button: QPushButton):
         super().__init__(window)
@@ -213,16 +215,19 @@ class UpdateController(QObject):
         self._busy_download = False
         self._prompted = ""
         self._silent = False
+        self._probe_running = False
         self._checked.connect(self._on_checked)
         self._progress.connect(self._on_progress)
         self._downloaded.connect(self._on_downloaded)
+        self._helper_ack.connect(self._on_helper_ack)
+        self._probe_finished.connect(self._on_probe_finished)
         self.btn.setText("Verificar atualizações")
         self.btn.setToolTip(f"Versão instalada {__version__} · verificar versões em www.pt2vhf.com e atualizar")
         self.btn.clicked.connect(self.on_button)
 
     # ------------------------------------------------------------ consulta
     def check(self, manual: bool = False):
-        if self.kind == "source" and not manual:
+        if self.kind in ("source", "manual") and not manual:
             return
 
         def run():
@@ -254,14 +259,16 @@ class UpdateController(QObject):
                 QMessageBox.information(self.win, "Atualizações",
                                         f"Você já está na versão mais recente ({__version__}).")
             return
-        if self.kind == "source":
+        if self.kind in ("source", "manual"):
             self.btn.setText(f"Versão {info.version} disponível · atualização manual")
-            self.btn.setToolTip("O aplicativo iniciado pelo código-fonte não instala EXE automaticamente.")
+            self.btn.setToolTip("Linux/macOS ou código-fonte: atualização manual pela plataforma correta.")
             if manual:
-                QMessageBox.information(
-                    self.win, "Atualização pelo código-fonte",
-                    f"A versão {info.version} está disponível, mas esta execução usa código-fonte. "
-                    "Atualize o projeto pelo seu gerenciador de versões; não há EXE para substituir.")
+                method = ("Esta execução usa código-fonte; atualize pelo gerenciador de versões."
+                          if self.kind == "source" else
+                          "Este pacote Linux/macOS não executa instaladores Windows. "
+                          "Baixe manualmente o pacote da sua plataforma em www.pt2vhf.com/sdr.")
+                QMessageBox.information(self.win, "Atualização manual",
+                                        f"Nova versão {info.version} disponível. {method}")
             return
         if info.file is None:
             # IMPORTANT: never silently launch the browser as an OTA substitute.
@@ -368,12 +375,78 @@ class UpdateController(QObject):
             if not self._silent:
                 QMessageBox.warning(self.win, "Atualização", err)
             return
-        try:
-            updater.apply(path, self.kind, self.available.version)
-        except updater.UpdateError as e:
-            QMessageBox.critical(self.win, "Atualização não aplicada", str(e))
+        self.btn.setText("Instalador baixado · iniciando auxiliar OTA…")
+        # PowerShell may require several seconds for Defender to scan it.
+        # Never block the Qt event loop while waiting for the helper ACK.
+        version = self.available.version
+
+        def start_helper():
+            try:
+                updater.apply(path, self.kind, version)
+            except (updater.UpdateError, OSError) as exc:
+                self._helper_ack.emit(str(exc))
+            else:
+                self._helper_ack.emit("")
+
+        threading.Thread(target=start_helper, name="sdr-ota-helper", daemon=True).start()
+
+    def _on_helper_ack(self, error: str):
+        if error:
+            self.btn.setText("Falha ao iniciar instalador · tentar novamente")
+            QMessageBox.critical(self.win, "Atualização não aplicada", error)
             return
+        # This Qt slot only executes after PowerShell wrote READY to the
+        # unique acknowledgement file; never close on mere Popen success.
         self.win.quit_for_update()
+
+    def probe_helper(self):
+        """Native, no-install OTA health check; never closes the SDR UI.
+
+        The real bundled helper runs with -ProbeOnly and a throwaway EXE
+        placeholder in TEMP. This checks Windows PowerShell and file access,
+        not a future full update between versions.
+        """
+        if self._probe_running:
+            return
+        if self.kind not in ("installer", "portable"):
+            QMessageBox.information(
+                self.win, "Diagnóstico OTA",
+                "O teste do auxiliar OTA é disponibilizado somente nos executáveis Windows.")
+            return
+        self._probe_running = True
+        self.win.statusBar().showMessage("Testando auxiliar OTA sem instalar arquivos…", 20000)
+
+        def run():
+            from pathlib import Path
+            import tempfile
+            try:
+                with tempfile.TemporaryDirectory(prefix="pt2vhf_ota_ui_probe_") as root:
+                    pkg = Path(root) / "probe-package.exe"
+                    pkg.write_bytes(b"OTA readiness probe - do not execute")
+                    updater.apply(pkg, self.kind, "diagnostic", probe_only=True)
+            except Exception as exc:
+                self._probe_finished.emit(False, str(exc))
+            else:
+                self._probe_finished.emit(True, "PowerShell confirmou READY e encerrou normalmente.")
+
+        threading.Thread(target=run, daemon=True, name="sdr-ota-ui-probe").start()
+
+    def _on_probe_finished(self, success: bool, detail: str):
+        from pathlib import Path
+        import tempfile
+        self._probe_running = False
+        log = str(Path(tempfile.gettempdir()) / "PT2VHF-SDR-Tool-ota-launch.log")
+        message = (
+            detail
+            + "\\n\\nDiagnóstico: " + log
+            + "\\n\\nEste teste não instala versões nem comprova uma atualização OTA completa."
+        )
+        self.win.statusBar().showMessage(
+            "Diagnóstico OTA: " + ("PowerShell iniciado" if success else "falha"), 15000)
+        if success:
+            QMessageBox.information(self.win, "Auxiliar OTA: teste aprovado", message)
+        else:
+            QMessageBox.warning(self.win, "Auxiliar OTA: falha", message)
 
     # ------------------------------------------------------------ resultado da anterior
     def show_last_result(self):
@@ -391,25 +464,7 @@ class UpdateController(QObject):
 
 
 def show_welcome(parent):
-    """Anúncio de abertura (padrão dos programas PT2VHF): convite às demais aplicações e ao site."""
-    from PySide6.QtWidgets import QDialog, QDialogButtonBox
-    dlg = QDialog(parent)
-    dlg.setWindowTitle("PT2VHF SDR Tool")
-    lay = QVBoxLayout(dlg)
-    title = QLabel("Feito por radioamadores, para radioamadores")
-    title.setStyleSheet("font-size:18px;font-weight:700")
-    text = QLabel("Obrigado por usar o PT2VHF SDR Tool! Conheça também as outras aplicações gratuitas "
-                  "desenvolvidas para a comunidade: APRS Client, APRS Android, Prop Tool, Mesh Analyzer, "
-                  "Sat Tool, Prog Tool, QSL Manager e mais. Downloads e atualizações oficiais somente pelo site.")
-    text.setWordWrap(True)
-    link = QLabel('<a href="https://www.pt2vhf.com" style="color:#6cc7ff;font-weight:700">www.PT2VHF.com</a>')
-    link.setOpenExternalLinks(True)
-    bb = QDialogButtonBox()
-    close = bb.addButton("Fechar", QDialogButtonBox.RejectRole)
-    close.setDefault(True)
-    bb.rejected.connect(dlg.reject)
-    for w in (title, text, link):
-        lay.addWidget(w)
-    lay.addWidget(bb)
-    dlg.setMinimumWidth(520)
-    dlg.exec()
+    """Display PT2VHF banner splash while retaining existing startup policy."""
+    from .welcome import show_welcome as show_splash
+    return show_splash(parent)
+

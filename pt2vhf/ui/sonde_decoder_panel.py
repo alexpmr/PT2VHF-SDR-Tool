@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import time
+import shutil
+from pathlib import Path
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout, QLabel,
     QLineEdit, QDoubleSpinBox, QPushButton, QTableWidget,
-    QTableWidgetItem, QAbstractItemView, QFileDialog, QPlainTextEdit,
+    QTableWidgetItem, QAbstractItemView, QFileDialog, QPlainTextEdit, QApplication,
 )
 from ..traffic import Track
 
@@ -57,6 +59,14 @@ class SondeDecoderPanel(QWidget):
         self.capture.setEnabled(False)
         self.capture.clicked.connect(self._capture)
         row.addWidget(self.capture)
+        self.verify = QPushButton("Verificar decodificadores")
+        self.verify.setToolTip(
+            "Confere a presença de fsk_demod e rs41mod sem executar comandos externos.")
+        self.verify.clicked.connect(self.verify_tools)
+        row.addWidget(self.verify)
+        self.copy_diag = QPushButton("Copiar diagnóstico")
+        self.copy_diag.clicked.connect(self.copy_diagnostics)
+        row.addWidget(self.copy_diag)
         row.addStretch(1)
         lay.addLayout(row)
         self.status = QLabel("Aguardando. O waterfall sozinho não executa decodificação RS41.")
@@ -91,6 +101,55 @@ class SondeDecoderPanel(QWidget):
         note.setWordWrap(True)
         note.setObjectName("hintLabel")
         lay.addWidget(note)
+
+    @staticmethod
+    def _locate_decoder(specified: str, executable: str) -> str | None:
+        """Resolve a configured decoder without executing it or changing PATH.
+
+        GUI may contain a quoted absolute Windows path, relative path, or a
+        bare executable found on PATH. Distinguish actual file existence from
+        the unverified presence of a name in the textbox.
+        """
+        name = str(specified or "").strip().strip('"').strip("'")
+        if not name:
+            name = executable
+        located = shutil.which(name)
+        if located:
+            return str(Path(located).resolve())
+        candidate = Path(name).expanduser()
+        if candidate.is_file():
+            return str(candidate.resolve())
+        return None
+
+    def verify_tools(self) -> dict[str, bool]:
+        """Visible prerequisite diagnostic for the external RS41 pipeline.
+
+        Presence of a decoder executable does NOT prove real IQ decoding.
+        No SDR signal is consumed and no binary is executed by this check.
+        """
+        tools = {
+            "fsk_demod": self._locate_decoder(self.fsk_path.text(), "fsk_demod"),
+            "rs41mod": self._locate_decoder(self.rs_path.text(), "rs41mod"),
+        }
+        for name, found in tools.items():
+            self.log.appendPlainText(
+                f"{name}: {'LOCALIZADO — ' + found if found else 'AUSENTE (configure caminho ou PATH)'}")
+        available = all(tools.values())
+        self.status.setText(
+            "Pré-requisitos localizados; falta confirmar decodificação RS41 com sinal IQ real."
+            if available else
+            "RS41 indisponível: configure fsk_demod e rs41mod. "
+            "Nenhuma alteração de driver ou SDR foi realizada.")
+        return {name: bool(found) for name, found in tools.items()}
+
+    def copy_diagnostics(self):
+        """Copy only receiver diagnostics shown on screen, no IQ recordings."""
+        content = "\n".join([
+            "PT2VHF SDR Tool — diagnóstico RS41",
+            self.status.text(), self.diagnostics.text(), self.log.toPlainText(),
+        ])
+        QApplication.clipboard().setText(content)
+        self.status.setText("Diagnóstico RS41 copiado para a área de transferência.")
 
     def _use_current(self):
         if self.current_freq is None:

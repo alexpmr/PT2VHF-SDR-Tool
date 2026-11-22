@@ -30,6 +30,13 @@ def qt_lifecycle():
     # Não forçar DeferredDelete durante o shutdown: widgets Qt (pyqtgraph)
     # podem manter callbacks/itens C++ pendentes até o fim da sessão.
     # Fechamos janelas, processamos eventos e mantemos QApplication viva.
+    # Diagnostic-only A/B probe. Default preserves the existing teardown.
+    # Never enable this outside experimental Windows CI investigations.
+    mode = os.environ.get("PT2VHF_QT_TEST_TEARDOWN", "baseline")
+    if mode == "skip":
+        return
+    if mode != "baseline":
+        raise ValueError("PT2VHF_QT_TEST_TEARDOWN must be baseline or skip")
     QApplication.closeAllWindows()
     app.processEvents()
     gc.collect()

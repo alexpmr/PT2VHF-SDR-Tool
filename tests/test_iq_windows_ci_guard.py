@@ -1,0 +1,268 @@
+"""Synthetic checks for the Windows native-crash CI guard (no RF)."""
+from scripts.ci_windows_pytest import is_fatal_runtime_output, main
+
+
+def test_fatal_windows_exception_is_not_a_green_test_run():
+    assert is_fatal_runtime_output("Windows fatal exception: access violation")
+    assert is_fatal_runtime_output("Fatal Python error: Segmentation fault")
+    assert is_fatal_runtime_output("Process exited (core dumped)")
+    assert not is_fatal_runtime_output("333 passed, 2 skipped in 141.97s")
+
+
+def test_wrapper_rejects_native_crash_even_with_zero_process_exit(monkeypatch, capsys):
+    import scripts.ci_windows_pytest as runner
+
+    class FakeProcess:
+        stdout = iter([
+            "333 passed, 2 skipped in 141.97s\n",
+            "Windows fatal exception: access violation\n",
+        ])
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def wait(self):
+            return 0
+
+    monkeypatch.setattr(runner.subprocess, "Popen", lambda *a, **kw: FakeProcess())
+    assert main() == 86
+    assert "Windows QA must not pass" in capsys.readouterr().err
+
+
+def test_wrapper_preserves_pytest_failures_and_clean_success(monkeypatch):
+    import scripts.ci_windows_pytest as runner
+
+    class FakeProcess:
+        def __init__(self, output, status):
+            self.stdout = iter(output)
+            self.status = status
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def wait(self):
+            return self.status
+
+    for status, output, expected in [
+        (0, ["333 passed, 2 skipped\n"], 0),
+        (1, ["1 failed\n"], 1),
+        (139, ["Fatal Python error: Segmentation fault\n"], 139),
+    ]:
+        monkeypatch.setattr(
+            runner.subprocess, "Popen",
+            lambda *a, status=status, output=output, **kw:
+                FakeProcess(output, status),
+        )
+        assert main() == expected
+
+
+def test_windows_wrapper_forwards_pytest_selection(monkeypatch):
+    import sys
+    import scripts.ci_windows_pytest as runner
+
+    seen = []
+
+    class FakeProcess:
+        stdout = iter(["1 passed, 0 failed\\n"])
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def wait(self):
+            return 0
+
+    def fake_popen(command, **kwargs):
+        seen.append(command)
+        return FakeProcess()
+
+    monkeypatch.setattr(sys, "argv", ["ci_windows_pytest.py", "-k", "not iq_"])
+    monkeypatch.setattr(runner.subprocess, "Popen", fake_popen)
+    assert runner.main() == 0
+    assert seen == [[sys.executable, "-X", "faulthandler",
+                     "scripts/run_tests.py", "-k", "not iq_"]]
+
+
+def test_pytest_runner_forwards_selection_and_preserves_exit(monkeypatch):
+    import sys
+    import types
+    import scripts.run_tests as runner
+
+    seen = []
+    monkeypatch.setitem(sys.modules, "pytest", types.SimpleNamespace(
+        main=lambda args: seen.append(args) or 0
+    ))
+    monkeypatch.setattr(sys, "argv", ["run_tests.py", "-k", "iq_"])
+    # This unit test exercises hard-exit semantics even when the diagnostic
+    # Windows CI matrix intentionally sets PT2VHF_TEST_EXIT_MODE=normal.
+    # Prevent the outer A/B CI environment from triggering Qt cleanup in a
+    # nested mocked runner while pytest is still executing.
+    monkeypatch.delenv("PT2VHF_CI_QT_DISPOSE_AFTER_PYTEST", raising=False)
+    monkeypatch.setenv("PT2VHF_TEST_EXIT_MODE", "hard")
+    monkeypatch.setattr(runner.os, "_exit", lambda code: seen.append(("exit", code)))
+    runner.main()
+    assert seen == [["-q", "-k", "iq_"], ("exit", 0)]
+
+
+def test_runner_disables_faulthandler_only_after_pytest_before_hard_exit(monkeypatch):
+    import sys
+    import types
+    import faulthandler
+    import scripts.run_tests as runner
+
+    events = []
+    state = {"enabled": True}
+
+    def fake_pytest_main(args):
+        # During the whole test session faulthandler must stay enabled.
+        events.append(("pytest", state["enabled"]))
+        return 3
+
+    def fake_disable():
+        state["enabled"] = False
+        events.append(("disable",))
+
+    monkeypatch.setitem(sys.modules, "pytest", types.SimpleNamespace(main=fake_pytest_main))
+    monkeypatch.setattr(sys, "argv", ["run_tests.py"])
+    monkeypatch.delenv("PT2VHF_CI_QT_DISPOSE_AFTER_PYTEST", raising=False)
+    monkeypatch.delenv("PT2VHF_CI_NATIVE_LIFECYCLE", raising=False)
+    monkeypatch.setenv("PT2VHF_TEST_EXIT_MODE", "hard")
+    monkeypatch.setattr(faulthandler, "is_enabled", lambda: state["enabled"])
+    monkeypatch.setattr(faulthandler, "disable", fake_disable)
+    monkeypatch.setattr(runner.os, "_exit", lambda code: events.append(("exit", code)))
+    runner.main()
+    # pytest ran with faulthandler on, it was disabled afterwards, and the
+    # pytest status (non-zero here) is still the process exit status.
+    assert events == [("pytest", True), ("disable",), ("exit", 3)]
+
+
+def test_windows_isolation_runs_only_after_failure_on_experimental_branch():
+    from pathlib import Path
+
+    workflow = (Path(__file__).resolve().parents[1] /
+                ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+    diagnostic = workflow.split("\n  windows-crash-isolation:", 1)[1].split(
+        "\n  windows-exe:", 1
+    )[0]
+    assert "needs: windows-tests" in diagnostic
+    assert "needs.windows-tests.result == 'failure'" in diagnostic
+    assert "github.ref == 'refs/heads/feature/iq-signal-classifier'" in diagnostic
+    assert 'selection: "not iq_"' in diagnostic
+    assert "selection: iq_" in diagnostic
+    assert "ci_windows_pytest.py -k" in diagnostic
+    assert "partition: baseline-normal-exit" in diagnostic
+    assert "partition: full-normal-exit" in diagnostic
+    assert "selection: all" in diagnostic
+    assert "matrix.partition != 'full-normal-exit'" in diagnostic
+    assert "if: matrix.partition == 'full-normal-exit'" in diagnostic
+    assert "run: python scripts/ci_windows_pytest.py\n" in diagnostic
+    assert "partition: baseline-hard-exit" in diagnostic
+    assert "partition: iq-hard-exit" in diagnostic
+    assert "PT2VHF_TEST_EXIT_MODE: ${{ matrix.exit_mode }}" in diagnostic
+    assert "gh release create" not in diagnostic
+
+
+
+def test_normal_shutdown_probe_returns_pytest_status_without_hard_exit(monkeypatch):
+    """Opt-in shutdown mode is diagnostic only; never silently hard-exit."""
+    import sys
+    import types
+    import scripts.run_tests as runner
+
+    seen = []
+    # Prevent the outer A/B CI environment from triggering Qt cleanup in a
+    # nested mocked runner while pytest is still executing.
+    monkeypatch.delenv("PT2VHF_CI_QT_DISPOSE_AFTER_PYTEST", raising=False)
+    monkeypatch.setenv("PT2VHF_TEST_EXIT_MODE", "normal")
+    monkeypatch.setitem(sys.modules, "pytest", types.SimpleNamespace(
+        main=lambda args: seen.append(args) or 5
+    ))
+    monkeypatch.setattr(sys, "argv", ["run_tests.py", "-k", "not iq_"])
+
+    def forbidden_exit(code):
+        raise AssertionError("normal shutdown must not call os._exit")
+
+    monkeypatch.setattr(runner.os, "_exit", forbidden_exit)
+    assert runner.main() == 5
+    assert seen == [["-q", "-k", "not iq_"]]
+
+
+def test_invalid_shutdown_probe_mode_fails_closed(monkeypatch):
+    import sys
+    import types
+    import pytest
+    import scripts.run_tests as runner
+
+    # Prevent the outer A/B CI environment from triggering Qt cleanup in a
+    # nested mocked runner while pytest is still executing.
+    monkeypatch.delenv("PT2VHF_CI_QT_DISPOSE_AFTER_PYTEST", raising=False)
+    monkeypatch.setenv("PT2VHF_TEST_EXIT_MODE", "unexpected")
+    monkeypatch.setitem(sys.modules, "pytest", types.SimpleNamespace(main=lambda args: 0))
+    monkeypatch.setattr(sys, "argv", ["run_tests.py"])
+    monkeypatch.setattr(runner.os, "_exit", lambda code: None)
+    with pytest.raises(ValueError, match="PT2VHF_TEST_EXIT_MODE"):
+        runner.main()
+
+
+def test_exhausted_windows_diagnostics_require_manual_opt_in():
+    """Synthetic CI policy: no repeated costly Windows matrix on ordinary pushes."""
+    from pathlib import Path
+
+    workflow = (Path(__file__).resolve().parents[1] /
+                ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+    assert "      diagnose_windows:" in workflow
+    assert '        default: false' in workflow.split("      diagnose_windows:", 1)[1].split(
+        "\n\n", 1)[0]
+    for job, end in (
+        ("windows-crash-isolation", "windows-file-probe"),
+        ("windows-file-probe", "windows-exe"),
+    ):
+        block = workflow.split(f"\n  {job}:", 1)[1].split(f"\n  {end}:", 1)[0]
+        assert "needs: windows-tests" in block
+        assert "needs.windows-tests.result == 'failure'" in block
+        assert "github.event_name == 'workflow_dispatch'" in block
+        assert "inputs.diagnose_windows == true" in block
+        assert "github.ref == 'refs/heads/feature/iq-signal-classifier'" in block
+        assert "gh release create" not in block
+    # Mandatory Windows gate remains active on every PR/experimental push.
+    main_job = workflow.split("\n  windows-tests:", 1)[1].split(
+        "\n  windows-crash-isolation:", 1)[0]
+    assert "run: python scripts/ci_windows_pytest.py" in main_job
+    assert "inputs.diagnose_windows" not in main_job
+
+def test_experimental_ci_cancels_only_superseded_branch_pushes():
+    """Branch push cancellation must not cancel main or PR verification."""
+    from pathlib import Path
+    workflow = (Path(__file__).resolve().parents[1] /
+                ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+    header = workflow.split("\nconcurrency:\n", 1)[1].split("\njobs:\n", 1)[0]
+    assert "group: ${{ github.workflow }}-${{ github.ref }}" in header
+    assert "cancel-in-progress: ${{ github.ref == 'refs/heads/feature/iq-signal-classifier' }}" in header
+
+
+def test_one_time_native_debugger_probe_is_retired_without_weakening_windows_gate():
+    """CDB gave no verified stack; do not reinstall it on every push."""
+    from pathlib import Path
+
+    workflow = (Path(__file__).resolve().parents[1] /
+                ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
+    assert "\n  windows-native-stack-probe:" not in workflow
+    mandatory = workflow.split("\n  windows-tests:", 1)[1].split(
+        "\n  windows-crash-isolation:", 1
+    )[0]
+    assert "run: python scripts/ci_windows_pytest.py" in mandatory
+    assert "if: failure()" in mandatory
+    assert "CI_NATIVE_LIFECYCLE" in mandatory
+    assert "actions/upload-artifact" not in mandatory
+    assert "gh release create" not in mandatory
+    # Experimental push/PR verification must still be enabled.
+    assert "github.event_name == 'pull_request'" in mandatory
+    assert "refs/heads/feature/iq-signal-classifier" in mandatory

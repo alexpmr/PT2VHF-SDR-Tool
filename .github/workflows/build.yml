@@ -2,7 +2,7 @@ name: Testes (build Windows sob demanda)
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/iq-signal-classifier]
   pull_request:
   workflow_dispatch:
     inputs:
@@ -10,11 +10,22 @@ on:
         description: "Gerar executável do Windows"
         type: boolean
         default: false
+      diagnose_windows:
+        description: "Diagnósticos nativos repetitivos somente sob hipótese nova (branch experimental)"
+        type: boolean
+        default: false
+
+# Superseded experimental push runs waste Windows runner minutes and cannot
+# certify the current HEAD. Do not cancel main/release or PR event checks.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/feature/iq-signal-classifier' }}
 
 jobs:
+
   tests:
-    # Official Ubuntu Noble browser-test image bundles libEGL and other Qt/GUI
-    # system dependencies; hosted runner apt mirrors are unavailable.
+    # Official Ubuntu Noble browser-test image includes libEGL and Qt graphics
+    # libraries. The hosted runner apt mirrors currently fail DNS resolution.
     runs-on: ubuntu-24.04
     container:
       image: mcr.microsoft.com/playwright/python:v1.64.1-noble
@@ -30,9 +41,205 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
 
+  windows-tests:
+    # Independent Windows/Qt test lane for experimental PRs; no installer or release.
+    # Does not depend on Ubuntu apt mirrors, which can fail DNS before pytest starts.
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/feature/iq-signal-classifier'
+    runs-on: windows-2022
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      QT_QPA_PLATFORM: offscreen
+      # Diagnostic-only counts before/after pytest and before forced process
+      # exit. Does not change release builds or the fail-closed crash gate.
+      PT2VHF_CI_NATIVE_LIFECYCLE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dependências dos testes (sem build de instalador)
+        run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
+      - name: Habilitar minidumps WER locais para falhas nativas Python
+        shell: pwsh
+        run: |
+          $dumpDir = Join-Path $env:RUNNER_TEMP "pt2vhf-native-dumps"
+          New-Item -ItemType Directory -Force -Path $dumpDir | Out-Null
+          $key = "HKCU:\Software\Microsoft\Windows\Windows Error Reporting\LocalDumps\python.exe"
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpFolder -PropertyType ExpandString -Value $dumpDir -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpType -PropertyType DWord -Value 1 -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpCount -PropertyType DWord -Value 3 -Force | Out-Null
+          (Get-Date).ToString("o") | Set-Content (Join-Path $env:RUNNER_TEMP "pt2vhf-wer-start.txt")
+          Write-Host "WER LocalDumps configured (minidump only; runner-local, never uploaded)"
+      - name: Testes Windows / Qt offscreen (falhar se houver crash nativo)
+        run: python scripts/ci_windows_pytest.py
+      - name: Diagnóstico WER após falha nativa (sem upload de dumps)
+        if: failure()
+        shell: pwsh
+        run: |
+          $dumpDir = Join-Path $env:RUNNER_TEMP "pt2vhf-native-dumps"
+          $dumps = @(Get-ChildItem -Path $dumpDir -Filter "*.dmp" -File -ErrorAction SilentlyContinue)
+          if ($dumps.Count -eq 0) {
+            Write-Host "WER: no python.exe minidump captured; absence does not exclude native corruption"
+          } else {
+            foreach ($dump in $dumps) {
+              Write-Host ("WER minidump: {0} bytes={1} SHA256={2}" -f $dump.Name, $dump.Length, (Get-FileHash -Path $dump.FullName -Algorithm SHA256).Hash.ToLower())
+            }
+          }
+          $start = [datetime]::Parse((Get-Content (Join-Path $env:RUNNER_TEMP "pt2vhf-wer-start.txt") -Raw))
+          try {
+            $events = @(Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000,1001; StartTime=$start} -ErrorAction Stop |
+              Where-Object { $_.Message -match '(?i)python(\.exe)?|pt2vhf' } | Select-Object -First 8)
+            if ($events.Count -eq 0) { Write-Host "WER: no matching Application Error / Windows Error Reporting events" }
+            foreach ($event in $events) {
+              Write-Host ("WER event ID={0} time={1}" -f $event.Id, $event.TimeCreated.ToString("o"))
+              Write-Host ($event.Message.Substring(0, [Math]::Min(1800, $event.Message.Length)))
+            }
+          } catch {
+            Write-Host "WER event query unavailable: $($_.Exception.Message)"
+          }
+          Write-Host "Privacy: dump files stay on ephemeral runner; no artifact upload or release."
+
+
+  # One-time Qt DeferredDelete A/B retired after CI #43248657060:
+  # 405 passed/2 skipped; 666 hidden top-level widgets; 666 deleteLater()
+  # requests queued with zero Python errors, then sendPostedEvents(DeferredDelete)
+  # triggered Fatal Python error: Aborted before the post-disposal census.
+  # This is NOT a fix; mandatory windows-tests stays fail-closed.
+  # Manual-only code is retained for reproducibility; do not rerun on pushes.
+
+  # Runtime A/B (Python 3.11/3.12 x PySide6 6.9.3/6.11.3) retired after
+  # all 8 isolated UI cases reproduced native crashes in CI #43177095139.
+  # Preserve the evidence in docs; do not rerun this exhausted matrix on pushes.
+
+  # One-time CDB probe retired after CI #43268621795 (2026-11-12):
+  # debugger installed, exited 0, but emitted no verified 0xC0000005
+  # stack; mandatory Windows lane independently reproduced the native AV.
+  # The debugger's no-AV observation is inconclusive, NOT a Windows pass.
+  # Keep the fail-closed windows-tests lane; no recurring SDK installation.
+
+  windows-crash-isolation:
+    # Manual opt-in only: exhausted diagnostics are NOT repeated on every push.
+    # If the complete Windows suite fails, run independent
+    # IQ/non-IQ and hard/normal exit modes distinguish test scope from Qt teardown.
+    # Never generates installers or publishes artifacts.
+    needs: windows-tests
+    if: ${{ always() && needs.windows-tests.result == 'failure' && github.event_name == 'workflow_dispatch' && inputs.diagnose_windows == true && github.ref == 'refs/heads/feature/iq-signal-classifier' }}
+    runs-on: windows-2022
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - partition: iq-hard-exit
+            selection: iq_
+            exit_mode: hard
+            shard: -1
+          - partition: baseline-hard-exit
+            selection: "not iq_"
+            exit_mode: hard
+            shard: -1
+          - partition: baseline-normal-exit
+            selection: "not iq_"
+            exit_mode: normal
+            shard: -1
+          - partition: full-normal-exit
+            selection: all
+            exit_mode: normal
+            shard: -1
+          - partition: baseline-shard-0
+            selection: "not iq_"
+            exit_mode: hard
+            shard: 0
+          - partition: baseline-shard-1
+            selection: "not iq_"
+            exit_mode: hard
+            shard: 1
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dependências de diagnóstico (sem instalador)
+        run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
+      - name: Isolar crash nativo Windows por subconjunto
+        if: matrix.shard == -1 && matrix.partition != 'full-normal-exit'
+        env:
+          PT2VHF_TEST_EXIT_MODE: ${{ matrix.exit_mode }}
+        run: python scripts/ci_windows_pytest.py -k "${{ matrix.selection }}"
+      - name: Diagnosticar suíte completa com saída normal
+        if: matrix.partition == 'full-normal-exit'
+        env:
+          PT2VHF_TEST_EXIT_MODE: normal
+        run: python scripts/ci_windows_pytest.py
+      - name: Diagnosticar arquivos não-IQ em processos isolados
+        if: matrix.shard >= 0
+        env:
+          PT2VHF_TEST_EXIT_MODE: hard
+        run: python scripts/ci_windows_crash_shard.py --index ${{ matrix.shard }} --count 2
+
+  windows-file-probe:
+    # Manual opt-in after a native Windows crash; per-file isolation.
+    # Keep disabled on ordinary pushes: previous per-file results are unchanged.
+    # Never builds an installer or publishes releases.
+    needs: windows-tests
+    if: ${{ always() && needs.windows-tests.result == 'failure' && github.event_name == 'workflow_dispatch' && inputs.diagnose_windows == true && github.ref == 'refs/heads/feature/iq-signal-classifier' }}
+    runs-on: windows-2022
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PT2VHF_TEST_EXIT_MODE: hard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dependências do diagnóstico por arquivo (sem instalador)
+        run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
+      - name: Isolar cada arquivo não-IQ em processo Windows independente
+        run: python -m scripts.ci_windows_file_probe --timeout-seconds 180
+
+  # QPA minimal/offscreen isolated case probe retired after CI #43213137478:
+  # 4/9 hard-exit UI cases still crashed under minimal, matching the four
+  # hard-exit cases previously observed under offscreen. The root cause is
+  # unresolved; keep the mandatory Windows suite fail-closed. The manual
+  # scripts/ci_windows_case_probe.py tool remains available for new hypotheses.
+
+
+  # ONE-SHOT diagnostic: CRT os._exit may run DLL-detach/CRT exit handlers,
+  # while kernel32.TerminateProcess bypasses them. A clean probe does NOT
+  # certify Windows stability. Enabled only by explicit marker on this branch.
+  # No release, model, installer, minidump or upload is produced.
+  windows-terminate-exit-probe:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/iq-signal-classifier' && contains(github.event.head_commit.message, '[probe-terminate-exit]')
+    runs-on: windows-2022
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PT2VHF_CI_NATIVE_LIFECYCLE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dependencias do diagnostico (sem instalador)
+        run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
+      - name: A/B de encerramento nativo Windows (apenas diagnostico)
+        run: python scripts/ci_windows_terminate_probe.py
+
   windows-exe:
-    # Manual ou commit explícito [build-windows] (não compilar em cada push).
-    if: (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'release/stable-') || startsWith(github.head_ref, 'fix/ota-'))) || (github.event_name == 'workflow_dispatch' && inputs.build_windows) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build-windows]'))
+    # Manual e commit [build-windows] SOMENTE na main; branch experimental nao gera instaladores.
+    if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.build_windows) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build-windows]')))
     permissions:
       contents: write
     runs-on: windows-2022  # validação obrigatória para distribuição Windows, independente do Qt Linux
@@ -103,6 +310,10 @@ jobs:
           copy /y COPYING-LGPL %GITHUB_WORKSPACE%\drivers\libwdi-COPYING-LGPL.txt
           %GITHUB_WORKSPACE%\drivers\wdi-simple.exe --help | findstr /C:"WinUSB" || exit /b 1
       - name: PyInstaller (pasta + portátil)
+        env:
+          PT2VHF_RELEASE_TEXT_SPLASH: ${{ (github.head_ref == 'release/stable-v1.0.2-rsp1-20261115' || github.head_ref == 'fix/ota-launch-103-20261115' || github.head_ref == 'release/stable-v1.0.4-backlog-20261116' || github.head_ref == 'release/stable-v1.0.5-verified-20261119' || github.head_ref == 'release/stable-v1.0.6-waterfall-20261122') && '1' || '0' }}
+          # Only allow the missing splash in this isolated QA PR, never releases.
+          PT2VHF_QA_ALLOW_MISSING_BANNER: ${{ (github.head_ref == 'release/stable-v1-windows-qa-20261114' || github.head_ref == 'release/stable-v1-upconverter-fix-20261114') && '1' || '0' }}
         run: pyinstaller --noconfirm pt2vhf.spec
       - name: Autoteste dos executáveis
         run: |
@@ -110,6 +321,22 @@ jobs:
             $p = Start-Process -FilePath $exe -ArgumentList "--selftest" -Wait -PassThru
             Get-Content "$env:TEMP\pt2vhf-sdr-selftest.log"
             if ($p.ExitCode -ne 0) { throw "Autoteste falhou: $exe" }
+          }
+      - name: Native OTA helper launch probe in packaged Setup and Portable executables
+        run: |
+          foreach ($exe in @("dist\\PT2VHF-SDR-Tool\\PT2VHF-SDR-Tool.exe", "dist\\PT2VHF-SDR-Tool-Portable.exe")) {
+            $log = Join-Path $env:TEMP "PT2VHF-SDR-Tool-ota-probe-result.txt"
+            Remove-Item -LiteralPath $log -Force -ErrorAction SilentlyContinue
+            $p = Start-Process -FilePath $exe -ArgumentList "--ota-helper-qa" -Wait -PassThru
+            if ($p.ExitCode -ne 0) {
+              Get-Content "$env:TEMP\\PT2VHF-SDR-Tool-ota-launch.log" -ErrorAction SilentlyContinue
+              Get-Content $log -ErrorAction SilentlyContinue
+              throw "OTA real PowerShell spawn/ACK probe failed: $exe, code $($p.ExitCode)"
+            }
+            if (-not (Test-Path $log)) { throw "OTA probe report missing" }
+            $result = Get-Content $log -Raw
+            if ($result -notmatch 'OTA_HELPER_PROBE=PASS') { throw "OTA probe did not pass: $result" }
+            Write-Host "OTA_HELPER_NATIVE_PROBE=PASS for $exe"
           }
       - name: Instalador (Inno Setup)
         run: |
@@ -142,7 +369,7 @@ jobs:
           name: PT2VHF-SDR-Tool-${{ steps.ver.outputs.version }}-windows
           path: release/
       - name: Publicar Release GitHub (origem para o site)
-        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[build-windows]')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build-windows]')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

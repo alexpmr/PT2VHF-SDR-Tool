@@ -1,5 +1,115 @@
 # Backlog — PT2VHF SDR Tool
 
+## v1.0.6 — Correções do waterfall e painel lateral (candidata em 22/11/2026)
+
+**Escopo de entrega:** issues #23 e #24 e solicitação de recolher o painel direito do Receptor. Esta candidata **não encerra todo o backlog histórico**; crash Windows #8, OTA em equipamento do usuário #18, recepção RS41 #1, homologação RSP físico e IQ/ONNX experimental permanecem pendentes de evidências específicas.
+
+- **#24 — resolução real do waterfall:** a FFT original (incluindo 32768 bins) permanece em histórico `float16` limitado a 400 linhas. Ao aplicar zoom, o gráfico seleciona os bins RF nativos efetivamente visíveis e os renderiza em colunas limitadas à resolução do viewport. Zooms estreitos deixam de perder resolução na redução global anterior de 32768→2048 bins. Quando necessário agregar bins para a largura da tela, usa média de potência linear em vez de máximo do grupo para evitar ruído artificialmente aumentado.
+- **#23 — zoom sem bandas RF fictícias:** o zoom-out acionado manualmente é limitado à largura realmente amostrada (`fs`). Os atalhos de zoom respeitam a largura e os limites da banda recebida, mantendo pan para nova sintonia, VFO e alinhamento FFT/waterfall. Histórico nativo é reapresentado após zoom, pan e redimensionamento.
+- **Painel à direita:** opção já existente em `Exibir → Painel de áudio/DSP` recebe botão permanente `Ocultar painel/Mostrar painel` ao lado da barra FFT/waterfall e atalho `Ctrl+Shift+A`. Mantém persistência existente de QSettings, permite expansão horizontal e não reinicia o SDR.
+- **QA:** testes Qt com duas portadoras próximas, FFT 32768 / 2,88 MS/s, zoom 100 kHz, reamostragem pela energia média, reconstrução de histórico, limitação de zoom e persistência do painel. Regressão completa Windows/Linux, Setup/Portable, PowerShell OTA e smoke de instalação obrigatórios antes de publicar.
+- **Limites:** amostragem real do RTL-SDR é respeitada, sem inventar RF fora de `fs`. A resolução vertical do waterfall depende também da velocidade de linhas e da altura de visualização; qualidade de recepção física ainda precisa de aprovação pelo operador.
+
+**Estado:** alterações em branch `release/stable-v1.0.6-waterfall-20261122`. Não considerar publicado sem release e validação de OTA no domínio.
+
+\n## v1.0.5 — Consolidação de código aprovado (19/11/2026)
+
+- **Escopo:** preservar integralmente os recursos já aprovados e publicados na v1.0.4, partindo da tag v1.0.4, sem reescrever DSP, drivers ou OTA que passaram no CI.
+- **Novo contrato de regressão:** `tests/test_v105_stable_contract.py` verifica metadados de versão, RTL/Soapy/RSP, OTA PowerShell `-ProbeOnly`, diagnósticos RS41, waterfall, display e exclusão intencional da IA IQ experimental.
+- **Aceite obrigatório:** CI Linux/Windows da SHA exata v1.0.5, executáveis Setup/Portable, SHA-256, smoke tests e disponibilização pública GitHub. OTA Hostinger é aceite separado; não confundir commit no repositório do site com publicação de `update.php`.
+- **Sem falso status:** RF real do RSP1 e RS41, integração de drivers nativos RSP, Windows crash #8 e OTA em computador real #18 NÃO foram homologados; PR IQ/ONNX #2 permanece experimental.
+- **Notas de versão e evidências:** `docs/RELEASE_1.0.5_STABLE.md`.
+
+
+## v1.0.4 — Entregas verificáveis e pendências (16/11/2026)
+
+**Origem:** branch `release/stable-v1.0.4-backlog-20261116`, derivada da release v1.0.3 publicada; não confundir código novo com release homologada. Release só pode ser anunciada com testes CI Windows/Linux, instaladores, SHA256 e URLs públicos confirmados.
+
+### Implementações desta candidata
+- **P0 OTA — diagnóstico do auxiliar acessível:** botão em Configurações → Atualizações e Ajuda → Testar auxiliar OTA. Usa o PowerShell empacotado com `-ProbeOnly` para confirmar `READY` sem download, instalação, alteração de programas, reinício ou substituição do executável. Registra falhas em `%TEMP%/PT2VHF-SDR-Tool-ota-launch.log`; o resultado deixa explícito que o teste isolado não equivale à atualização completa entre versões. Requer execução em Windows de campo do operador antes de fechar issue #18.
+- **P0 RS41 — diagnóstico dos pré-requisitos:** botão `Verificar decodificadores` localiza `fsk_demod` e `rs41mod` sem executá-los; diferencia binários externos ausentes de ausência de frames RF e permite copiar o log. Isso NÃO implementa um decodificador RS41 nativo nem comprova quadro RF válido. Issue #1 permanece aberta até IQ e telemetria reais.
+- **P1 SDRplay/Mirics — diagnóstico do backend:** botão na aba Receptor lista identificadores de drivers SoapySDRPlay3 ou SoapyMiri detectados, e orienta quando não encontra nenhum. Não altera drivers USB, não inclui dependências nativas e não declara plug and play completo. Homologação física e empaquetamento seguem pendentes.
+- **P1 formulários — dimensões compactas:** controles dos formulários de Áudio/DSP e Configurações deixam de crescer indefinidamente quando maximiza; mantém rolagem adaptativa em telas estreitas, maximizando legibilidade e evitando campos ocupando a largura inteira.
+- **Regressões novas:** `tests/test_v104_backlog.py` cobre pré-requisitos RS41, cópia de diagnóstico, botão OTA, forma dos formulários e dois backends RSP. Manter testes pré-existentes e CI Windows com o script real de OTA.
+
+### Bloqueios que NÃO devem ser anunciados como resolvidos
+1. **Estabilidade Windows:** issue #8 sem conclusão confirmada em longas sessões de SDR físico.
+2. **OTA:** v1.0.3 corrigida em CI, mas falta validação real no Windows do usuário e uma atualização efetiva entre duas versões.
+3. **MSi-SDR RSP1:** SoapySDR/SoapySDRPlay3/SoapyMiri e USB drivers ausentes no pacote; recepção física não homologada.
+4. **RS41 e outras radiossondas:** decodificadores externos ainda necessários e RF válido não comprovado.
+5. **IQ/ONNX:** permanece experimental no PR #2, sem rótulos de RF reais suficientes; não integrar automaticamente.
+6. **Mac/Linux:** ausência de pipelines de distribuição homologados e de imagem splash original. Banner textual é substituto temporário reconhecido, não requisito visual final.
+7. **Histórico:** `main` ainda está na linha v0.13.x; release tag/PRs permanecem separados. Consolidar main e fechar PRs só após revisão de histórico e estratégia de merge.
+
+---
+
+
+## P0 — v1.0.1: checkbox do upconverter externo desabilitado durante recepção (14/11/2026)
+- **Relato do mantenedor:** checkbox do conversor aparece desligado/inacessível na v1.0.0 quando o SDR está ligado. `ReceiverPanel.set_running(True)` desabilitava checkbox e spinbox por design, sem permitir reconfiguração enquanto recebia.
+- **Correção candidata no PR #16:** controles continuam habilitados para fontes RTL-SDR/rtl_tcp/SoapySDR; alteração dispara debounce Qt de 400 ms e `stop_source()` seguido de `start_source(source_options())`, evitando mudar frequência de LO durante bloco IQ. Durante troca o scanner e gravação são interrompidos; os parâmetros são salvos e novo estado é indicado na barra de status.
+- **Diagnóstico visível:** linha `RF: ... MHz | SDR: ... MHz` converte RF exibida para hardware com o offset opcional (por padrão 100 MHz, desabilitado). Tooltip explica reinício automático e diferença para conversor interno RTL-SDR Blog V4.
+- **Validação:** testes Qt de estado em recepção, emissões, preview em +100/+125 MHz, fontes não suportadas e regressão de direct sampling com offset físico. CI Windows, instalação Setup/Portable e hardware RF real devem ser verificados antes da distribuição pública.
+- **Versão corrigida:** v1.0.1, sem sobrescrever artefatos imutáveis da v1.0.0.
+- **Site:** não confundir commit em `PT2VHF-Site/main/updates.json` com implantação em `www.pt2vhf.com`. Em 14/11 o endpoint real ainda anunciou 0.13.2 apesar de Git já conter v1.0.0.
+
+
+## P1 — compensação de upconverter externo +100 MHz (PP5AX) — candidato v1.0 (14/11/2026)
+- **Pedido:** PP5AX (Carlos) utiliza SDR Anauzer com conversor externo que soma nominalmente 100 MHz. Exibir 7,100 MHz quando o hardware estiver em 107,100 MHz.
+- **Implementação candidata:** `pt2vhf/sources/frequency_translation.py` envolve a fonte RF e traduz `set_center_freq`/`check_freq`; a interface, o motor DSP, VFO, memórias e waterfall continuam operando em RF aparente. Controles `Usar conversor externo` e `Deslocamento externo` na aba Receptor, com valor padrão de 100 MHz mas função desativada por padrão; ajustes somente com recepção desligada.
+- **Cálculo:** `f_hardware = f_RF + offset`; suportado deslocamento assinado de ±1500 MHz, sem inversão de espectro. SDRs de arquivo IQ e simulador não recebem a conversão. Correção de direct sampling prioriza frequência *do hardware*, evitando limitar VHF/UHF por uma configuração HF guardada.
+- **Testes:** adaptação unitária determinística e GUI, regressão sem offset, limites da frequência física, caminho do driver real e waterfall. **Não homologado com Anauzer real.** Não confundir com o upconverter *interno* RTL-SDR Blog V4.
+- **Limites conhecidos:** perfil ainda não segregado por dispositivo, necessidade de avaliar mistura com inversão de espectro, ensaio CAT/Scanner/Web/recordings e homologação RF. Somente candidato de código, **não considerar concluído/publicável**.
+- **Issue:** https://github.com/alexpmr/PT2VHF-SDR-Tool/issues/13
+
+
+## P1 — caixas de seleção desmarcadas invisíveis no tema escuro (12/11/2026)
+- **Falha relatada com captura de tela:** checkboxes de **NB, NR e demais opções** quase desaparecem quando não selecionados; o estado marcado fica visível, mas a borda escura do desmarcado se confunde com o fundo do painel.
+- **Correção candidata:** `STYLE` global de `pt2vhf/ui/main_window.py` define explicitamente `QCheckBox::indicator:unchecked` com borda clara de 2 px, interior contrastante, estado hover laranja e estilos separados para marcado/desabilitado. A regra abrange painéis de áudio, decodificadores e configurações, inclusive versões Windows/Linux/macOS.
+- **Teste:** `tests/test_checkbox_dark_theme.py` verifica seletores QSS para estados marcado/desmarcado/desabilitado e alternância Qt. Necessária conferência visual em Windows real (tema escuro, DPI 100/125/150%) e nos demais sistemas para homologar contraste e marca de seleção.
+- **Status:** correção implementada no PR #10 para v1.0.0; CI e validação visual ainda pendentes. O bloqueio P0 de encerramento inesperado impede release pública.
+
+## P1 — pacotes Linux .deb/.tgz e macOS .app/.dmg (12/11/2026)
+- **Distribuição solicitada:** além de Windows Setup/Portable, gerar e verificar **Linux x86_64 e ARM64** em formatos `.deb` e `.tgz`, e **macOS Apple Silicon (arm64) e Intel (x86_64)** em formatos `.app` (dentro de `.app.tgz`) e `.dmg`, com instalação independente e ícone.
+- **Implementação:** `packaging/pt2vhf_unix.spec` produz binário nativo de cada plataforma com o splash original embutido; `packaging/package_unix.py` gera pacotes Debian, tarball portátil, bundle macOS e imagem DMG, com SHA-256; workflow `.github/workflows/qa-v1-platforms.yml` executa QA Windows/Linux/macOS em runners nativos e só empacota se o banner real estiver commitado.
+- **Integridade e compatibilidade:** verificar o JPEG dentro de todos os pacotes, executável, pacote Debian e launchers .desktop; informar requisitos de driver/udev no Linux. No macOS informar status de assinatura e notarização Apple; não alegar binários assinados se não existirem certificados.
+- **OTA:** não oferecer autoaplicação de `.deb`, `.tgz` ou `.dmg` até implementar e testar mecanismo específico seguro para essas plataformas. O OTA Windows seguirá com handshake e instalação controlada.
+- **Aceite:** builds reais na matriz de arquiteturas, verificação de hashes/assinatura quando disponível, instalação e execução em hardware Linux/macOS, smoke de interface gráfica e dispositivo SDR. **Estado:** scripts e workflow de QA criados, compilação final bloqueada porque o JPEG do usuário ainda não foi carregado para o GitHub e porque a regressão P0 de crash permanece aberta.
+
+## P0 — OTA baixa, fecha aplicativo, mas não executa instalador (12/11/2026)
+- **Sintoma observado pelo usuário no Windows:** o OTA conclui o download e fecha a interface, porém a instalação aparentemente nunca se inicia. **Hipóteses, não causas confirmadas:** processo PyInstaller/SDR ainda vivo, auxiliar PowerShell não iniciado, espera silenciosa de até 90 segundos, instalação Inno Setup oculta (`/VERYSILENT`) ou falha antes de registrar resultado.
+- **Código a investigar:** `pt2vhf/updater.py:apply()` cria `apply-update.ps1` por `subprocess.Popen` e `UpdateController._on_downloaded()` chama `quit_for_update()` sem protocolo de confirmação de inicialização do auxiliar; `scripts/apply-update.ps1` aguarda pai e descendentes até 90 s silenciosamente e só então executa o Setup; `quit_for_update()` agenda `QTimer.singleShot` **depois de `QApplication.quit()`**, quando o event loop já pode não disparar o watchdog. O Setup é silencioso, portanto a ausência de janela sozinha não comprova que ele não iniciou.
+- **Correção P0 requerida:** handshake verificável entre app e auxiliar **antes** de fechar; log de fases em `%TEMP%\PT2VHF-SDR-Tool-ota-helper.log` (launch, wait, installer, exit code, relaunch); tempo de espera limitado, identificação rigorosa do PID antes de qualquer encerramento e nenhuma terminação arbitrária de outros programas; fallback com mensagem de erro e link manual se o auxiliar não iniciar. Após fechamento normal, instalador inicia automaticamente e aplicação reabre ou registra erro; evitar deadlock no PyInstaller onefile e no instalador.
+- **QA obrigatório:** Windows real Setup/Portable e teste de atualização entre **duas versões diferentes** (não apenas reinstalar a mesma versão), com SDR ligado e desligado, processo filho persistente, falha do script, falta de permissões, arquivo em uso, driver RTL; confirmar logs e comportamento visível, rollback de portátil e SHA-256. Não prejudicar validação dos URLs/hashes e não reativar OTA público suspeito sem resolução.
+- **Status:** incidente registrado; causa ainda depende dos logs da instalação do usuário e dos testes do novo protocolo. A v1.0.0 continua bloqueada pelos demais P0 (crash #8, artefato splash, QA de plataforma).
+
+## P0 — próximo lançamento público: v1.0.0 (solicitação de 12/11/2026)
+- **Versionamento obrigatório:** a próxima release pública do **PT2VHF SDR Tool** deverá se chamar **1.0** (tag e metadados SemVer **`v1.0.0`**, exibição pode ser **v1.0**). Não criar v0.13.4 como próxima versão pública. Preservar histórico antigo e a rota de migração OTA de 0.13.x.
+- **Condição P0 de estabilidade:** não publicar v1.0.0, nem reativar v0.13.3 no site, até investigar e corrigir o encerramento inesperado registrado na issue #8; manter recomendação pública provisória da v0.13.2. IA IQ/ONNX continua experimental no PR #2 até RF real homologado.
+- **Implementação:** versão `1.0.0` preparada apenas na branch `feature/splash-v1.0`; sem tag, release, merge ou alteração do catálogo da hospedagem antes de QA Windows/Linux e estabilidade de bancada.
+
+## P0 — RTL-SDR R820T preso na faixa de amostragem direta (12/11/2026)
+- **Sintoma relatado em Windows:** erro `Frequência fora do alcance` ao tentar sintonizar **155,930 MHz**, anunciando limite indevido **0,5–28,8 MHz**, apesar de o mesmo dispositivo operar em **433 MHz** em outro computador. O usuário informa que o modelo anuncia cobertura ampla de 0,1 MHz a 1,7 GHz; não generalizar 100 kHz como limite confiável de todo sintonizador R820T sem identificação do hardware.
+- **Causa identificada no código:** `tuning_range()` restringe a 0,5–28,8 MHz quando `direct_sampling` I/Q está ativo. A preferência fica gravada e era reaplicada no início, bloqueando VHF/UHF mesmo com o tuner R820T funcional. Essa faixa é **do caminho de amostragem direta HF**, não da cobertura total dos modos do dispositivo.
+- **Correção candidata no PR #10:** `select_direct_sampling_mode()` seleciona **tuner (modo 0)** automaticamente ao sair de HF para acima de 28,8 MHz; restaura ramo I/Q anteriormente escolhido quando retorna abaixo de 24 MHz, sem selecionar automaticamente uma entrada HF que nunca tenha sido habilitada pelo usuário. `MainWindow` sincroniza configuração e seletor visual, inclusive em reconexão/inicialização; botões VHF/UHF não ficam desabilitados pelo estado HF armazenado.
+- **QA:** testes com fonte simulada de 155,930 MHz, 433,920 MHz, 14,2 MHz, inicialização com preferência antiga, mudança manual de modo e disponibilidade de 70 cm. Ainda **pendente teste em dongle físico** e no Windows do usuário. Testar também transição em scans, reinícios e bibliotecas padrão/Blog, sem perder IQ; analisar `source_msg` e logs se houver erro do driver.
+- **Importante:** não ampliar cegamente o limite inferior para 0,1 MHz sem confirmar o hardware, biblioteca e caminho HF do dispositivo. **Status:** código e regressões adicionados à branch `feature/splash-v1.0`, CI em execução, aguardando homologação.
+  
+## P1 — medidor compacto de recursos no cabeçalho superior (12/11/2026)
+- **Referência visual:** imagem enviada pelo usuário, bloco pequeno e escuro, duas linhas **CPU** e **RAM**, percentagem com uma casa decimal, consumo de memória em **MB**, etiquetas em ciano, valores claros e indicador verde, sem ocupar a área principal do LCD/waterfall.
+- **Escopo:** medir **somente o processo PT2VHF SDR Tool**, não a CPU/RAM de todo o Windows; mostrar tooltip explicando a origem. CPU normalizada pela capacidade total dos núcleos lógicos, RAM = memória física residente (working set/RSS; no macOS o fallback nativo informa pico de RSS).
+- **Posição:** lado direito do cabeçalho superior, entre o seletor de idioma e a hora UTC, sem retirar funções existentes. Deve seguir o cabeçalho quando o modo apresentação o oculta.
+- **Atualização/eficiência:** coleta leve em intervalo de **2 segundos**, sem serviço externo, rede, dependência adicional nem thread de sondagem. Sem dados disponíveis, exibir travessão, não um valor fictício; limitar CPU a 0–100%.
+- **Implementação candidata:** `pt2vhf/resource_monitor.py` (CPU via relógio de CPU e tempo real; RSS via API nativa Windows, /proc no Linux e fallback macOS) e `pt2vhf/ui/resource_meter.py` (componente Qt compacto). Integrado a `MainWindow._build_header` na branch `feature/splash-v1.0`.
+- **Aceite:** testes de cálculo, dados ausentes, renderização Qt, posição no cabeçalho e atualização de valores; conferir visualmente em monitor pequeno e com SDR real, inclusive se o processo ultrapassar 1 GB de RAM. **Estado:** implementação e testes adicionados ao PR #10; CI e homologação visual pendentes. Não liberar v1.0.0 enquanto a regressão P0 de encerramento espontâneo não estiver resolvida.
+
+## P1 — splash de abertura com banner PT2VHF (12/11/2026)
+- **Referência:** copiar a experiência do splash do `alexpmr/PT2VHF-Sat-Tool` **v1.7.2** (`sat_tool/app.py`, `show_official_site_notice`).
+- **Imagem:** arquivo do usuário *Powered by www.PT2VHF.com* com sete aplicativos (APRS Client for PC/Android, SAT Tool, QSL Manager, SDR Tool, Mesh Analyzer, Prop Tool HF e Prog Tool), convertido offline para JPEG **1200 × 675 px**, sem cortes. Armazenar em `pt2vhf/assets/branding/welcome-banner.jpg`.
+- **Comportamento:** substituir o aviso textual atual pelo banner completo, clicável para `https://www.pt2vhf.com`; rodapé com link, botão **Fechar**, contador discreto `⏱ 10 s` e barra laranja decrescente, fechamento automático após 10 s ou imediato pelo botão.
+- **Compatibilidade:** manter a política de abertura já existente em `MainWindow._wire` (agendamento de 1800 ms e respeito a `PT2VHF_NO_STARTUP_DIALOGS`), seguido pelo aviso da última atualização; não interferir nos modos `--selftest` e `--screenshot`.
+- **Pacotes:** JPEG obrigatório em todas as distribuições Python/setuptools e PyInstaller, incluindo Windows Setup/Portátil e builds futuros Linux/macOS. `pt2vhf.spec` deve falhar se o asset não estiver presente; verificar o arquivo em ambos os executáveis no CI.
+- **QA:** testes Qt de clique, escala proporcional, temporização e fechamento; smoke de empacotamento e screenshot real com o banner. **Estado:** código/testes e preparação da release na branch `feature/splash-v1.0`; upload do JPEG para GitHub, CI e homologação ainda pendentes. Não declarar concluído apenas com layout implementado.
+
 ## P1 — duplo clique no waterfall: sintonizar e centralizar (11/11/2026)
 - **Solicitação:** dois cliques sobre um ponto válido do waterfall devem **sintonizar o VFO naquela frequência e centralizar essa frequência na área visível**, mantendo o nível atual de zoom. Isso deve atualizar LCD, passband e marcadores sem mudar o modo nem alterar indevidamente a frequência central RF do dispositivo.
 - **Comportamento anterior:** `SpectrumWaterfall._clicked()` executava `reset_zoom()` para todo duplo clique, sem emitir sintonia. Por isso o comando não sintonizava nem centralizava a frequência selecionada.

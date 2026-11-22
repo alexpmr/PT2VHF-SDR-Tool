@@ -10,41 +10,59 @@ from pt2vhf.sources.sim_sources import WavIQSource
 
 
 def test_rtl_tcp_client_protocol():
+    # rtl_tcp is a byte stream: recv() is not guaranteed to return one command
+    # per call. The fake server must also drain commands before the client
+    # closes, rather than sending 1 MB first and racing Windows socket teardown.
     srv = socket.socket()
     srv.bind(("127.0.0.1", 0))
     srv.listen(1)
     port = srv.getsockname()[1]
     cmds = []
+    commands_ready = threading.Event()
+    expected = {
+        (0x02, 240_000), (0x01, 145_500_000), (0x05, 0),
+        (0x03, 1), (0x04, 200), (0x01, 146_000_000),
+    }
 
     def serve():
-        c, _ = srv.accept()
-        c.sendall(b"RTL0" + struct.pack(">II", 5, 29))
-        c.settimeout(0.2)
-        data = np.full(1_000_000, 200, np.uint8).tobytes()
         try:
-            c.sendall(data)
-            while True:
-                b = c.recv(5)
-                if not b:
-                    break
-                cmds.append(struct.unpack(">BI", b))
-        except OSError:
-            pass
-        c.close()
+            c, _ = srv.accept()
+            with c:
+                c.settimeout(5)
+                c.sendall(b"RTL0" + struct.pack(">II", 5, 29))
+                # One complete IQ block is sufficient; a large sendall()
+                # can block command reads until the client is already closed.
+                c.sendall(bytes([200]) * (2 * 16384))
+                pending = bytearray()
+                while not expected.issubset(set(cmds)):
+                    chunk = c.recv(4096)
+                    if not chunk:
+                        break
+                    pending.extend(chunk)
+                    while len(pending) >= 5:
+                        cmds.append(struct.unpack(">BI", pending[:5]))
+                        del pending[:5]
+                if expected.issubset(set(cmds)):
+                    commands_ready.set()
+        finally:
+            srv.close()
 
     t = threading.Thread(target=serve, daemon=True)
     t.start()
     src = RtlTcpSource(240_000, 145.5e6, "127.0.0.1", port, gain=20.0)
-    assert src.tuner == "R820T"
-    src.start()
-    blk = src.read(timeout=3)
-    src.set_center_freq(146e6)
-    src.close()
-    assert blk is not None and len(blk) == src.block_size
-    assert np.allclose(blk[:10], (200 - 127.4) / 128 * (1 + 1j), atol=1e-3)
-    t.join(timeout=2)
-    assert (0x02, 240_000) in cmds and (0x01, 145_500_000) in cmds and (0x04, 200) in cmds
-    assert (0x01, 146_000_000) in cmds
+    try:
+        assert src.tuner == "R820T"
+        src.start()
+        blk = src.read(timeout=3)
+        src.set_center_freq(146e6)
+        assert blk is not None and len(blk) == src.block_size
+        assert np.allclose(blk[:10], (200 - 127.4) / 128 * (1 + 1j), atol=1e-3)
+        assert commands_ready.wait(5), f"rtl_tcp commands incomplete: {cmds!r}"
+    finally:
+        src.close()
+        t.join(timeout=5)
+    assert not t.is_alive()
+    assert expected.issubset(set(cmds))
 
 
 def test_wav_iq_source(tmp_path):
