@@ -1,4 +1,17 @@
 # Backlog — PT2VHF SDR Tool
+
+## v1.0.6 — Correções do waterfall e painel lateral (candidata em 22/11/2026)
+
+**Escopo de entrega:** issues #23 e #24 e solicitação de recolher o painel direito do Receptor. Esta candidata **não encerra todo o backlog histórico**; crash Windows #8, OTA em equipamento do usuário #18, recepção RS41 #1, homologação RSP físico e IQ/ONNX experimental permanecem pendentes de evidências específicas.
+
+- **#24 — resolução real do waterfall:** a FFT original (incluindo 32768 bins) permanece em histórico `float16` limitado a 400 linhas. Ao aplicar zoom, o gráfico seleciona os bins RF nativos efetivamente visíveis e os renderiza em colunas limitadas à resolução do viewport. Zooms estreitos deixam de perder resolução na redução global anterior de 32768→2048 bins. Quando necessário agregar bins para a largura da tela, usa média de potência linear em vez de máximo do grupo para evitar ruído artificialmente aumentado.
+- **#23 — zoom sem bandas RF fictícias:** o zoom-out acionado manualmente é limitado à largura realmente amostrada (`fs`). Os atalhos de zoom respeitam a largura e os limites da banda recebida, mantendo pan para nova sintonia, VFO e alinhamento FFT/waterfall. Histórico nativo é reapresentado após zoom, pan e redimensionamento.
+- **Painel à direita:** opção já existente em `Exibir → Painel de áudio/DSP` recebe botão permanente `Ocultar painel/Mostrar painel` ao lado da barra FFT/waterfall e atalho `Ctrl+Shift+A`. Mantém persistência existente de QSettings, permite expansão horizontal e não reinicia o SDR.
+- **QA:** testes Qt com duas portadoras próximas, FFT 32768 / 2,88 MS/s, zoom 100 kHz, reamostragem pela energia média, reconstrução de histórico, limitação de zoom e persistência do painel. Regressão completa Windows/Linux, Setup/Portable, PowerShell OTA e smoke de instalação obrigatórios antes de publicar.
+- **Limites:** amostragem real do RTL-SDR é respeitada, sem inventar RF fora de `fs`. A resolução vertical do waterfall depende também da velocidade de linhas e da altura de visualização; qualidade de recepção física ainda precisa de aprovação pelo operador.
+
+**Estado:** alterações em branch `release/stable-v1.0.6-waterfall-20261122`. Não considerar publicado sem release e validação de OTA no domínio.
+
 \n## v1.0.5 — Consolidação de código aprovado (19/11/2026)
 
 - **Escopo:** preservar integralmente os recursos já aprovados e publicados na v1.0.4, partindo da tag v1.0.4, sem reescrever DSP, drivers ou OTA que passaram no CI.
