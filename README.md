@@ -14,12 +14,18 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 
 ## Recursos
 
+### v0.13.0 — LCD ajustável, seleção de bandas e navegação
+- **Tamanho do LCD:** em Configurações → Display, escolha de 50% a 150%; último valor salvo e aplicado ao reiniciar, com proporção vetorial e ajuste automático em telas menores.
+- **Bandas exibidas:** apenas bandas suportadas pelo dispositivo selecionado ficam clicáveis/visíveis no LCD; grade recomposta sem lacunas e preferências mantidas ao trocar de SDR.
+- **Navegação:** Decodificação agrupa ADS-B, Sondas Meteorológicas, AIS e APRS/DTMF/CTCSS; Ferramentas agrupa Transcrição e Legendas ao vivo. Ativar legendas exibe popup de texto sobre o receptor.
+- **Situação:** alterações no código-fonte; execução com RF físico, comportamento visual do Windows e publicação devem ser verificados em separado. RS41 real e decodificadores adicionais continuam em backlog.
+
 ### v0.12.0 — IA neural e transcrição de voz offline
 - **RNNoise (rede neural real):** redução neural de ruído de voz em NFM/AM/USB/LSB/DSB, com botão no painel de áudio e mistura áudio seco/tratado de 0 a 100%. O modelo RNN vem no backend pyrnnoise (licença Apache-2.0), incluído nos binários.
 - **Recepção sem bloqueios:** inferência em thread separada com fila limitada para manter o SDR responsivo. Sob sobrecarga de CPU, áudio antigo pode ser descartado. IQ, waterfall, S-meter, APRS/DTMF/CTCSS, CW/RAW e gravações IQ não passam pelo denoiser. WFM é preservado para evitar prejudicar música. Áudio tratado alimenta saída, web, gravação contínua e legendas; gravação de atividade permanece original.
 - **Perfil Sinal fraco · IA + DSP:** combina NB/NR/AGC com RNNoise nos modos de voz, caso disponível; restaura as configurações anteriores.
 - **Transcrição local:** faster-whisper/CTranslate2 incluídos no programa, reconhecimento ao vivo em blocos de aproximadamente 4 segundos (não palavra a palavra), com frequência, modo, idioma, indicativos, histórico e CSV; WAV gravado pelo Scanner também pode ser transcrito.
-- **Primeiro uso:** Scanner → Legendas ao vivo → escolha o modelo tiny/base/small → Baixar modelo. Download explícito exige Internet somente uma vez. O modelo fica em AppData/PT2VHF-SDR-Tool/models/whisper-tiny (ou equivalente). Nenhum áudio é transmitido à Internet; depois, o reconhecimento funciona offline.
+- **Primeiro uso no código em desenvolvimento:** Ferramentas → Transcrição → escolha tiny/base/small → Baixar modelo → Ativar legendas em tempo real. Um popup sobre o receptor exibe apenas o texto reconhecido. Em Ferramentas → Legendas ao vivo fica o histórico com CSV. O download inicial exige Internet uma vez; o modelo é salvo em AppData/PT2VHF-SDR-Tool/models/whisper-tiny (ou equivalente) e o áudio não é transmitido à rede. **A versão instalada v0.12.0 ainda usa Scanner → Legendas ao vivo** até que um novo instalador seja publicado.
 - **Limitações:** RNNoise trata fonia, não recupera pacotes ausentes, e pode distorcer SSB extremamente fraco. Whisper pode errar indicativos/números. Os pesos Whisper não são distribuídos no instalador. IA sobre IQ, tradução automática, CW e voz digital permanecem pendentes.
 
 

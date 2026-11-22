@@ -1,6 +1,6 @@
 """Atualização (OTA) no padrão dos programas PT2VHF (como o Sat Tool).
 
-- manifesto e pacotes somente de https://www.pt2vhf.com (sem redirecionamentos);
+- manifesto no site oficial, downloads por redirecionamento restrito à release PT2VHF;
 - verificação automática; download com tamanho e SHA-256 obrigatórios (falha fechada);
 - a instalação é feita por um auxiliar externo (scripts/apply-update.ps1) depois que o programa fecha:
   instalador em modo silencioso ou troca do EXE portátil (com cópia de segurança), e o programa reabre;
@@ -16,10 +16,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import uuid
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qsl
 
 from . import __version__
 
@@ -48,6 +50,8 @@ class UpdateInfo:
     notes: str
     page: str
     file: dict | None
+    allow_test_host: bool = False
+    unavailable_reason: str = ""
 
 
 def parse_version(v: str) -> tuple[int, ...]:
@@ -64,6 +68,10 @@ def install_kind(exe_path: Path | None = None, frozen: bool | None = None) -> st
     frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
     if not frozen:
         return "source"
+    if sys.platform != "win32":
+        # Native Linux/macOS bundles must never execute a Windows .exe.
+        # Updates remain manual until an OS-specific updater is tested.
+        return "manual"
     exe = (exe_path or Path(sys.executable)).resolve()
     if (exe.parent / "portable.flag").exists() or exe.stem.casefold().endswith("-portable"):
         return "portable"
@@ -71,18 +79,55 @@ def install_kind(exe_path: Path | None = None, frozen: bool | None = None) -> st
 
 
 def is_official(url: str, name: str) -> bool:
+    """Accept canonical site files and the exact official download.php contract."""
     try:
+        if not isinstance(url, str) or not isinstance(name, str):
+            return False
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+\.exe", name, re.IGNORECASE):
+            return False
         u = urlsplit(url)
-        return (u.scheme == "https" and u.netloc == OFFICIAL_HOST and u.path == DOWNLOAD_PREFIX + name
-                and not u.query and not u.fragment and "%" not in u.path
-                and bool(re.fullmatch(r"[A-Za-z0-9_.-]+", name)) and name.casefold().endswith(".exe"))
+        if (u.scheme != "https" or u.netloc != OFFICIAL_HOST or u.fragment
+                or "%" in u.path or u.username or u.password):
+            return False
+        if u.path == DOWNLOAD_PREFIX + name and not u.query:
+            return True
+        if u.path == "/download.php":
+            return sorted(parse_qsl(u.query, keep_blank_values=True)) == sorted(
+                [("product", PRODUCT), ("file", name)])
+        return False
     except (TypeError, ValueError, AttributeError):
         return False
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *a, **k):
-        raise UpdateError("Redirecionamento bloqueado: atualizações só vêm de www.pt2vhf.com")
+        raise UpdateError("Redirecionamento bloqueado fora do fluxo oficial.")
+
+
+class _PackageRedirect(urllib.request.HTTPRedirectHandler):
+    """Allow only site -> matching GitHub release -> GitHub asset CDN."""
+    def __init__(self, name: str, version: str):
+        super().__init__()
+        self.name = name
+        self.version = version
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        old, target = urlsplit(req.full_url), urlsplit(newurl)
+        if target.scheme != "https" or target.username or target.password or target.fragment:
+            raise UpdateError("Destino de atualização inseguro ou não autorizado.")
+        expected = (f"/alexpmr/PT2VHF-SDR-Tool/releases/download/"
+                    f"v{self.version.lstrip('v')}/{self.name}")
+        from_site = (is_official(req.full_url, self.name)
+                     and target.netloc == "github.com"
+                     and target.path == expected and not target.query)
+        from_release = (old.scheme == "https" and old.netloc == "github.com"
+                        and old.path == expected and not old.query
+                        and target.netloc in ("release-assets.githubusercontent.com",
+                                              "objects.githubusercontent.com")
+                        and bool(target.path))
+        if not (from_site or from_release):
+            raise UpdateError("Redirecionamento fora da release oficial PT2VHF.")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 _opener = urllib.request.build_opener(_NoRedirect)
@@ -101,18 +146,22 @@ def select_update(manifest: dict, kind: str, current: str = __version__,
     if not VERSION_RE.fullmatch(version) or not is_newer(version, current):
         return None
     chosen = None
+    reason = f"O site não oferece pacote de atualização para '{kind}' nesta versão."
     for f in manifest.get("files") or []:
         if not isinstance(f, dict) or f.get("kind") != kind:
             continue
         name, url, size, sha = f.get("name", ""), f.get("url", ""), f.get("size"), str(f.get("sha256", ""))
         if not (allow_test_host or is_official(url, name)):
+            reason = "URL do pacote incompatível com a política segura de atualização."
             continue
         if type(size) is not int or not 0 < size <= MAX_PACKAGE_BYTES or not HASH_RE.fullmatch(sha):
+            reason = "Pacote anunciado sem tamanho e SHA-256 válidos."
             continue
         chosen = f
+        reason = ""
         break
     return UpdateInfo(version, str(manifest.get("date") or ""), str(manifest.get("notes") or ""),
-                      str(manifest.get("page") or WEB_URL), chosen)
+                      str(manifest.get("page") or WEB_URL), chosen, allow_test_host, reason)
 
 
 def check(kind: str | None = None, base_url: str = UPDATE_URL, timeout: float = 20.0,
@@ -144,10 +193,13 @@ def download(info: UpdateInfo, progress=None, dest_dir: str | None = None, timeo
     if not HASH_RE.fullmatch(sha) or size <= 0 or not re.fullmatch(r"[A-Za-z0-9_.-]+", name):
         raise UpdateError("Atualização sem tamanho e SHA-256 verificáveis; bloqueada.")
     target = Path(dest_dir or tempfile.mkdtemp(prefix="pt2vhf_sdr_update_")) / name
+    if not info.allow_test_host and not is_official(f["url"], name):
+        raise UpdateError("Pacote fora do site oficial PT2VHF.")
+    opener = _opener if info.allow_test_host else urllib.request.build_opener(_PackageRedirect(name, info.version))
     req = urllib.request.Request(f["url"], headers={"User-Agent": USER_AGENT})
     h, got = hashlib.sha256(), 0
     try:
-        with _opener.open(req, timeout=timeout) as r, open(target, "wb") as out:
+        with opener.open(req, timeout=timeout) as r, open(target, "wb") as out:
             declared = r.headers.get("Content-Length")
             if declared and int(declared) != size:
                 raise UpdateError("Tamanho do pacote diverge do manifesto do site.")
@@ -180,15 +232,22 @@ def helper_script() -> Path:
 
 
 def update_script_args(helper: Path, *, pid: int, package: Path, destination: Path, exe: Path,
-                       portable: bool, version: str = "") -> list:
+                       portable: bool, version: str = "", ready_file: Path | None = None,
+                       probe_only: bool = False) -> list:
     ps = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
     return [str(ps), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
             "-File", str(helper), "-WaitPid", str(pid), "-Package", str(package), "-Destination", str(destination),
-            "-Executable", str(exe), "-Mode", "Portable" if portable else "Setup", "-Version", str(version)]
+            "-Executable", str(exe), "-Mode", "Portable" if portable else "Setup", "-Version", str(version),
+            *(["-ReadyFile", str(ready_file)] if ready_file is not None else []),
+            *(["-ProbeOnly"] if probe_only else [])]
 
 
-def apply(path: Path, kind: str, version: str = "") -> None:
-    """Inicia o auxiliar externo. O programa deve fechar logo em seguida."""
+def apply(path: Path, kind: str, version: str = "", *, probe_only: bool = False) -> None:
+    """Inicia o auxiliar externo, registra falhas e aguarda confirmação READY.
+
+    probe_only exercises the actual packed PowerShell script and spawn flags
+    without closing the app or running an installer. CI and --ota-helper-qa use it.
+    """
     if sys.platform != "win32" or not getattr(sys, "frozen", False):
         raise UpdateError("A atualização automática só funciona nos executáveis Windows.")
     if path.suffix.lower() != ".exe" or not path.is_file():
@@ -199,14 +258,95 @@ def apply(path: Path, kind: str, version: str = "") -> None:
     helper = path.parent / "apply-update.ps1"  # fora da pasta temporária do EXE portátil
     shutil.copy2(script, helper)
     exe = Path(sys.executable).resolve()
+    # Unique acknowledgement ensures the PowerShell script actually STARTED,
+    # not merely that CreateProcess returned successfully.
+    ready = path.parent / ("ota-helper-ready-" + uuid.uuid4().hex + ".txt")
     args = update_script_args(helper, pid=os.getpid(), package=path, destination=exe.parent, exe=exe,
-                              portable=(kind == "portable"), version=version)
-    flags = (getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+                              portable=(kind == "portable"), version=version, ready_file=ready,
+                              probe_only=probe_only)
+    # DETACHED_PROCESS can leave Windows PowerShell 5.1 without valid standard
+    # handles; on some real PCs it exits before even parsing the .ps1. Use a
+    # console-free process with explicit stdin/stdout/stderr handles instead.
+    # This also captures parser/AV/runtime failures *before* Write-Phase runs.
+    flags = (getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+             | getattr(subprocess, "CREATE_NO_WINDOW", 0)
              | getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0))
+    diagnostic = Path(tempfile.gettempdir()) / "PT2VHF-SDR-Tool-ota-launch.log"
+    worker = None
     try:
-        subprocess.Popen(args, close_fds=True, creationflags=flags)
-    except OSError:
-        subprocess.Popen(args, close_fds=True, creationflags=flags & ~getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0))
+        with diagnostic.open("a", encoding="utf-8") as output:
+            output.write(f"\n--- OTA {time.strftime('%Y-%m-%d %H:%M:%S')} mode={kind} version={version} "
+                         f"probe={probe_only} ---\n")
+            output.write(f"powershell={args[0]} helper={helper} ready={ready}\n")
+            output.flush()
+            try:
+                try:
+                    worker = subprocess.Popen(
+                        args, close_fds=True, creationflags=flags,
+                        stdin=subprocess.DEVNULL, stdout=output,
+                        stderr=subprocess.STDOUT)
+                except OSError as first:
+                    output.write(f"CREATE_BREAKAWAY_FROM_JOB unavailable: {first}\n")
+                    output.flush()
+                    worker = subprocess.Popen(
+                        args, close_fds=True,
+                        creationflags=flags & ~getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0),
+                        stdin=subprocess.DEVNULL, stdout=output,
+                        stderr=subprocess.STDOUT)
+            except OSError as exc:
+                output.write(f"CREATE_PROCESS_FAILED: {exc}\n")
+                output.flush()
+                raise UpdateError(f"Não foi possível iniciar o auxiliar OTA: {exc}. "
+                                  f"Veja o diagnóstico em {diagnostic}") from exc
+    except OSError as exc:
+        raise UpdateError(f"Falha ao criar diagnóstico do OTA ({diagnostic}): {exc}") from exc
+    try:
+        until = time.monotonic() + 25.0
+        while time.monotonic() < until:
+            if ready.is_file():
+                # PowerShell creates the file before completing Set-Content:
+                # an empty partial read is NOT a failed acknowledgement.
+                try:
+                    response = ready.read_text(encoding="utf-8-sig").strip()
+                except OSError:
+                    response = ""
+                if response == "READY":
+                    if probe_only:
+                        # CI must prove that the PowerShell process actually
+                        # completed the harmless probe, not merely wrote ACK.
+                        try:
+                            code = worker.wait(timeout=10)
+                        except subprocess.TimeoutExpired as exc:
+                            worker.terminate()
+                            raise UpdateError(
+                                f"OTA probe did not exit safely. Veja {diagnostic}") from exc
+                        if code != 0:
+                            raise UpdateError(
+                                f"OTA probe returned code {code}. Veja {diagnostic}")
+                    return
+                if response:
+                    raise UpdateError("Auxiliar OTA respondeu incorretamente. O aplicativo permanecerá aberto.")
+            code = worker.poll()
+            if code is not None:
+                try:
+                    tail = diagnostic.read_text(encoding="utf-8", errors="replace")[-1200:]
+                except OSError:
+                    tail = "(diagnóstico indisponível)"
+                raise UpdateError(
+                    f"O PowerShell encerrou antes da confirmação READY (código {code}). "
+                    f"Consulte {diagnostic}. Últimas mensagens:\n{tail}")
+            time.sleep(0.15)
+        # On timeout the external helper must be stopped. Otherwise it might
+        # eventually install over a still-running GUI despite a rejected ACK.
+        try:
+            if worker.poll() is None:
+                worker.terminate()
+        except OSError:
+            pass
+        raise UpdateError("O auxiliar OTA não confirmou inicialização em 25 segundos; "
+                          f"o aplicativo permanecerá aberto. Consulte {diagnostic}.")
+    finally:
+        ready.unlink(missing_ok=True)
 
 
 def read_update_result(temp_dir: Path | None = None) -> tuple[str, str, str] | None:

@@ -206,6 +206,12 @@ class WavIQSource(IQSource):
         self.loop = loop
         self.path = path
 
+    def check_freq(self, hz):
+        half = self.sample_rate / 2
+        if self.center_freq - half <= hz <= self.center_freq + half:
+            return ""
+        return "Arquivo IQ: frequência fora da largura gravada; fonte não sintonizável."
+
     def _read_block(self):
         frames = self.wav.readframes(self.block_size)
         if len(frames) == 0:

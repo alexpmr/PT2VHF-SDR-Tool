@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QSettings, Qt, QTimer
+from PySide6.QtCore import QByteArray, QEvent, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QLabel, QMainWindow,
                                QMessageBox, QPushButton, QSlider, QVBoxLayout, QWidget)
@@ -54,6 +54,17 @@ QPushButton { background: #252d37; border: 1px solid #39444f; border-radius: 4px
 QPushButton:hover { background: #2f3945; }
 QPushButton:checked { background: #c9871e; color: #120c02; border-color: #f0b44a; font-weight: bold; }
 QPushButton#powerButton:checked { background: #1f8a3b; color: white; border-color: #3fd46a; }
+/* High-contrast checkbox indicators on Windows/Linux/macOS dark themes.
+   Explicit :unchecked is required: native Windows dark-theme boxes can blend
+   into the panel when Qt resolves the indicator from the platform palette. */
+QCheckBox { spacing: 6px; }
+QCheckBox::indicator { width: 15px; height: 15px; border-radius: 3px; }
+QCheckBox::indicator:unchecked { border: 2px solid #a8bfd1; background: #182631; }
+QCheckBox::indicator:unchecked:hover { border: 2px solid #ffbd62; background: #283b4a; }
+QCheckBox::indicator:checked { border: 2px solid #ffd17e; background: #f0b44a; }
+QCheckBox::indicator:checked:hover { border: 2px solid #fff0b4; background: #ffc15d; }
+QCheckBox::indicator:unchecked:disabled { border: 2px solid #657481; background: #29333c; }
+QCheckBox::indicator:checked:disabled { border: 2px solid #a48b56; background: #9c7e3e; }
 QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTreeWidget, QTableWidget {
   background: #0f1216; border: 1px solid #2e3742; border-radius: 3px; padding: 2px;
   selection-background-color: #c9871e; selection-color: #120c02; }
@@ -168,8 +179,20 @@ class MainWindow(QMainWindow):
         self.occupancy_panel = OccupancyPanel(self.occupancy)
         self.scan_panel.tabs.addTab(self.occupancy_panel, "Ocupação 24 h")
         self.live_captions_panel = LiveCaptionsPanel(self.cfg)
-        self.scan_panel.tabs.addTab(self.live_captions_panel, "Legendas ao vivo")
-        self.scan_panel.tabs.addTab(self.dec_panel, "APRS / DTMF / CTCSS")
+        # Agrupa os receptores/decodificadores por protocolo.
+        self.decoder_tabs = QTabWidget()
+        self.decoder_tabs.addTab(_scroll(self.adsb_panel), "ADS-B")
+        self.decoder_tabs.addTab(self.sonde_area, "Sondas Meteorológicas")
+        self.decoder_tabs.addTab(_scroll(self.ais_panel), "AIS")
+        self.decoder_tabs.addTab(_scroll(self.dec_panel), "APRS / DTMF / CTCSS")
+        # Configuração Whisper e histórico são páginas independentes, sem controles duplicados.
+        self.tools_tabs = QTabWidget()
+        self.caption_settings_page = _scroll(self.live_captions_panel.settings_widget)
+        self.tools_tabs.addTab(self.caption_settings_page, "Transcrição")
+        self.tools_tabs.addTab(self.live_captions_panel, "Legendas ao vivo")
+        # A opção de transcrever gravações também pertence à área de Ferramentas.
+        self.live_captions_panel.settings_widget.layout().insertWidget(
+            1, self.scan_panel.transcribe)
         self.sscan: SpectrumScanner | None = None
         self._hits_t = 0.0
         self.assist = AssistBox()
@@ -209,23 +232,42 @@ class MainWindow(QMainWindow):
         cl.setContentsMargins(0, 0, 0, 0)
         self.lcd = LCDDisplay()
         self.lcd.set_theme(self.cfg["lcd_theme"])
-        cl.addWidget(self.lcd)
+        self.lcd.set_preferred_scale(self.cfg.get("lcd_scale_percent", 100))
+        cl.addWidget(self.lcd, alignment=Qt.AlignHCenter)
         self.analog_panel = AnalogPanel(self.cfg.get("analog_style", "Valvulado"))
         self.analog_panel.setVisible(bool(self.cfg.get("analog_enabled", False)))
         cl.addWidget(self.analog_panel)
-        self.caption_label = QLabel("")
-        self.caption_label.setWordWrap(True)
-        self.caption_label.setObjectName("bigLabel")
-        self.caption_label.setMinimumHeight(36)
-        self.caption_label.setVisible(False)
-        cl.addWidget(self.caption_label)
+        # Janela flutuante não modal sobre o receptor: apenas as palavras reconhecidas.
+        self.receiver_left = left
+        self.caption_popup = QLabel("", left)
+        self.caption_popup.setObjectName("captionPopup")
+        self.caption_popup.setAlignment(Qt.AlignCenter)
+        self.caption_popup.setWordWrap(True)
+        self.caption_popup.setStyleSheet(
+            "QLabel#captionPopup { background: rgba(13, 17, 24, 238); color: #ffffff; "
+            "border: 2px solid #f0b44a; border-radius: 11px; "
+            "font-size: 20px; font-weight: 650; padding: 14px 18px; }")
+        self.caption_popup.hide()
+        left.installEventFilter(self)
         self.band_bar = BandKeys(self.cfg.get("bands_visible"), self.lcd)
         self.lcd.attach_band_keys(self.band_bar)
         self.fav_bar = FavoritesBar()
         self.fav_bar.refresh(self.bank.channels, self.engine.vfo)
         cl.addWidget(self.fav_bar)
         self.wf_toolbar = self._build_wf_toolbar()
-        cl.addWidget(self.wf_toolbar)
+        # Keep the sidebar control visible even when the toolbar overflows.
+        from PySide6.QtWidgets import QHBoxLayout
+        self.wf_tools_row = QWidget()
+        tools_layout = QHBoxLayout(self.wf_tools_row)
+        tools_layout.setContentsMargins(0, 0, 0, 0)
+        tools_layout.setSpacing(4)
+        tools_layout.addWidget(self.wf_toolbar, 1)
+        self.sidebar_btn = QPushButton("◀ Ocultar painel")
+        self.sidebar_btn.setToolTip(
+            "Ocultar ou mostrar Volume, AGC, Equalizador e Gravação sem interromper o SDR (Ctrl+Shift+A)")
+        self.sidebar_btn.setMinimumWidth(122)
+        tools_layout.addWidget(self.sidebar_btn)
+        cl.addWidget(self.wf_tools_row)
         self.wf = SpectrumWaterfall()
         self.wf.set_colormap(self.cfg["wf_colormap"])
         self.wf.set_levels(self.cfg["wf_min_db"], self.cfg["wf_max_db"])
@@ -257,11 +299,9 @@ class MainWindow(QMainWindow):
         for key, title, w in (("rx", "Receptor", self.main_split),
                               ("mem", "Memórias / Varredura", _scroll(self.mem_panel)),
                               ("scan", "Scanner", _scroll(self.scan_panel)),
-                              ("adsb", "ADS-B", _scroll(self.adsb_panel)),
-                              ("ais", "AIS", _scroll(self.ais_panel)),
-                              ("sondes", "Sondas Meteorológicas", self.sonde_area),
+                              ("decode", "Decodificação", self.decoder_tabs),
+                              ("tools", "Ferramentas", self.tools_tabs),
                               ("extras", "Receptores extras", _scroll(self.extras_panel)),
-                              ("sat", "Satélites", _scroll(self.sat_panel)),
                               ("settings", "Configurações", self.settings_tabs)):
             self.tabs.addTab(w, title)
             self.pages[key] = w
@@ -274,6 +314,25 @@ class MainWindow(QMainWindow):
         for w in (self.status_src, self.status_cpu, self.status_audio):
             self.statusBar().addPermanentWidget(w)
         self._build_menu()
+
+    def eventFilter(self, watched, event):
+        if watched is getattr(self, "receiver_left", None) and event.type() == QEvent.Resize:
+            self._position_caption_popup()
+        return super().eventFilter(watched, event)
+
+    def _position_caption_popup(self):
+        """Centraliza a legenda sobre a área do receptor, sem afetar o LCD."""
+        area = getattr(self, "receiver_left", None)
+        popup = getattr(self, "caption_popup", None)
+        if area is None or popup is None:
+            return
+        width = max(150, min(800, int(area.width() * 0.82), area.width() - 12))
+        available_height = max(40, area.height() - 12)
+        preferred_height = popup.heightForWidth(width)
+        height = min(available_height, max(75, min(245, preferred_height if preferred_height > 0 else 90)))
+        x = max(0, (area.width() - width) // 2)
+        y = max(0, min(area.height() - height - 12, int(area.height() * 0.63)))
+        popup.setGeometry(x, y, width, height)
 
     def _build_header(self):
         from PySide6.QtWidgets import QFrame, QHBoxLayout
@@ -310,6 +369,11 @@ class MainWindow(QMainWindow):
         index = self.language_combo.findData(self.cfg.get("language", "pt"))
         self.language_combo.setCurrentIndex(max(0, index))
         h.addWidget(self.language_combo)
+        # Compact per-process CPU and resident RAM, matching the PT2VHF
+        # top-bar reference. Independent of receiver/DSP sampling.
+        from .resource_meter import ResourceMeter
+        self.resource_meter = ResourceMeter(self)
+        h.addWidget(self.resource_meter)
         self.utc_label = QLabel("")
         self.utc_label.setObjectName("utcLabel")
         h.addWidget(self.utc_label)
@@ -378,7 +442,7 @@ class MainWindow(QMainWindow):
             b.clicked.connect(lambda _=False, s=span: self.wf.reset_zoom() if s is None else self.wf.zoom_to_vfo(s))
             row.addWidget(b)
         self.center_btn = QPushButton("Centralizar")
-        self.center_btn.setToolTip("Centraliza o waterfall no VFO sem alterar o zoom (Ctrl+E)")
+        self.center_btn.setToolTip("Centraliza no VFO sem alterar o zoom (Ctrl+E). Duplo clique no waterfall sintoniza e centraliza.")
         self.center_btn.clicked.connect(self._center_waterfall)
         row.addWidget(self.center_btn)
         self.keep_center = QCheckBox("Seguir VFO")
@@ -394,7 +458,7 @@ class MainWindow(QMainWindow):
         row.addWidget(self.weak_btn)
         self.live_btn = QPushButton("Legendas")
         self.live_btn.setCheckable(True)
-        self.live_btn.setToolTip("Transcreve fonia com faster-whisper local. Baixe o modelo em Scanner > Legendas.")
+        self.live_btn.setToolTip("Transcreve fonia com faster-whisper local. Configure em Ferramentas > Transcrição.")
         row.addWidget(self.live_btn)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -437,8 +501,13 @@ class MainWindow(QMainWindow):
             self.addAction(a)
             self._tab_actions.append(a)
         self.audio_action = QAction("Painel de áudio / DSP", self, checkable=True, checked=True)
+        self.audio_action.setShortcut(QKeySequence("Ctrl+Shift+A"))
         self.audio_action.toggled.connect(self.audio_scroll.setVisible)
+        self.audio_action.toggled.connect(self._sync_sidebar_button)
+        self.sidebar_btn.clicked.connect(lambda: self.audio_action.setChecked(not self.audio_action.isChecked()))
         v.addAction(self.audio_action)
+        self.addAction(self.audio_action)
+        self._sync_sidebar_button(True)
         v.addSeparator()
         self.pres_action = QAction("Modo apresentação (tela cheia)", self, checkable=True,
                                    shortcut=QKeySequence("F11"))
@@ -470,16 +539,28 @@ class MainWindow(QMainWindow):
         a = QAction("Verificar atualizações…", self)
         a.triggered.connect(lambda: self.updates.check(manual=True))
         h.addAction(a)
+        a = QAction("Testar auxiliar OTA (sem instalar)…", self)
+        a.triggered.connect(self.updates.probe_helper)
+        h.addAction(a)
         a = QAction("Atalhos de teclado", self)
         a.triggered.connect(self._show_shortcuts)
         h.addAction(a)
         a = QAction("Sobre", self)
         a.triggered.connect(lambda: QMessageBox.about(
             self, APP_NAME, f"<b>{APP_NAME}</b> {__version__}<br>Receptor SDR para radioamadores.<br>"
-                            "RTL-SDR, rtl_tcp, SoapySDR, arquivos IQ.<br>Decodificação APRS, DTMF e CTCSS.<br><br>"
+                            "RTL-SDR, rtl_tcp, SDRplay/Mirics via SoapySDR, arquivos IQ.<br>Decodificação APRS, DTMF e CTCSS.<br><br>"
                             "Downloads e atualizações oficiais somente em "
                             "<a href='https://www.pt2vhf.com/sdr'>www.pt2vhf.com</a>."))
         h.addAction(a)
+
+    def _sync_sidebar_button(self, visible: bool):
+        """Keep the right-panel toggle and menu action in sync."""
+        self.sidebar_btn.setText("◀ Ocultar painel" if visible else "▶ Mostrar painel")
+        self.sidebar_btn.setToolTip(
+            ("Ocultar o painel direito" if visible else "Mostrar o painel direito")
+            + " (Ctrl+Shift+A)")
+        # The existing QSettings 'audio_panel' entry persists the preference.
+        # QSplitter naturally transfers all available width to FFT/waterfall.
 
     def _language_selected(self, *_):
         code = self.language_combo.currentData()
@@ -497,13 +578,20 @@ class MainWindow(QMainWindow):
                                         self.audio_panel, self.mem_panel, self.dec_panel)
         self.language_combo.currentIndexChanged.connect(self._language_selected)
         self.live_btn.toggled.connect(self._toggle_live_captions)
+        self.live_captions_panel.enable_live.toggled.connect(self.live_btn.setChecked)
+        self.live_btn.toggled.connect(
+            lambda _on: self.live_captions_panel.enable_live.setChecked(self.live_btn.isChecked()))
         self.live_captions_panel.downloadRequested.connect(self._download_caption_model)
         self.band_bar.selected.connect(self._band_button)
         self.display_panel.bandsChanged.connect(self._set_visible_bands)
+        self.display_panel.lcdScaleChanged.connect(self._set_lcd_scale)
         self.display_panel.analogChanged.connect(self._analog_display_changed)
+        rp.source.currentTextChanged.connect(lambda *_: self._refresh_band_keys())
+        rp.device.currentIndexChanged.connect(lambda *_: self._refresh_band_keys())
         lcd.freqChanged.connect(self.tune)
         lcd.stepRequested.connect(lambda n: self.tune(self.engine.vfo + n * self.step, snap=True))
         wf.tuneRequested.connect(self.select_transmission)
+        wf.centerTuneRequested.connect(self.select_transmission_centered)
         lcd.modeClicked.connect(self.choose_mode)
         lcd.neighborRequested.connect(self.jump_neighbor)
         lcd.autoTuneToggled.connect(lambda: self._set_auto_tune(not self.auto_tune))
@@ -515,8 +603,12 @@ class MainWindow(QMainWindow):
         rp.gainChanged.connect(lambda g: self._src_call("set_gain", g, cfg="gain"))
         rp.ppmChanged.connect(lambda v: self._src_call("set_ppm", v, cfg="ppm"))
         rp.biasTeeChanged.connect(lambda v: self._src_call("set_bias_tee", v, cfg="bias_tee"))
-        rp.directSamplingChanged.connect(lambda v: (self._src_call("set_direct_sampling", v, cfg="direct_sampling"),
-                                                    self._refresh_band_keys()))
+        rp.directSamplingChanged.connect(self._direct_sampling_selected)
+        self._converter_restart_timer = QTimer(self)
+        self._converter_restart_timer.setSingleShot(True)
+        self._converter_restart_timer.setInterval(400)
+        self._converter_restart_timer.timeout.connect(self._apply_converter_configuration)
+        rp.converterConfigurationChanged.connect(self._converter_configuration_changed)
 
         mp.modeChanged.connect(self.choose_mode)
         mp.bandwidthChanged.connect(self.set_bandwidth)
@@ -611,6 +703,7 @@ class MainWindow(QMainWindow):
         sp2 = self.settings_panel
         sp2.changed.connect(self._setting_changed)
         sp2.checkUpdatesNow.connect(lambda: self.updates.check(manual=True))
+        sp2.testOtaHelper.connect(self.updates.probe_helper)
         sp2.webApply.connect(self._web_apply)
         sp2.webOpen.connect(self._web_open)
         sp2.webCopy.connect(self._web_copy)
@@ -645,14 +738,54 @@ class MainWindow(QMainWindow):
             QShortcut(QKeySequence(keys), self, activated=fn)
 
     # ================================================================== fonte
+    def _converter_configuration_changed(self):
+        """Apply UI changes without ever retuning a running IQ stream mid-block."""
+        rp = self.rx_panel
+        self.cfg["external_converter_enabled"] = rp.external_converter.isChecked()
+        self.cfg["external_converter_offset_mhz"] = rp.converter_offset.value()
+        rp.update_converter_preview(self.engine.vfo)
+        self._refresh_band_keys()
+        # Group quick checkbox/spin edits into one safe receiver restart.
+        if self.engine.running:
+            self.statusBar().showMessage(
+                "Conversor externo alterado: reiniciando o receptor com a nova sintonia…",
+                4000)
+            self._converter_restart_timer.start()
+        else:
+            self.cfg.save()
+
+    def _apply_converter_configuration(self):
+        if not self.engine.running:
+            self.cfg.save()
+            return
+        opts = self.rx_panel.source_options()
+        # stop_source also closes the capture/scan and releases the native SDR.
+        # Reopen only after the former source has been stopped.
+        self.stop_source()
+        self.start_source(opts)
+        self.cfg.save()
+        self.rx_panel.update_converter_preview(self.engine.vfo)
+        if self.engine.running:
+            self.statusBar().showMessage(
+                "Conversor externo aplicado; receptor reiniciado com segurança.", 7000)
+        else:
+            self.statusBar().showMessage(
+                "O SDR não reiniciou. Confira o offset e a faixa do hardware.", 12000)
+
     def start_source(self, opts: dict):
         self._stop_sonde()
         from ..sources.network_sources import RtlTcpSource, SoapySource
+        from ..sources.mirics import SOURCE_NAME as RSP_SOURCE, is_rsp_device, MISSING_DRIVER
         from ..sources.rtlsdr_source import RtlSdrSource
         from ..sources.sim_sources import SimulatorSource, WavIQSource
         name = opts["source"]
         fs = opts["sample_rate"]
-        center = self.engine.vfo + fs / 8
+        # RF frequencies remain public, while the hardware is tuned at RF+LO.
+        # Applies only to tunable hardware; never to simulator/IQ recordings.
+        offset_hz = (float(opts.get("external_converter_offset_mhz", 100.0)) * 1e6
+                     if opts.get("external_converter_enabled") and
+                     name in ("RTL-SDR", "rtl_tcp", "SoapySDR", RSP_SOURCE) else 0.0)
+        center = self.engine.vfo + fs / 8 + offset_hz
         try:
             if name == "Simulador":
                 src = SimulatorSource(fs, center)
@@ -660,14 +793,40 @@ class MainWindow(QMainWindow):
             elif name == "RTL-SDR":
                 src = RtlSdrSource(fs, center, opts["device_index"], opts["gain"], opts["ppm"])
                 src.set_bias_tee(self.cfg["bias_tee"]) if self.cfg["bias_tee"] else None
-                if self.cfg["direct_sampling"]:
-                    src.set_direct_sampling(self.cfg["direct_sampling"])
+                # R820T VHF/UHF and the direct HF I/Q path are mutually
+                # exclusive. A saved HF mode must not disable 145/433 MHz.
+                from ..sources.rtlsdr_source import select_direct_sampling_mode
+                configured = int(self.cfg.get("direct_sampling", 0))
+                preferred = int(self.cfg.get("hf_direct_sampling_mode", configured))
+                selected = select_direct_sampling_mode(self.engine.vfo + offset_hz, fs,
+                                                       configured, preferred)
+                if selected != configured:
+                    if configured in (1, 2) and not selected:
+                        self.cfg["hf_direct_sampling_mode"] = configured
+                    self._set_rtl_sampling_state(selected)
+                    if configured and not selected:
+                        self.statusBar().showMessage(
+                            "Amostragem direta desativada: VHF/UHF usa o sintonizador R820T.", 10000)
+                if selected:
+                    src.set_direct_sampling(selected)
             elif name == "rtl_tcp":
                 src = RtlTcpSource(fs, center, opts["host"], opts["port"], opts["gain"], opts["ppm"])
                 self.cfg["rtl_tcp_host"], self.cfg["rtl_tcp_port"] = opts["host"], opts["port"]
             elif name == "SoapySDR":
                 src = SoapySource(fs, center, opts["soapy_args"], opts["gain"], opts["ppm"])
                 self.cfg["soapy_args"] = opts["soapy_args"]
+            elif name == RSP_SOURCE:
+                descriptor = str(opts.get("soapy_args", ""))
+                props = dict(p.split("=", 1) for p in descriptor.split(",") if "=" in p)
+                if not is_rsp_device(props):
+                    raise SourceError(MISSING_DRIVER)
+                try:
+                    src = SoapySource(fs, center, descriptor, opts["gain"], opts["ppm"])
+                except Exception as exc:
+                    raise SourceError(f"{MISSING_DRIVER}\n\nDetalhe do driver: {exc}") from exc
+                src.name = ("SDRplay API" if props.get("driver", "").lower() in ("sdrplay", "sdrplay3")
+                            else "Mirics / MSi-SDR")
+                self.cfg["soapy_args"] = descriptor
             else:
                 src = WavIQSource(opts["file"])
                 if src.sample_rate % 240_000:
@@ -698,12 +857,18 @@ class MainWindow(QMainWindow):
                         f"interface {'—' if i.mi is None else i.mi}: {i.service or 'nenhum'}" for i in ifaces)
             QMessageBox.warning(self, "Fonte de sinal", text)
             return
-        self.cfg.update(source=name, sample_rate=src.sample_rate, gain=opts["gain"], ppm=opts["ppm"])
+        if offset_hz:
+            from ..sources.frequency_translation import FrequencyTranslatedSource
+            src = FrequencyTranslatedSource(src, offset_hz)
+        self.cfg.update(source=name, sample_rate=src.sample_rate, gain=opts["gain"], ppm=opts["ppm"],
+                        external_converter_enabled=bool(opts.get("external_converter_enabled", False)),
+                        external_converter_offset_mhz=float(opts.get("external_converter_offset_mhz", 100.0)))
         if src.check_freq(self.engine.vfo):  # frequência salva fora do alcance deste dongle
             self.statusBar().showMessage(src.check_freq(self.engine.vfo), 12000)
             self.engine.vfo = 145.570e6
             self.vfos[self.active_vfo]["freq"] = self.engine.vfo
         self.engine.start(src)
+        self.rx_panel.update_converter_preview(self.engine.vfo)
         self._apply_receiver_settings()
         self._set_running_ui(True)
         tuner = getattr(src, "tuner", "")
@@ -713,7 +878,7 @@ class MainWindow(QMainWindow):
         self.status_src.setText(f"● {src.name} {src.sample_rate / 1e6:g} MS/s")
         self.hdr_summary.setText(f"● {src.name} {tuner} — {src.sample_rate / 1e6:g} MS/s")
         self.cfg.update(device_index=opts.get("device_index", 0), device_name=self.rx_panel.device.currentText())
-        if name in ("RTL-SDR", "rtl_tcp", "SoapySDR"):
+        if name in ("RTL-SDR", "rtl_tcp", "SoapySDR", RSP_SOURCE):
             self.cfg["rx_ever_connected"] = True
         self._update_lcd()
 
@@ -747,6 +912,65 @@ class MainWindow(QMainWindow):
     def _diagnose_rtlsdr(self):
         from ..sources import rtl_driver
         QMessageBox.information(self, "Diagnóstico do RTL-SDR", rtl_driver.diagnose())
+
+    def _set_rtl_sampling_state(self, mode: int):
+        """Keep the saved active mode and selector synchronized, without recursion."""
+        mode = int(mode)
+        self.cfg["direct_sampling"] = mode
+        combo = self.rx_panel.direct
+        was_blocked = combo.blockSignals(True)
+        try:
+            combo.setCurrentIndex(mode)
+        finally:
+            combo.blockSignals(was_blocked)
+        self._refresh_band_keys()
+
+    def _direct_sampling_selected(self, mode: int):
+        """Honor manual I/Q preference, but never force HF direct mode in VHF/UHF."""
+        mode = int(mode)
+        if mode not in (0, 1, 2):
+            return
+        self.cfg["hf_direct_sampling_mode"] = mode
+        src = self.engine.source
+        if (mode and src is not None and src.name == "RTL-SDR"
+                and self.engine.vfo + float(getattr(src, "offset_hz", 0.0))
+                + (src.sample_rate / 8 if src.sample_rate >= 900_000 else 0)
+                > 28_800_000):
+            self._set_rtl_sampling_state(0)
+            if getattr(src, "direct_sampling", 0):
+                src.set_direct_sampling(0)
+            self.statusBar().showMessage(
+                "Amostragem direta é para HF; acima de 28,8 MHz, R820T usa o sintonizador. "
+                "Preferência HF preservada.", 10000)
+            return
+        self._src_call("set_direct_sampling", mode, cfg="direct_sampling")
+        self._refresh_band_keys()
+
+    def _auto_rtl_sampling(self, freq: float):
+        """Switch I/Q direct sampling off before tuning 145/433 MHz.
+
+        Preserve an explicitly selected HF branch for future return below 24 MHz.
+        Both mode and frequency commands are queued in order by RtlSdrSource.
+        """
+        src = self.engine.source
+        if src is None or src.name != "RTL-SDR":
+            return
+        from ..sources.rtlsdr_source import select_direct_sampling_mode
+        current = int(getattr(src, "direct_sampling", 0))
+        preferred = int(self.cfg.get("hf_direct_sampling_mode",
+                                     self.cfg.get("direct_sampling", 0)))
+        physical_freq = freq + float(getattr(src, "offset_hz", 0.0))
+        chosen = select_direct_sampling_mode(physical_freq, src.sample_rate, current, preferred)
+        if chosen == current:
+            return
+        if current in (1, 2) and chosen == 0:
+            self.cfg["hf_direct_sampling_mode"] = current
+        src.set_direct_sampling(chosen)
+        self._set_rtl_sampling_state(chosen)
+        self.statusBar().showMessage(
+            "RTL-SDR: sintonizador VHF/UHF ativado."
+            if chosen == 0 else "RTL-SDR: amostragem direta HF ativada.",
+            6000)
 
     def _src_call(self, method, value, cfg=None):
         if cfg:
@@ -816,8 +1040,9 @@ class MainWindow(QMainWindow):
         self._sync_views()
 
     def _freq_supported(self, freq: float) -> bool:
-        """Recusa (com aviso, sem travar) frequências que o dongle não alcança."""
+        """Recusa frequências inacessíveis, após alternar o modo correto do RTL."""
         src = self.engine.source
+        self._auto_rtl_sampling(freq)
         fs = self.engine.sample_rate
         if src is None or abs(freq - src.center_freq) < fs / 2 * 0.9:
             return True
@@ -879,20 +1104,59 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(msg, 18000)
 
     def _band_unsupported(self, band):
+        """Bandas não confirmadas como sintonizáveis são ocultadas no LCD."""
         mid = (band.start + band.end) / 2
         src = self.engine.source
         if src is not None:
-            return src.check_freq(mid) or ""
-        if self.cfg.get("source") == "RTL-SDR" and self.cfg.get("device_name"):
+            problem = src.check_freq(mid) or ""
+            if problem and getattr(src, "name", "") == "RTL-SDR":
+                # Bands remain selectable when the receiver can switch its
+                # input path at tune-time (e.g. 70 cm while HF direct is active).
+                from ..sources.rtlsdr_source import select_direct_sampling_mode, tuning_range, library_info
+                current = int(getattr(src, "direct_sampling", 0))
+                preferred = int(self.cfg.get("hf_direct_sampling_mode",
+                                             self.cfg.get("direct_sampling", 0)))
+                physical_mid = mid + float(getattr(src, "offset_hz", 0.0))
+                wanted = select_direct_sampling_mode(physical_mid, src.sample_rate, current, preferred)
+                if wanted != current:
+                    lo, hi = tuning_range(getattr(src, "tuner", ""),
+                                          library_info().get("blog", False), wanted,
+                                          getattr(src, "product", ""))
+                    if lo <= physical_mid <= hi:
+                        return ""
+            return problem
+        source = self.rx_panel.source.currentText()
+        physical_mid = mid + (float(self.rx_panel.converter_offset.value()) * 1e6
+                              if self.rx_panel.external_converter.isChecked() else 0.0)
+        if source == "Simulador":
+            return ""
+        if source == "RTL-SDR":
             from ..sources.rtlsdr_source import tuning_range
-            device = self.cfg.get("device_name", "")
+            current = self.rx_panel.device.currentText().strip()
+            device = current if current[:1].isdigit() else self.cfg.get("device_name", "")
+            if not device or not str(device)[:1].isdigit():
+                return "Faixa desconhecida: conecte ou selecione o SDR."
             v4 = "V4" in device.upper()
-            low, high = tuning_range("R828D" if v4 else "R820T", v4,
-                                     int(self.cfg.get("direct_sampling", 0)), device)
-            if not low <= mid <= high:
-                return (f"{band.name}: fora da faixa do último SDR ({low / 1e6:g}–"
-                        f"{high / 1e6:g} MHz). Verifique a amostragem direta ou o dispositivo.")
-        return ""
+            # Inactive but available tuner bands must not be greyed out by a
+            # previously saved HF direct-sampling setting.
+            low, high = tuning_range("R828D" if v4 else "R820T", v4, 0, device)
+            if low <= physical_mid <= high:
+                return ""
+            preferred = int(self.cfg.get("hf_direct_sampling_mode",
+                                         self.cfg.get("direct_sampling", 0)))
+            if preferred in (1, 2):
+                hf_low, hf_high = tuning_range("R820T", False, preferred, device)
+                if hf_low <= physical_mid <= hf_high:
+                    return ""
+            return f"{band.name}: fora da faixa do SDR ({low / 1e6:g}–{high / 1e6:g} MHz)."
+        return "Conecte a fonte para identificar a faixa de recepção."
+
+    def _set_lcd_scale(self, percent):
+        """Aplica escala manual persistente, mantendo a proporção vetorial do LCD."""
+        percent = max(50, min(150, int(percent)))
+        self.cfg["lcd_scale_percent"] = percent
+        self.lcd.set_preferred_scale(percent)
+        self.cfg.save()
 
     def _refresh_band_keys(self):
         if not hasattr(self, "band_bar"):
@@ -944,20 +1208,27 @@ class MainWindow(QMainWindow):
         current = band_for(self.engine.vfo)
         same_band = current is not None and current.name == band.name
         self._remember_current_band()
-        history = self.cfg.get("band_stacks", {}).get(band.name, [])
-        if same_band and len(history) > 1:
-            next_entry = history.pop(1)
-            history.insert(0, next_entry)
-        elif history:
-            next_entry = history[0]
+        # The five named presets are deterministic shortcuts, not band stacks.
+        # In particular 123.450 MHz must not be rounded to the nearest 8.33 kHz
+        # *grid from 0 Hz* by tune(snap=True).
+        shortcut = getattr(band, "quick_freq", None)
+        if shortcut is not None:
+            next_entry = {"freq": float(shortcut), "mode": band.mode}
         else:
-            next_entry = {"freq": (band.start + band.end) / 2, "mode": band.mode}
+            history = self.cfg.get("band_stacks", {}).get(band.name, [])
+            if same_band and len(history) > 1:
+                next_entry = history.pop(1)
+                history.insert(0, next_entry)
+            elif history:
+                next_entry = history[0]
+            else:
+                next_entry = {"freq": (band.start + band.end) / 2, "mode": band.mode}
         freq = float(next_entry["freq"])
         if not band.start <= freq <= band.end or not self._freq_supported(freq):
             return
         self.set_step(band.step)
         self.set_mode(next_entry["mode"])
-        self.tune(freq, snap=True)
+        self.tune(freq, snap=shortcut is None)
 
 
     def _set_deemph(self, us):
@@ -1402,10 +1673,18 @@ class MainWindow(QMainWindow):
     def quit_for_update(self):
         """Fecha tudo para o auxiliar externo instalar a atualização (ele reabre o programa)."""
         self._quitting_for_update = True
+        # The old QTimer was installed *after* QApplication.quit(), when the
+        # Qt event loop was already ending. It never fired on stuck native
+        # audio/SDR shutdown, leaving the external OTA helper waiting forever.
+        # A daemon OS timer runs independently of Qt and only after the OTA
+        # helper has confirmed it started.
+        import threading
+        watchdog = threading.Timer(20.0, lambda: os._exit(0))
+        watchdog.daemon = True
+        watchdog.start()
         self.close()
         from PySide6.QtWidgets import QApplication
         QApplication.quit()
-        QTimer.singleShot(8000, lambda: os._exit(0))
 
     # ================================================================== Sondas RS41 / IQ original
     def _start_sonde(self, freq, fsk_path, rs41_path):
@@ -1574,6 +1853,15 @@ class MainWindow(QMainWindow):
         """Clique no waterfall/espectro: sintoniza e, se ligado, ajusta exatamente na transmissão."""
         if self.tune(freq) is not False:
             self._after_select()
+
+    def select_transmission_centered(self, freq: float):
+        """Duplo clique no waterfall: sintoniza, depois centraliza sem perder o zoom."""
+        if self.tune(freq) is False:
+            return
+        # The tune() call updates VFO, LCD and passband before recentering.
+        # Do not move the display if the SDR rejected the frequency.
+        self.wf.center_on_vfo()
+        self._after_select()
 
     def _after_select(self, from_scanner: bool = False):
         if not self.engine.running or not (self.auto_mode or self.auto_tune):
@@ -1823,11 +2111,11 @@ class MainWindow(QMainWindow):
                 self.live_btn.setChecked(False)
                 self.live_btn.blockSignals(False)
                 self.cfg["live_caption_enabled"] = False
-                self.tabs.setCurrentWidget(self.pages["scan"])
-                self.scan_panel.tabs.setCurrentWidget(self.live_captions_panel)
+                self.tabs.setCurrentWidget(self.pages["tools"])
+                self.tools_tabs.setCurrentWidget(self.caption_settings_page)
                 QMessageBox.information(
                     self, "Transcrição local",
-                    f"Modelo Whisper {size} não disponível. Abra Scanner > Legendas "
+                    f"Modelo Whisper {size} não disponível. Abra Ferramentas > Transcrição "
                     "e clique em 'Baixar modelo'. Depois, a operação será offline.")
                 return
             self.caption_worker = LiveCaptionWorker(
@@ -1838,9 +2126,12 @@ class MainWindow(QMainWindow):
                 meta_provider=lambda: (float(self.engine.vfo), str(self.mode)),
             )
             self.engine.audio_listeners.append(self.caption_worker.feed)
-            self.caption_label.setText("Transcrição local ativa — aguardando fonia...")
-            self.caption_label.setVisible(True)
             self.cfg["live_caption_enabled"] = True
+            self.tabs.setCurrentWidget(self.pages["rx"])
+            self.caption_popup.setText("Aguardando transmissão de voz...")
+            self._position_caption_popup()
+            self.caption_popup.raise_()
+            self.caption_popup.show()
         else:
             if self.caption_worker is not None:
                 callback = self.caption_worker.feed
@@ -1851,7 +2142,8 @@ class MainWindow(QMainWindow):
                 self.caption_worker.stop()
                 self.caption_worker = None
             self.cfg["live_caption_enabled"] = False
-            self.caption_label.setVisible(False)
+            self.caption_popup.hide()
+            self.caption_popup.clear()
 
     def _toggle_transcription(self, on):
         from ..transcribe import Transcriber, backend_available
@@ -1861,7 +2153,7 @@ class MainWindow(QMainWindow):
             if not backend_available() or not model_installed(size):
                 self.scan_panel.transcribe.setChecked(False)
                 QMessageBox.information(self, "Transcrição",
-                    "Baixe o modelo em Scanner > Legendas ao vivo. "
+                    "Baixe o modelo em Ferramentas > Transcrição. "
                     "Nenhum modelo é baixado automaticamente.")
                 return
             self.transcriber = Transcriber(
@@ -1949,6 +2241,7 @@ class MainWindow(QMainWindow):
         self._update_lcd()
 
     def _update_lcd(self):
+        self.rx_panel.update_converter_preview(self.engine.vfo)
         self.fav_bar.mark_current(self.engine.vfo)
         lcd = self.lcd
         lcd.set_freq(self.engine.vfo)
@@ -2066,13 +2359,16 @@ class MainWindow(QMainWindow):
             elif kind == "transcription":
                 self.scan_panel.set_transcription(*data)
             elif kind == "live_caption":
-                stamp, recognized, calls, lang, meta = data
-                freq, mode = meta if meta is not None else (eng.vfo, self.mode)
-                self.live_captions_panel.add_caption(stamp, recognized, calls, lang, freq, mode)
-                self.caption_label.setText(f"{freq / 1e6:.5f} MHz · {mode}: {recognized}")
-                self._live_caption_last = stamp
+                if self.cfg.get("live_caption_enabled", False):
+                    stamp, recognized, calls, lang, meta = data
+                    freq, mode = meta if meta is not None else (eng.vfo, self.mode)
+                    self.live_captions_panel.add_caption(stamp, recognized, calls, lang, freq, mode)
+                    recognized = str(recognized).strip()
+                    if recognized:
+                        self.caption_popup.setText(recognized)
+                        self._position_caption_popup()
+                        self._live_caption_last = stamp
             elif kind == "caption_error":
-                self.caption_label.setText(f"Legendas: {data}")
                 self.statusBar().showMessage(f"Transcrição local: {data}", 10000)
             elif kind == "caption_model_download":
                 size, ok, detail = data
@@ -2160,12 +2456,12 @@ class MainWindow(QMainWindow):
             if minimal:
                 self.tabs.setCurrentIndex(0)
                 for w in (self.menuBar(), self.statusBar(), self.header, self.tabs.tabBar(), self.audio_scroll,
-                          self.fav_bar, self.wf_toolbar):
+                          self.fav_bar, self.wf_tools_row):
                     w.setVisible(False)
             self.showFullScreen()
             self.statusBar().showMessage("Modo apresentação — Esc ou F11 para sair", 6000)
         else:
-            for w in (self.menuBar(), self.statusBar(), self.header, self.tabs.tabBar(), self.fav_bar, self.wf_toolbar):
+            for w in (self.menuBar(), self.statusBar(), self.header, self.tabs.tabBar(), self.fav_bar, self.wf_tools_row):
                 w.setVisible(True)
             self.audio_scroll.setVisible(getattr(self, "_pres_audio", True) and self.audio_action.isChecked())
             self.showMaximized() if getattr(self, "_pres_was_max", False) else self.showNormal()
@@ -2182,7 +2478,7 @@ class MainWindow(QMainWindow):
     def _auto_reconnect(self):
         c = self.cfg
         if (not c.get("reconnect_on_start", True) or not c.get("rx_was_on")
-                or c.get("source") not in ("RTL-SDR", "rtl_tcp", "SoapySDR") or self.engine.running):
+                or c.get("source") not in ("RTL-SDR", "rtl_tcp", "SoapySDR", "SDRplay / MSi-SDR (RSP)") or self.engine.running):
             return
         rp = self.rx_panel
         if rp.source.currentText() != c["source"]:
@@ -2227,7 +2523,7 @@ class MainWindow(QMainWindow):
             combo.blockSignals(False)
         for act in getattr(self, "_level_actions", []):
             act.setChecked(act.text() == name)
-        page_lvl = {"scan": 1, "adsb": 1, "ais": 1, "sondes": 1, "extras": 2, "sat": 1}
+        page_lvl = {"scan": 1, "decode": 1, "tools": 0, "extras": 2}
         for key, page in self.pages.items():
             vis = lvl >= page_lvl.get(key, 0)
             i = self.tabs.indexOf(page)
@@ -2285,7 +2581,7 @@ class MainWindow(QMainWindow):
         s.setValue("geometry", self.saveGeometry())
         s.setValue("split_v05", self.main_split.saveState())
         s.setValue("audio_panel", "true" if self.audio_action.isChecked() else "false")
-        self.cfg["rx_was_on"] = bool(self.engine.running and self.cfg.get("source") in ("RTL-SDR", "rtl_tcp", "SoapySDR"))
+        self.cfg["rx_was_on"] = bool(self.engine.running and self.cfg.get("source") in ("RTL-SDR", "rtl_tcp", "SoapySDR", "SDRplay / MSi-SDR (RSP)"))
         self.cfg["vfo_freq"] = self.vfos["A"]["freq"] if self.active_vfo != "A" else self.engine.vfo
         self.cfg["fft_size"] = self.engine.fft_size
         self.cfg["my_locator"] = self.dec_panel.locator.text()

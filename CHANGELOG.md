@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.13.3] — candidata, não publicada
+### Manutenção OTA
+- Quando o manifesto anuncia versão nova, mas o pacote é rejeitado, o aplicativo não abre o navegador automaticamente e explica o problema (URL, tipo, tamanho ou SHA-256).
+- O fluxo válido continua baixando dentro do aplicativo e verifica tamanho e SHA-256 antes de executar o helper; nenhuma restrição de integridade foi reduzida.
+- Testes Qt de regressão para a detecção com pacote ausente e prevenção de abertura de navegador.
+- Nota de migração: clientes v0.13.0 precisam de atualização manual única para v0.13.1 ou superior, pois a validação de URL incorreta já está compilada nos binários antigos.
+### Waterfall
+- Duplo clique na imagem do waterfall sintoniza o ponto RF selecionado e centraliza o VFO sem alterar o nível atual de zoom; o clique simples continua sintonizando e o duplo clique no espectro continua restaurando o zoom total.
+- Restrições de IQ disponível, capacidade do SDR e testes Qt de gesto nativo, pan e seleção inválida; QA cruzado Windows/Linux obrigatório.
+### Status
+- Candidata aguardando conclusão do CI e teste OTA real entre versões Windows. IA IQ/ONNX continua fora da release.
+
+## [0.13.2] — candidata de manutenção, sem publicação confirmada
+### Implementado no código (branch release/stable-v0.13.2)
+- Sintonia no waterfall/espectro respeita os limites da largura IQ realmente adquirida, mesmo com zoom ou pan fora da faixa; mantém arredondamento por passo e associação com o VFO.
+- Arrastar o passband para uma região não adquirida deixa o VFO original inalterado e restaura o marcador.
+- Duplo clique fora das áreas de espectro não interfere no zoom.
+### Testes e distribuição
+- Novos testes Qt sintéticos de cena→RF, limites de IQ, ausência de sinal, passband e limites de arredondamento. **Aprovação do CI Windows e publicação ainda pendentes.**
+- IA neural IQ/ONNX continua isolada no PR #2; RS41, S-meter absoluto e qualidade RF real não foram homologados.
+- A sincronização do site oficial com a release GitHub foi registrada como bloqueio externo na issue PT2VHF-Site #18.
+
+## [0.13.0] — 2026-11-09
+### Implementado no código
+- Ajuste manual do tamanho do LCD em Configurações → Display (50–150%), mantendo proporção de frequência, S-meter, indicadores e teclas; preferência persistida no JSON do usuário.
+- Matriz LCD compactada para mostrar somente bandas confirmadas como suportadas pelo SDR atual; mudança de fonte/dispositivo/recepção direta atualiza visibilidade, sem apagar preferências.
+- Fontes rtl_tcp e SoapySDR verificam alcance informado pelo receptor; arquivo IQ não sintonizável restringe frequências à largura gravada.
+- Reorganização da interface: Decodificação (ADS-B, Sondas, AIS e APRS/DTMF/CTCSS), Ferramentas (Transcrição/Legendas), popup de legendas com apenas texto e remoção da aba principal Satélites.
+### Testes, homologação e publicação
+- Regressões Linux/Qt de navegação, escala, ocultação de bandas e texto do popup. Ainda pendem testes visuais no Windows, SDR físico, carga de CPU e validação de fala real.
+- Radiossondas RS41 continuam sem homologação RF; ADS-B/AIS nativos, SSTV, fonia digital, tradução e demais itens do backlog não estão implementados.
+- Versão somente publicada quando os builds Windows Setup/Portable, SHA-256 e verificação do site/OTA estiverem concluídos.
+
 Todas as mudanças relevantes do PT2VHF SDR Tool.
 
 ## [0.12.0] — 2026-11-08

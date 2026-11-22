@@ -102,6 +102,19 @@ class LCDDisplay(QWidget):
         self.min_freq, self.max_freq = 24_000, 1_766_000_000
         self.band_bar = None
         self._last_scale = 1.0
+        self._preferred_percent = 100
+        self.set_preferred_scale(100)
+
+    def set_preferred_scale(self, percent: int):
+        """Limita o tamanho desejado; o Qt pode reduzi-lo sem alterar a preferência."""
+        percent = max(50, min(150, int(percent)))
+        self._preferred_percent = percent
+        factor = percent / 100.0
+        self.setMaximumSize(round(self.DESIGN_WIDTH * factor),
+                            round(self.DESIGN_HEIGHT * factor))
+        self.updateGeometry()
+        self._position_band_keys()
+        self.update()
 
     def hasHeightForWidth(self):
         return True
@@ -110,7 +123,9 @@ class LCDDisplay(QWidget):
         return max(72, round(width * self.DESIGN_HEIGHT / self.DESIGN_WIDTH))
 
     def sizeHint(self):
-        return QSize(1100, 255)
+        factor = self._preferred_percent / 100.0
+        return QSize(round(self.DESIGN_WIDTH * factor),
+                     round(self.DESIGN_HEIGHT * factor))
 
     def minimumSizeHint(self):
         return QSize(300, 72)

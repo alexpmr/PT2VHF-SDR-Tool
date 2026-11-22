@@ -23,10 +23,12 @@ from ..dsp.receiver import MODES, SAMPLE_RATES
 from ..memory import BAND_PLAN, MemoryBank, MemoryChannel
 from ..memory_regions import RegionMemoryStore
 from ..sources.network_sources import soapy_devices
+from ..sources.mirics import (SOURCE_NAME as RSP_SOURCE, enumerate_rsp_devices,
+                              is_rsp_device, MISSING_DRIVER)
 from ..sources.rtlsdr_source import list_devices
 
 STEPS = [10, 50, 100, 500, 1000, 2500, 5000, 6250, 8330, 9000, 10000, 12500, 25000, 50000, 100000]
-SOURCES = ["RTL-SDR", "Simulador", "rtl_tcp", "SoapySDR", "Arquivo IQ"]
+SOURCES = ["RTL-SDR", RSP_SOURCE, "Simulador", "rtl_tcp", "SoapySDR", "Arquivo IQ"]
 
 
 def fmt_freq(hz: float) -> str:
@@ -52,6 +54,7 @@ class ReceiverPanel(QWidget):
     ppmChanged = Signal(int)
     biasTeeChanged = Signal(bool)
     directSamplingChanged = Signal(int)
+    converterConfigurationChanged = Signal()
 
     def __init__(self, cfg, parent=None):
         super().__init__(parent)
@@ -76,6 +79,9 @@ class ReceiverPanel(QWidget):
         self.refresh.setFixedWidth(30)
         self.refresh.setToolTip("Procurar dispositivos")
         dev_row.addWidget(self.refresh)
+        self.rsp_diag = QPushButton("Diagnóstico RSP")
+        self.rsp_diag.setToolTip("Mostra backends SoapySDRPlay3/Mirics encontrados, sem instalar drivers.")
+        dev_row.addWidget(self.rsp_diag)
         dev_row.addStretch(1)
         form.addRow("Dispositivo:", dev_row)
 
@@ -138,6 +144,32 @@ class ReceiverPanel(QWidget):
         self.direct.addItems(["Desligada", "Ramo I", "Ramo Q (HF RTL-SDR V3)"])
         self.direct.setCurrentIndex(cfg["direct_sampling"])
         gf.addRow("Amostr. direta:", self.direct)
+        self.external_converter = QCheckBox("Usar conversor externo (upconverter)")
+        self.external_converter.setChecked(bool(cfg.get("external_converter_enabled", False)))
+        self.external_converter.setToolTip(
+            "Conversor EXTERNO: RF 7,100 MHz usa 107,100 MHz no hardware com +100 MHz. "
+            "É possível ligar/desligar durante a recepção; o SDR será reiniciado. "
+            "Não usar para o conversor HF interno do RTL-SDR Blog V4.")
+        self.converter_offset = QDoubleSpinBox()
+        self.converter_offset.setRange(-1500.0, 1500.0)
+        self.converter_offset.setDecimals(6)
+        self.converter_offset.setSingleStep(1.0)
+        self.converter_offset.setSuffix(" MHz")
+        self.converter_offset.setValue(float(cfg.get("external_converter_offset_mhz", 100.0)))
+        self.converter_offset.setToolTip(
+            "Frequência do hardware = RF exibida + deslocamento externo. "
+            "Pode ser alterado durante a recepção; o receptor reiniciará automaticamente.")
+        gf.addRow(self.external_converter)
+        gf.addRow("Deslocamento externo:", self.converter_offset)
+        self.converter_preview = QLabel()
+        self.converter_preview.setObjectName("converterPreview")
+        self.converter_preview.setWordWrap(True)
+        self.converter_preview.setStyleSheet("color:#d8dee6; font-size:12px;")
+        gf.addRow("Sintonia RF / SDR:", self.converter_preview)
+        self.converter_hint = QLabel("A alteração do conversor reinicia o SDR automaticamente quando ligado.")
+        self.converter_hint.setWordWrap(True)
+        self.converter_hint.setStyleSheet("color:#9aa6b2;font-size:11px;")
+        gf.addRow(self.converter_hint)
         lay.addWidget(g)
 
         self.info = QLabel("Parado")
@@ -148,6 +180,7 @@ class ReceiverPanel(QWidget):
 
         self.source.currentTextChanged.connect(self._source_changed)
         self.refresh.clicked.connect(self.refresh_devices)
+        self.rsp_diag.clicked.connect(self.show_rsp_diagnostics)
         self.file_btn.clicked.connect(self._browse)
         self.start_btn.toggled.connect(self._toggle)
         self.gain.valueChanged.connect(self._gain)
@@ -155,8 +188,24 @@ class ReceiverPanel(QWidget):
         self.ppm.valueChanged.connect(self.ppmChanged)
         self.bias.toggled.connect(self.biasTeeChanged)
         self.direct.currentIndexChanged.connect(self.directSamplingChanged)
+        self.external_converter.toggled.connect(self._converter_changed)
+        self.converter_offset.valueChanged.connect(self._converter_changed)
         self._source_changed(self.source.currentText())
         self._update_gain_label()
+        self.update_converter_preview(float(cfg.get("vfo_freq", 145.570e6)))
+
+    def _converter_changed(self, *_):
+        self.update_converter_preview(float(self.cfg.get("vfo_freq", 145.570e6)))
+        self.converterConfigurationChanged.emit()
+
+    def update_converter_preview(self, rf_hz: float):
+        enabled = self.external_converter.isChecked() and self.source.currentText() in (
+            "RTL-SDR", "rtl_tcp", "SoapySDR", RSP_SOURCE)
+        offset_hz = self.converter_offset.value() * 1e6 if enabled else 0.0
+        self.converter_preview.setText(
+            f"RF: {rf_hz / 1e6:.6f} MHz  |  SDR: {(rf_hz + offset_hz) / 1e6:.6f} MHz"
+            + ("  (+ conversor externo)" if enabled else "  (sem conversor)")
+        )
 
     def _source_changed(self, name):
         net = name == "rtl_tcp"
@@ -168,6 +217,23 @@ class ReceiverPanel(QWidget):
         self.file_btn.setVisible(fil)
         self.file_label.setVisible(fil)
         self.rate.setEnabled(not fil)
+        self.rsp_diag.setVisible(name == RSP_SOURCE)
+        supported = name in ("RTL-SDR", "rtl_tcp", "SoapySDR", RSP_SOURCE)
+        # Mirics / RSP drivers advertise differing rates. 2.4 MS/s is
+        # a conservative default compatible with the app's 240 kHz IF DSP.
+        if name == RSP_SOURCE:
+            index = self.rate.findData(2_400_000)
+            if index >= 0:
+                self.rate.setCurrentIndex(index)
+            self.rate.setToolTip(
+                "2,4 MS/s é apenas uma taxa inicial; o driver real deve aceitá-la.")
+        else:
+            self.rate.setToolTip("")
+        self.direct.setEnabled(name == "RTL-SDR")
+        self.bias.setEnabled(name in ("RTL-SDR", "rtl_tcp"))
+        self.external_converter.setEnabled(supported)
+        self.converter_offset.setEnabled(supported)
+        self.update_converter_preview(float(self.cfg.get("vfo_freq", 145.570e6)))
         self.refresh_devices()
 
     def refresh_devices(self):
@@ -176,6 +242,23 @@ class ReceiverPanel(QWidget):
         if name == "RTL-SDR":
             devs = list_devices()
             self.device.addItems(devs or ["(nenhum RTL-SDR encontrado)"])
+        elif name == RSP_SOURCE:
+            self.device.setEditable(False)
+            devices = enumerate_rsp_devices()
+            if devices:
+                selected = str(self.cfg.get("soapy_args", ""))
+                chosen = 0
+                for index, (label, descriptor) in enumerate(devices):
+                    self.device.addItem(label, descriptor)
+                    if descriptor == selected:
+                        chosen = index
+                self.device.setCurrentIndex(chosen)
+            else:
+                self.device.addItem("(Nenhum RSP detectado — SDRplay API ou Mirics)", "")
+            self.device.setToolTip(
+                "Exibe somente drivers SoapySDR detectados: SDRplay API "
+                "(SoapySDRPlay3) e Mirics (SoapyMiri/libmirisdr). "
+                "Nenhum driver USB será modificado.")
         elif name == "SoapySDR":
             devs = soapy_devices()
             self.device.setEditable(True)
@@ -184,24 +267,58 @@ class ReceiverPanel(QWidget):
             self.device.addItem({"Simulador": "Banda de 2 m sintética",
                                  "rtl_tcp": "Servidor remoto",
                                  "Arquivo IQ": "WAV estéreo I/Q"}[name])
-        self.device.setEnabled(name in ("RTL-SDR", "SoapySDR"))
+        self.device.setEnabled(name in ("RTL-SDR", "SoapySDR", RSP_SOURCE))
+
+    def show_rsp_diagnostics(self):
+        """Report the Soapy backends actually visible, without touching USB drivers."""
+        devices = enumerate_rsp_devices()
+        if devices:
+            lines = [f"{label} | {descriptor}" for label, descriptor in devices]
+            summary = ("Backends encontrados: " + str(len(devices))
+                       + "\\n\\n" + "\\n".join(lines))
+        else:
+            summary = (
+                "Nenhum backend RSP/Mirics encontrado pelo SoapySDR.\\n\\n"
+                "A API SDRplay por si só não instala o plugin SoapySDRPlay3. "
+                "Para dispositivos Mirics, consulte SoapyMiri/libmirisdr. "
+                "Verifique as dependências com SoapySDRUtil --find.\\n\\n"
+                "Não substitua um driver USB que já funciona com outro software.")
+        QMessageBox.information(self, "Diagnóstico SDRplay / Mirics", summary)
+        return summary
 
     def _browse(self):
         p, _ = QFileDialog.getOpenFileName(self, "Abrir gravação IQ", "", "WAV IQ (*.wav)")
         if p:
             self.file_edit.setText(p)
 
+    def source_options(self):
+        dev = self.device.currentText()
+        selected_source = self.source.currentText()
+        backend_descriptor = str(self.device.currentData() or "") if selected_source == RSP_SOURCE else dev
+        return {
+            "source": self.source.currentText(),
+            "device_index": int(dev.split(":")[0]) if dev[:1].isdigit() else 0,
+            "soapy_args": backend_descriptor if selected_source in ("SoapySDR", RSP_SOURCE) else "",
+            "host": self.host.text(), "port": self.port.value(),
+            "file": self.file_edit.text(), "sample_rate": self.rate.currentData(),
+            "gain": self.current_gain(), "ppm": self.ppm.value(),
+            "external_converter_enabled": self.external_converter.isChecked(),
+            "external_converter_offset_mhz": self.converter_offset.value(),
+        }
+
     def _toggle(self, on):
         if on:
-            dev = self.device.currentText()
-            self.startRequested.emit({
-                "source": self.source.currentText(),
-                "device_index": int(dev.split(":")[0]) if dev[:1].isdigit() else 0,
-                "soapy_args": dev if self.source.currentText() == "SoapySDR" else "",
-                "host": self.host.text(), "port": self.port.value(),
-                "file": self.file_edit.text(), "sample_rate": self.rate.currentData(),
-                "gain": self.current_gain(), "ppm": self.ppm.value(),
-            })
+            options = self.source_options()
+            if options["source"] == RSP_SOURCE:
+                descriptor = options["soapy_args"]
+                props = dict(pair.split("=", 1) for pair in descriptor.split(",") if "=" in pair)
+                if not is_rsp_device(props):
+                    QMessageBox.warning(self, "SDRplay / Mirics", MISSING_DRIVER)
+                    self.start_btn.blockSignals(True)
+                    self.start_btn.setChecked(False)
+                    self.start_btn.blockSignals(False)
+                    return
+            self.startRequested.emit(options)
         else:
             self.stopRequested.emit()
 
@@ -212,6 +329,12 @@ class ReceiverPanel(QWidget):
         self.start_btn.blockSignals(False)
         for w in (self.source, self.device, self.rate, self.host, self.port, self.file_edit):
             w.setEnabled(not running)
+        # Converter settings remain editable while receiving. MainWindow
+        # stops/restarts the source synchronously on a change to avoid mixing
+        # two different local-oscillator mappings in a live IQ stream.
+        supported = self.source.currentText() in ("RTL-SDR", "rtl_tcp", "SoapySDR", RSP_SOURCE)
+        for w in (self.external_converter, self.converter_offset):
+            w.setEnabled(supported)
 
     def current_gain(self):
         return None if self.tuner_agc.isChecked() else self.gain.value() / 10
@@ -347,18 +470,36 @@ class ModePanel(QWidget):
 
 # =============================================================================
 def _compact(widget):
-    """Formulários quebram em duas linhas quando o painel é estreito (rótulo em cima)."""
+    """Keep controls content-sized, left aligned and responsive to small screens.
+
+    Unlike AllNonFixedFieldsGrow, this preserves meaningful widths when the
+    user maximizes the app. Existing user-defined maxima take precedence.
+    Sliders alone remain elastic since they show a continuous value.
+    """
     from PySide6.QtWidgets import QSizePolicy
     for form in widget.findChildren(QFormLayout):
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
-        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-    widgets = [w for cls in (QComboBox, QDoubleSpinBox, QSpinBox, QSlider) for w in widget.findChildren(cls)]
+        form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
+    widgets = [w for cls in (QComboBox, QDoubleSpinBox, QSpinBox, QSlider)
+               for w in widget.findChildren(cls)]
     for w in widgets:
         w.setMinimumWidth(40)
         if w.sizePolicy().horizontalPolicy() == QSizePolicy.Fixed:
             continue
-        w.setSizePolicy(QSizePolicy.Preferred if isinstance(w, QComboBox) else QSizePolicy.Expanding,
-                        w.sizePolicy().verticalPolicy())
+        if isinstance(w, QSlider):
+            w.setSizePolicy(QSizePolicy.Expanding, w.sizePolicy().verticalPolicy())
+            continue
+        if isinstance(w, QComboBox):
+            w.setSizeAdjustPolicy(QComboBox.AdjustToContents)
+            if w.maximumWidth() > 420:
+                w.setMaximumWidth(420)
+        elif isinstance(w, (QSpinBox, QDoubleSpinBox)):
+            if w.maximumWidth() > 180:
+                w.setMaximumWidth(180)
+        w.setSizePolicy(QSizePolicy.Preferred, w.sizePolicy().verticalPolicy())
+    for w in widget.findChildren(QLineEdit):
+        if w.maximumWidth() > 430:
+            w.setMaximumWidth(430)
 
 
 class AudioPanel(QWidget):
