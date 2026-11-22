@@ -255,7 +255,19 @@ class MainWindow(QMainWindow):
         self.fav_bar.refresh(self.bank.channels, self.engine.vfo)
         cl.addWidget(self.fav_bar)
         self.wf_toolbar = self._build_wf_toolbar()
-        cl.addWidget(self.wf_toolbar)
+        # Keep the sidebar control visible even when the toolbar overflows.
+        from PySide6.QtWidgets import QHBoxLayout
+        self.wf_tools_row = QWidget()
+        tools_layout = QHBoxLayout(self.wf_tools_row)
+        tools_layout.setContentsMargins(0, 0, 0, 0)
+        tools_layout.setSpacing(4)
+        tools_layout.addWidget(self.wf_toolbar, 1)
+        self.sidebar_btn = QPushButton("◀ Ocultar painel")
+        self.sidebar_btn.setToolTip(
+            "Ocultar ou mostrar Volume, AGC, Equalizador e Gravação sem interromper o SDR (Ctrl+Shift+A)")
+        self.sidebar_btn.setMinimumWidth(122)
+        tools_layout.addWidget(self.sidebar_btn)
+        cl.addWidget(self.wf_tools_row)
         self.wf = SpectrumWaterfall()
         self.wf.set_colormap(self.cfg["wf_colormap"])
         self.wf.set_levels(self.cfg["wf_min_db"], self.cfg["wf_max_db"])
@@ -489,8 +501,13 @@ class MainWindow(QMainWindow):
             self.addAction(a)
             self._tab_actions.append(a)
         self.audio_action = QAction("Painel de áudio / DSP", self, checkable=True, checked=True)
+        self.audio_action.setShortcut(QKeySequence("Ctrl+Shift+A"))
         self.audio_action.toggled.connect(self.audio_scroll.setVisible)
+        self.audio_action.toggled.connect(self._sync_sidebar_button)
+        self.sidebar_btn.clicked.connect(lambda: self.audio_action.setChecked(not self.audio_action.isChecked()))
         v.addAction(self.audio_action)
+        self.addAction(self.audio_action)
+        self._sync_sidebar_button(True)
         v.addSeparator()
         self.pres_action = QAction("Modo apresentação (tela cheia)", self, checkable=True,
                                    shortcut=QKeySequence("F11"))
@@ -535,6 +552,15 @@ class MainWindow(QMainWindow):
                             "Downloads e atualizações oficiais somente em "
                             "<a href='https://www.pt2vhf.com/sdr'>www.pt2vhf.com</a>."))
         h.addAction(a)
+
+    def _sync_sidebar_button(self, visible: bool):
+        """Keep the right-panel toggle and menu action in sync."""
+        self.sidebar_btn.setText("◀ Ocultar painel" if visible else "▶ Mostrar painel")
+        self.sidebar_btn.setToolTip(
+            ("Ocultar o painel direito" if visible else "Mostrar o painel direito")
+            + " (Ctrl+Shift+A)")
+        # The existing QSettings 'audio_panel' entry persists the preference.
+        # QSplitter naturally transfers all available width to FFT/waterfall.
 
     def _language_selected(self, *_):
         code = self.language_combo.currentData()
@@ -2421,12 +2447,12 @@ class MainWindow(QMainWindow):
             if minimal:
                 self.tabs.setCurrentIndex(0)
                 for w in (self.menuBar(), self.statusBar(), self.header, self.tabs.tabBar(), self.audio_scroll,
-                          self.fav_bar, self.wf_toolbar):
+                          self.fav_bar, self.wf_tools_row):
                     w.setVisible(False)
             self.showFullScreen()
             self.statusBar().showMessage("Modo apresentação — Esc ou F11 para sair", 6000)
         else:
-            for w in (self.menuBar(), self.statusBar(), self.header, self.tabs.tabBar(), self.fav_bar, self.wf_toolbar):
+            for w in (self.menuBar(), self.statusBar(), self.header, self.tabs.tabBar(), self.fav_bar, self.wf_tools_row):
                 w.setVisible(True)
             self.audio_scroll.setVisible(getattr(self, "_pres_audio", True) and self.audio_action.isChecked())
             self.showMaximized() if getattr(self, "_pres_was_max", False) else self.showNormal()
