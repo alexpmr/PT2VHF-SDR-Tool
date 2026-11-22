@@ -463,8 +463,8 @@ class UpdateController(QObject):
                                 "www.pt2vhf.com/sdr ou tente de novo pelo botão de versão.")
 
 
-def show_welcome(parent):
-    """Display PT2VHF banner splash while retaining existing startup policy."""
+def show_welcome(parent, on_close=None):
+    """Display PT2VHF banner splash (same as Sat Tool) keeping the startup policy."""
     from .welcome import show_welcome as show_splash
-    return show_splash(parent)
+    return show_splash(parent, on_close=on_close)
 
