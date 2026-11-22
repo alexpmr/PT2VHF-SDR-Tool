@@ -1649,8 +1649,9 @@ class MainWindow(QMainWindow):
     # ================================================================== anúncio / OTA
     def _startup_notices(self):
         from .assist_panels import show_welcome
-        show_welcome(self)
-        self.updates.show_last_result()
+        # Splash igual ao do Sat Tool: camada não modal dentro da janela; o aviso da
+        # atualização anterior (se houver) só aparece depois que o splash fecha.
+        show_welcome(self, on_close=lambda: self.updates.show_last_result())
 
     def operation_busy(self) -> str:
         """Motivo para adiar a atualização automática, ou '' se o programa está livre."""
