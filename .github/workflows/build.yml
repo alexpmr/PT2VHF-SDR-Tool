@@ -269,27 +269,29 @@ jobs:
       - name: Dependencias do diagnostico (sem instalador)
         run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
       - name: A/B faulthandler (branch e main)
+        shell: python
         run: |
-          $results = @()
-          foreach ($case in @(
-              @{ name = "branch-plain"; dir = "."; fh = $false },
-              @{ name = "branch-faulthandler"; dir = "."; fh = $true },
-              @{ name = "main-plain"; dir = "main-tree"; fh = $false },
-              @{ name = "main-faulthandler"; dir = "main-tree"; fh = $true })) {
-            Push-Location $case.dir
-            $pyArgs = @()
-            if ($case.fh) { $pyArgs += @("-X", "faulthandler") }
-            $pyArgs += "scripts/run_tests.py"
-            $log = Join-Path $env:RUNNER_TEMP "$($case.name).log"
-            & python @args *>&1 | Tee-Object -FilePath $log | Select-Object -Last 15
-            $code = $LASTEXITCODE
-            Pop-Location
-            $fatal = [bool](Select-String -Path $log -SimpleMatch "Windows fatal exception" -Quiet)
-            $summary = (Select-String -Path $log -Pattern "\d+ passed" | Select-Object -Last 1).Line
-            $results += "CI-FH-AB case=$($case.name) exit=$code fatal_marker=$([int]$fatal) summary=[$summary]"
-          }
-          $results | ForEach-Object { Write-Host $_ }
-          exit 0
+          import os, subprocess, sys
+          cases = [
+              ("branch-plain", ".", False),
+              ("branch-faulthandler", ".", True),
+              ("main-plain", "main-tree", False),
+              ("main-faulthandler", "main-tree", True),
+          ]
+          results = []
+          for name, cwd, fh in cases:
+              cmd = [sys.executable] + (["-X", "faulthandler"] if fh else []) + ["scripts/run_tests.py"]
+              proc = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True, errors="replace")
+              lines = proc.stdout.splitlines()
+              print(f"::group::{name}")
+              print("\n".join(lines[-25:]))
+              print("::endgroup::")
+              fatal = any("Windows fatal exception" in l for l in lines)
+              summary = next((l for l in reversed(lines) if " passed" in l), "")
+              results.append(f"CI-FH-AB case={name} exit={proc.returncode} "
+                             f"fatal_marker={int(fatal)} summary=[{summary.strip()}]")
+          print("\n".join(results))
 
   windows-exe:
     # Manual e commit [build-windows] SOMENTE na main; branch experimental nao gera instaladores.
