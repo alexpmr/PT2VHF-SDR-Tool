@@ -112,6 +112,38 @@ def test_pytest_runner_forwards_selection_and_preserves_exit(monkeypatch):
     assert seen == [["-q", "-k", "iq_"], ("exit", 0)]
 
 
+def test_runner_disables_faulthandler_only_after_pytest_before_hard_exit(monkeypatch):
+    import sys
+    import types
+    import faulthandler
+    import scripts.run_tests as runner
+
+    events = []
+    state = {"enabled": True}
+
+    def fake_pytest_main(args):
+        # During the whole test session faulthandler must stay enabled.
+        events.append(("pytest", state["enabled"]))
+        return 3
+
+    def fake_disable():
+        state["enabled"] = False
+        events.append(("disable",))
+
+    monkeypatch.setitem(sys.modules, "pytest", types.SimpleNamespace(main=fake_pytest_main))
+    monkeypatch.setattr(sys, "argv", ["run_tests.py"])
+    monkeypatch.delenv("PT2VHF_CI_QT_DISPOSE_AFTER_PYTEST", raising=False)
+    monkeypatch.delenv("PT2VHF_CI_NATIVE_LIFECYCLE", raising=False)
+    monkeypatch.setenv("PT2VHF_TEST_EXIT_MODE", "hard")
+    monkeypatch.setattr(faulthandler, "is_enabled", lambda: state["enabled"])
+    monkeypatch.setattr(faulthandler, "disable", fake_disable)
+    monkeypatch.setattr(runner.os, "_exit", lambda code: events.append(("exit", code)))
+    runner.main()
+    # pytest ran with faulthandler on, it was disabled afterwards, and the
+    # pytest status (non-zero here) is still the process exit status.
+    assert events == [("pytest", True), ("disable",), ("exit", 3)]
+
+
 def test_windows_isolation_runs_only_after_failure_on_experimental_branch():
     from pathlib import Path
 

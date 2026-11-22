@@ -55,6 +55,17 @@ def main():
         sys.stderr.flush()
     if probe is not None:
         probe("before-hard-exit")
+    # pytest.main() has returned and its status is final. On Windows, the
+    # DLL detach performed by os._exit raises a first-chance access violation
+    # that a native module handles itself: the process still exits with the
+    # pytest status (CI A/B run 45079275950: exit=0 on this branch *and* on
+    # main, with or without -X faulthandler). faulthandler's vectored handler
+    # prints such handled exceptions too, so it is turned off only here,
+    # after every test has run. Crashes during tests are still reported.
+    import faulthandler
+    if faulthandler.is_enabled():
+        faulthandler.disable()
+        print("CI-FAULTHANDLER disabled=before-hard-exit", flush=True)
     os._exit(int(result))
 
 
