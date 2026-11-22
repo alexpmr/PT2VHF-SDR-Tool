@@ -14,10 +14,6 @@ on:
         description: "Diagnósticos nativos repetitivos somente sob hipótese nova (branch experimental)"
         type: boolean
         default: false
-      faulthandler_ab:
-        description: "A/B faulthandler x main no Windows (diagnóstico único, branch de trabalho)"
-        type: boolean
-        default: false
 
 # Superseded experimental push runs waste Windows runner minutes and cannot
 # certify the current HEAD. Do not cancel main/release or PR event checks.
@@ -240,58 +236,6 @@ jobs:
         run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
       - name: A/B de encerramento nativo Windows (apenas diagnostico)
         run: python scripts/ci_windows_terminate_probe.py
-
-  windows-faulthandler-ab:
-    # Diagnostic only. Hypothesis: the post-pytest "access violation" is also
-    # present on main but only *printed* when -X faulthandler is enabled; main's
-    # Windows lane runs scripts/run_tests.py without faulthandler. Records the
-    # real child exit codes for branch/main x faulthandler on/off. Never gates
-    # releases and never makes windows-tests green.
-    if: github.event_name == 'workflow_dispatch' && inputs.faulthandler_ab == true && github.ref != 'refs/heads/main'
-    runs-on: windows-2022
-    timeout-minutes: 40
-    permissions:
-      contents: read
-    env:
-      QT_QPA_PLATFORM: offscreen
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          path: main-tree
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Dependencias do diagnostico (sem instalador)
-        run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
-      - name: A/B faulthandler (branch e main)
-        shell: python
-        run: |
-          import os, subprocess, sys
-          cases = [
-              ("branch-plain", ".", False),
-              ("branch-faulthandler", ".", True),
-              ("main-plain", "main-tree", False),
-              ("main-faulthandler", "main-tree", True),
-          ]
-          results = []
-          for name, cwd, fh in cases:
-              cmd = [sys.executable] + (["-X", "faulthandler"] if fh else []) + ["scripts/run_tests.py"]
-              proc = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT, text=True, errors="replace")
-              lines = proc.stdout.splitlines()
-              print(f"::group::{name}")
-              print("\n".join(lines[-25:]))
-              print("::endgroup::")
-              fatal = any("Windows fatal exception" in l for l in lines)
-              summary = next((l for l in reversed(lines) if " passed" in l), "")
-              results.append(f"CI-FH-AB case={name} exit={proc.returncode} "
-                             f"fatal_marker={int(fatal)} summary=[{summary.strip()}]")
-          print("\n".join(results))
 
   windows-exe:
     # Manual e commit [build-windows] SOMENTE na main; branch experimental nao gera instaladores.
