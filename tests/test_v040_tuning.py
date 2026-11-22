@@ -74,8 +74,17 @@ def test_updater_select_and_kind(tmp_path):
     except updater.UpdateError:
         pass
     assert updater.install_kind(frozen=False) == "source"
-    assert updater.install_kind(Path(tmp_path / "PT2VHF-SDR-Tool-v0.4.0-Win11-x64-Portable.exe"), frozen=True) == "portable"
-    assert updater.install_kind(Path(tmp_path / "PT2VHF-SDR-Tool.exe"), frozen=True) == "installer"
+    from unittest.mock import patch
+    portable = Path(tmp_path / "PT2VHF-SDR-Tool-v0.4.0-Win11-x64-Portable.exe")
+    installer = Path(tmp_path / "PT2VHF-SDR-Tool.exe")
+    # Windows bundles can self-update; Linux/macOS must never launch a .exe.
+    # Exercise both platform branches regardless of the CI runner OS.
+    with patch.object(updater.sys, "platform", "win32"):
+        assert updater.install_kind(portable, frozen=True) == "portable"
+        assert updater.install_kind(installer, frozen=True) == "installer"
+    with patch.object(updater.sys, "platform", "linux"):
+        assert updater.install_kind(portable, frozen=True) == "manual"
+        assert updater.install_kind(installer, frozen=True) == "manual"
     (tmp_path / updater.RESULT_FILE).write_text("ok\n0.4.0\nAtualizado\n", encoding="utf-8")
     assert updater.read_update_result(tmp_path) == ("ok", "0.4.0", "Atualizado")
     assert updater.read_update_result(tmp_path) is None

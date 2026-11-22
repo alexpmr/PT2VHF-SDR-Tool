@@ -7,7 +7,7 @@ import time
 from ..live_caption import model_installed
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog,
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDialog,
                                QHBoxLayout, QLabel, QPushButton, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
 
@@ -19,6 +19,11 @@ class LiveCaptionsPanel(QWidget):
     def __init__(self, cfg, parent=None):
         super().__init__(parent)
         main = QVBoxLayout(self)
+        # Separate settings from the caption history: both are hosted under Ferramentas.
+        self.settings_widget = QWidget()
+        settings_layout = QVBoxLayout(self.settings_widget)
+        self.enable_live = QCheckBox("Exibir legendas em tempo real no receptor")
+        settings_layout.addWidget(self.enable_live)
         top = QHBoxLayout()
         top.addWidget(QLabel("Modelo local:"))
         self.model = QComboBox()
@@ -49,9 +54,9 @@ class LiveCaptionsPanel(QWidget):
         export = QPushButton("Exportar CSV")
         export.clicked.connect(self.export_csv)
         top.addWidget(export)
-        main.addLayout(top)
+        settings_layout.addLayout(top)
         self.model_status = QLabel("")
-        main.addWidget(self.model_status)
+        settings_layout.addWidget(self.model_status)
         self.model.currentIndexChanged.connect(self.refresh_model_status)
         self.refresh_model_status()
         note = QLabel("Reconhecimento local com faster-whisper: escolha e baixe o modelo uma vez. "
@@ -59,7 +64,8 @@ class LiveCaptionsPanel(QWidget):
                       "A legenda é gerada em blocos de poucos segundos, não palavra a palavra. "
                       "Tradução automática ainda não está disponível.")
         note.setWordWrap(True)
-        main.addWidget(note)
+        settings_layout.addWidget(note)
+        settings_layout.addStretch(1)
         self.table = QTableWidget(0, len(self.HEADERS))
         self.table.setHorizontalHeaderLabels(self.HEADERS)
         self.table.verticalHeader().setVisible(False)

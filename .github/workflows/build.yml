@@ -258,6 +258,8 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Testes no Windows
         run: python scripts/run_tests.py
+      - name: Smoke OTA portátil (helper, backup e falha segura)
+        run: .\scripts\test_ota_windows.ps1
       - name: Versão
         id: ver
         run: |
@@ -308,6 +310,10 @@ jobs:
           copy /y COPYING-LGPL %GITHUB_WORKSPACE%\drivers\libwdi-COPYING-LGPL.txt
           %GITHUB_WORKSPACE%\drivers\wdi-simple.exe --help | findstr /C:"WinUSB" || exit /b 1
       - name: PyInstaller (pasta + portátil)
+        env:
+          PT2VHF_RELEASE_TEXT_SPLASH: ${{ (github.head_ref == 'release/stable-v1.0.2-rsp1-20261115' || github.head_ref == 'fix/ota-launch-103-20261115' || github.head_ref == 'release/stable-v1.0.4-backlog-20261116' || github.head_ref == 'release/stable-v1.0.5-verified-20261119' || github.head_ref == 'release/stable-v1.0.6-waterfall-20261122') && '1' || '0' }}
+          # Only allow the missing splash in this isolated QA PR, never releases.
+          PT2VHF_QA_ALLOW_MISSING_BANNER: ${{ (github.head_ref == 'release/stable-v1-windows-qa-20261114' || github.head_ref == 'release/stable-v1-upconverter-fix-20261114') && '1' || '0' }}
         run: pyinstaller --noconfirm pt2vhf.spec
       - name: Autoteste dos executáveis
         run: |
@@ -315,6 +321,22 @@ jobs:
             $p = Start-Process -FilePath $exe -ArgumentList "--selftest" -Wait -PassThru
             Get-Content "$env:TEMP\pt2vhf-sdr-selftest.log"
             if ($p.ExitCode -ne 0) { throw "Autoteste falhou: $exe" }
+          }
+      - name: Native OTA helper launch probe in packaged Setup and Portable executables
+        run: |
+          foreach ($exe in @("dist\\PT2VHF-SDR-Tool\\PT2VHF-SDR-Tool.exe", "dist\\PT2VHF-SDR-Tool-Portable.exe")) {
+            $log = Join-Path $env:TEMP "PT2VHF-SDR-Tool-ota-probe-result.txt"
+            Remove-Item -LiteralPath $log -Force -ErrorAction SilentlyContinue
+            $p = Start-Process -FilePath $exe -ArgumentList "--ota-helper-qa" -Wait -PassThru
+            if ($p.ExitCode -ne 0) {
+              Get-Content "$env:TEMP\\PT2VHF-SDR-Tool-ota-launch.log" -ErrorAction SilentlyContinue
+              Get-Content $log -ErrorAction SilentlyContinue
+              throw "OTA real PowerShell spawn/ACK probe failed: $exe, code $($p.ExitCode)"
+            }
+            if (-not (Test-Path $log)) { throw "OTA probe report missing" }
+            $result = Get-Content $log -Raw
+            if ($result -notmatch 'OTA_HELPER_PROBE=PASS') { throw "OTA probe did not pass: $result" }
+            Write-Host "OTA_HELPER_NATIVE_PROBE=PASS for $exe"
           }
       - name: Instalador (Inno Setup)
         run: |
@@ -333,6 +355,8 @@ jobs:
           $p = Start-Process -FilePath "$dir\PT2VHF-SDR-Tool.exe" -ArgumentList "--selftest" -Wait -PassThru
           Get-Content "$env:TEMP\pt2vhf-sdr-selftest.log"
           if ($p.ExitCode -ne 0) { throw "Programa instalado falhou no autoteste" }
+      - name: Smoke OTA Setup real (instalação, restart e falha segura)
+        run: .\scripts\test_ota_setup_windows.ps1 -Version "${{ steps.ver.outputs.version }}"
       - name: Pacotes finais e SHA-256
         run: |
           $v = "${{ steps.ver.outputs.version }}"
