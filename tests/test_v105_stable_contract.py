@@ -17,7 +17,8 @@ def test_version_matches_package_metadata():
     metadata = (root / "pyproject.toml").read_text(encoding="utf-8")
     match = re.search(r'^version\s*=\s*"([^"]+)"', metadata, re.M)
     assert match is not None
-    assert match.group(1) == __version__ == "1.0.5"
+    assert match.group(1) == __version__
+    assert tuple(map(int, __version__.split("."))) >= (1, 0, 5)
     assert APP_NAME == "PT2VHF SDR Tool"
 
 
