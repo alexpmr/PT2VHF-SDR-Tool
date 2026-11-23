@@ -1,5 +1,17 @@
 # Backlog — PT2VHF SDR Tool
 
+## v1.0.7 — Decodificadores embarcados e splash do Sat Tool (23/11/2026)
+
+**Origem:** branch `release/stable-v1.0.7-decoders-20261123`, a partir da v1.0.6 publicada (tag `v1.0.6`), com merge dos PRs #29 (decodificadores) e #28 (splash). Nada da branch experimental IQ/ONNX foi incluído.
+
+- **RS41:** fsk_demod (LGPL-2.1) e rs41mod (GPL-3.0) compilados no CI e embarcados em `_internal/sonde_decoders`, com licenças e fonte correspondente; detecção automática (caminho do usuário > embarcado > PATH).
+- **ADS-B:** decodificador Mode S nativo; sintoniza 1090 MHz e eleva a amostragem para 2,4 MS/s quando necessário.
+- **AIS:** AIS-catcher v0.71 (GPL-3.0) embarcado, alimentado por rtl_tcp local 127.0.0.1 em porta efêmera.
+- **ACARS:** decodificador nativo das três frequências 131,550/131,725/131,825 MHz; nova aba Decodificação > ACARS.
+- Um modo por vez no mesmo SDR (decisão do mantenedor, sem segundo dongle).
+- **Splash:** banner oficial igual ao do Sat Tool, não modal.
+- **Evidência:** autoteste do executável Windows com sinais **sintéticos** (RS41, ADS-B, ACARS, AIS). **Homologação com RF real continua pendente** para os quatro modos; issue #1 (RS41) só fecha com IQ e telemetria reais. Crash #8, OTA #18 e RSP físico seguem abertos.
+
 ## v1.0.6 — Correções do waterfall e painel lateral (candidata em 22/11/2026)
 
 **Escopo de entrega:** issues #23 e #24 e solicitação de recolher o painel direito do Receptor. Esta candidata **não encerra todo o backlog histórico**; crash Windows #8, OTA em equipamento do usuário #18, recepção RS41 #1, homologação RSP físico e IQ/ONNX experimental permanecem pendentes de evidências específicas.

@@ -1,6 +1,9 @@
 # Changelog
 
-## [Não lançado] — decodificadores RS41, ADS-B, AIS e ACARS pelo próprio SDR (PR para release/stable-v1.0.6)
+## [1.0.7] — 23/11/2026 — decodificadores embarcados e splash do Sat Tool
+### Splash
+- Mesmo splash do Sat Tool: banner oficial PT2VHF (`pt2vhf/assets/branding/welcome-banner.jpg`) em camada não modal, embarcado no Setup e no Portable (PR #28).
+
 ### ADS-B, AIS e ACARS (mesmo SDR, um modo por vez)
 - **ADS-B**: decodificador Mode S nativo (DF17/18, CRC-24 com correção de 1 bit, identificação, posição CPR global, altitude barométrica, velocidade). O app sintoniza 1090 MHz e, se preciso, reabre o SDR a 2,4 MS/s. Validado com vetores públicos de Mode S e IQ sintético.
 - **AIS**: AIS-catcher v0.71 (GPL-3.0) embarcado. O IQ do SDR é reduzido a 288 kS/s em 162 MHz e servido por rtl_tcp local (127.0.0.1, porta efêmera); no Windows não se usa stdin porque o AIS-catcher lê `std::cin` em modo texto. Pacote oficial x64 com SHA-256 fixo, runtime MSVC app-local, licenças e fonte (git archive do commit) em `_internal/ais_catcher`.
