@@ -58,8 +58,24 @@ def compress_tgz(source: Path, output: Path) -> Path:
     return output
 
 
-def checksums(files: list[Path]) -> Path:
-    listing = RELEASE / "SHA256SUMS.txt"
+DECODERS = ("fsk_demod", "rs41mod", "AIS-catcher")
+
+
+def assert_decoders(source: Path) -> list[Path]:
+    """RS41 e AIS precisam dos executáveis embarcados e executáveis."""
+    found = []
+    for name in DECODERS:
+        hits = [p for p in source.rglob(name)
+                if p.is_file() and os.access(p, os.X_OK)
+                and p.parent.name in ("sonde_decoders", "ais_catcher")]
+        if not hits:
+            raise FileNotFoundError(f"Decodificador embarcado ausente no pacote: {name}")
+        found.append(hits[0])
+    return found
+
+
+def checksums(files: list[Path], name: str = "SHA256SUMS.txt") -> Path:
+    listing = RELEASE / name
     with listing.open("w", encoding="ascii") as out:
         for file in files:
             with file.open("rb") as handle:
@@ -77,6 +93,7 @@ def linux_packages(version: str, arch: str) -> list[Path]:
     app = DIST / APP_ID
     assert (app / APP_ID).is_file()
     assert_banner(app)
+    assert_decoders(app)
     RELEASE.mkdir(exist_ok=True)
     base = f"PT2VHF-SDR-Tool-v{version}-Linux-{normalized}"
     tgz = RELEASE / f"{base}.tgz"
@@ -131,6 +148,7 @@ def linux_packages(version: str, arch: str) -> list[Path]:
         with tempfile.TemporaryDirectory(prefix="pt2vhf-verify-") as dest:
             subprocess.run(["dpkg-deb", "-x", str(deb), dest], check=True)
             assert_banner(Path(dest) / "opt" / APP_ID)
+            assert_decoders(Path(dest) / "opt" / APP_ID)
             assert (Path(dest) / "usr/bin" / APP_ID).exists()
     return [deb, tgz]
 
@@ -144,6 +162,7 @@ def macos_packages(version: str, arch: str) -> list[Path]:
     app = DIST / (TITLE + ".app")
     assert (app / "Contents/Info.plist").is_file()
     assert_banner(app)
+    assert_decoders(app)
     RELEASE.mkdir(exist_ok=True)
     base = f"PT2VHF-SDR-Tool-v{version}-macOS-{normalized}"
     tarball = RELEASE / (base + ".app.tgz")
@@ -156,7 +175,9 @@ def macos_packages(version: str, arch: str) -> list[Path]:
         (staging / "Applications").symlink_to("/Applications", target_is_directory=True)
         (staging / "README.txt").write_text(
             "Drag PT2VHF SDR Tool.app to Applications.\n"
-            "This developer preview is unsigned and not notarized by Apple.\n"
+            "This build is unsigned and not notarized by Apple. On first launch,\n"
+            "right-click the app and choose Open, or run:\n"
+            "  xattr -dr com.apple.quarantine \"/Applications/PT2VHF SDR Tool.app\"\n"
             "Official site: https://www.pt2vhf.com\n",
             encoding="utf-8")
         subprocess.run(["hdiutil", "create", "-volname", TITLE, "-srcfolder",
@@ -174,7 +195,8 @@ def main() -> None:
     generated = (linux_packages(version, machine)
                  if args.platform == "linux"
                  else macos_packages(version, machine))
-    sha = checksums(generated)
+    normalized, _ = arch_names(machine)
+    sha = checksums(generated, f"SHA256SUMS-{args.platform}-{normalized}.txt")
     for item in [*generated, sha]:
         print(f"PACKAGE_OK {item} ({item.stat().st_size} bytes)", flush=True)
 

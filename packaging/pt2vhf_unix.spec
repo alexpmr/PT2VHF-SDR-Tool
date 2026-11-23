@@ -51,6 +51,30 @@ try:
 except (ImportError, ModuleNotFoundError, ValueError):
     pass
 
+# Decodificadores externos embarcados (mesmo modelo do Windows), compilados
+# nativamente no CI desta plataforma:
+#   sonde_decoders/  fsk_demod (LGPL-2.1) + rs41mod (GPL-3.0)  <- build_sonde_decoders.sh native
+#   ais_catcher/     AIS-catcher (GPL-3.0)                     <- prepare_ais_catcher.sh native
+# Executáveis entram como "binaries" para o PyInstaller coletar e relocar as
+# bibliotecas dinâmicas de que dependem; licenças e fonte entram como dados.
+DECODER_EXECUTABLES = {"fsk_demod", "rs41mod", "AIS-catcher"}
+for bundle in ("sonde_decoders", "ais_catcher"):
+    bundle_dir = ROOT / "packaging" / bundle
+    if not bundle_dir.is_dir():
+        if os.environ.get("PT2VHF_ALLOW_MISSING_DECODERS") == "1":
+            continue
+        raise FileNotFoundError(
+            f"packaging/{bundle} ausente. Rode build_sonde_decoders.sh native / "
+            "prepare_ais_catcher.sh native antes do PyInstaller.")
+    for path in bundle_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        dest = str(path.parent.relative_to(ROOT / "packaging"))
+        if path.name in DECODER_EXECUTABLES:
+            binaries.append((str(path), dest))
+        else:
+            datas.append((str(path), dest))
+
 EXCLUDES = [
     "tkinter", "pytest", "IPython",
     "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets",
