@@ -108,11 +108,21 @@ jobs:
       - name: Decodificadores nativos (RS41 e AIS-catcher)
         env:
           MACOSX_DEPLOYMENT_TARGET: "13.0"
+          # Só o cliente rtl_tcp é usado: nada de bibliotecas do Homebrew (feitas
+          # para o macOS do runner) dentro do pacote.
+          AIS_CMAKE_ARGS: >-
+            -DOPENSSL=OFF -DZMQ=OFF -DPSQL=OFF -DSOXR=OFF -DSAMPLERATE=OFF
+            -DRTLSDR=OFF -DAIRSPY=OFF -DAIRSPYHF=OFF -DHACKRF=OFF -DSDRPLAY=OFF -DHYDRASDR=OFF
         run: |
           bash packaging/build_sonde_decoders.sh native packaging/sonde_decoders
           bash packaging/prepare_ais_catcher.sh native packaging/ais_catcher
           ls -la packaging/sonde_decoders packaging/ais_catcher
-          otool -L packaging/ais_catcher/AIS-catcher packaging/sonde_decoders/rs41mod
+          for b in packaging/ais_catcher/AIS-catcher packaging/sonde_decoders/fsk_demod packaging/sonde_decoders/rs41mod; do
+            otool -L "$b"
+            if otool -L "$b" | tail -n +2 | grep -Ev '^\s+(/usr/lib/|/System/)'; then
+              echo "::error::$b depende de biblioteca fora do sistema"; exit 1
+            fi
+          done
       - name: Testes de empacotamento
         run: python -m pytest -q tests/test_package_unix_v1.py
       - name: PyInstaller (.app)

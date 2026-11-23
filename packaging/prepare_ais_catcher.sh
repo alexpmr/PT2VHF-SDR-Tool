@@ -46,7 +46,9 @@ case "$TARGET" in
     [ -f "$OUT/AIS-catcher.exe" ] || { echo "AIS-catcher.exe ausente no pacote" >&2; exit 1; }
     ;;
   native)
-    cmake -S "$WORK/ais" -B "$WORK/build" -DCMAKE_BUILD_TYPE=Release >/dev/null
+    # AIS_CMAKE_ARGS: opções extras (ex.: macOS desliga OpenSSL/ZMQ do Homebrew).
+    # shellcheck disable=SC2086
+    cmake -S "$WORK/ais" -B "$WORK/build" -DCMAKE_BUILD_TYPE=Release ${AIS_CMAKE_ARGS:-} >/dev/null
     cmake --build "$WORK/build" -j "$(nproc 2>/dev/null || echo 2)" >/dev/null
     cp "$WORK/build/AIS-catcher" "$OUT/"
     mkdir -p "$OUT/Licenses"; cp "$WORK/ais/LICENSE" "$OUT/Licenses/AIS-catcher"
