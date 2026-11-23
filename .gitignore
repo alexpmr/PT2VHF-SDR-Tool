@@ -12,3 +12,4 @@ venv/
 drivers/
 packaging/rtlsdr_blog/
 release/
+packaging/sonde_decoders/

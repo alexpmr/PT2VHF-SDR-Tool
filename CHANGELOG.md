@@ -1,5 +1,11 @@
 # Changelog
 
+## [Não lançado] — decodificadores RS41 embarcados (PR para release/stable-v1.0.6)
+- Setup e Portable Windows passam a incluir fsk_demod (codec2, LGPL-2.1) e rs41mod (rs1729/radiosonde_auto_rx, GPL-3.0), compilados no CI a partir de commit fixado, com textos de licença e código-fonte correspondente em `_internal/sonde_decoders`.
+- Aba Sondas > Recepção RF usa automaticamente a cópia embarcada; caminho configurado pelo usuário tem prioridade e não cai silenciosamente para outra cópia; PATH fica como último recurso.
+- Executáveis Windows forçam stdin/stdout binários (`packaging/sonde_win_binary_io.c`), evitando corrupção de IQ em pipes.
+- Autoteste do executável roda um quadro RS41 **sintético** (CRC e Reed-Solomon válidos) por IQ -> fsk_demod -> rs41mod -> JSON. Não substitui captura IQ real de sonda: homologação RF continua pendente.
+
 ## [0.13.3] — candidata, não publicada
 ### Manutenção OTA
 - Quando o manifesto anuncia versão nova, mas o pacote é rejeitado, o aplicativo não abre o navegador automaticamente e explica o problema (URL, tipo, tamanho ou SHA-256).

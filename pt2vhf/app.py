@@ -188,6 +188,20 @@ def selftest() -> int:
     except Exception as ex:  # noqa: BLE001
         check(f"Interface web ({ex})", False)
     try:
+        from .sonde_rx import locate_binary, synthetic_pipeline_check
+        tools = {n: locate_binary(n) for n in ("fsk_demod", "rs41mod")}
+        bundled = all(origin == "embarcado" and path for path, origin in tools.values())
+        if getattr(sys, "frozen", False):
+            check("Decodificadores RS41 embarcados (fsk_demod, rs41mod)", bundled)
+        if all(path for path, _ in tools.values()):
+            frames = synthetic_pipeline_check(tools["fsk_demod"][0], tools["rs41mod"][0])
+            check(f"Pipeline RS41 sintético IQ->fsk_demod->rs41mod ({len(frames)} quadro(s) JSON)",
+                  len(frames) >= 2 and all(f.get("id") == "T1234567" for f in frames))
+        else:
+            say("[INFO] Decodificadores RS41 ausentes neste ambiente (execução pelo código-fonte)")
+    except Exception as ex:  # noqa: BLE001
+        check(f"Decodificadores RS41 ({ex})", False)
+    try:
         from pyrnnoise import RNNoise
         import numpy as np
         den = RNNoise(sample_rate=48000)

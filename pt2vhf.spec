@@ -46,6 +46,19 @@ else:
 for f in ("drivers/wdi-simple.exe", "drivers/libwdi-COPYING-LGPL.txt"):
     if os.path.isfile(f):
         datas.append((f, "drivers"))
+# Decodificadores RS41 (fsk_demod LGPL-2.1, rs41mod GPL-3.0) + licenças e fonte
+# correspondente, gerados por packaging/build_sonde_decoders.sh. No Windows o
+# pacote é obrigatório: sem eles a aba Sondas > Recepção RF não funciona.
+sonde_dir = os.path.join("packaging", "sonde_decoders")
+if os.path.isdir(sonde_dir):
+    for root, _dirs, files in os.walk(sonde_dir):
+        rel = os.path.relpath(root, "packaging")
+        for f in files:
+            datas.append((os.path.join(root, f), rel))
+elif os.name == "nt" and os.environ.get("PT2VHF_ALLOW_MISSING_SONDE") != "1":
+    raise FileNotFoundError(
+        "packaging/sonde_decoders ausente. Rode packaging/build_sonde_decoders.sh "
+        "windows antes do PyInstaller (fsk_demod/rs41mod embarcados).")
 blog_dir = os.path.join("packaging", "rtlsdr_blog")
 if os.path.isdir(blog_dir):
     for f in os.listdir(blog_dir):

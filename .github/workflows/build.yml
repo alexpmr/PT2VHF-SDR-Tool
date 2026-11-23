@@ -25,6 +25,10 @@ jobs:
           python --version
           ldconfig -p | grep 'libEGL.so.1'
       - run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
+      - name: Decodificadores RS41 nativos (teste ponta a ponta sintético)
+        run: |
+          if command -v cc >/dev/null; then bash packaging/build_sonde_decoders.sh native
+          else echo "sem compilador C: teste ponta a ponta RS41 será pulado"; fi
       - name: Testes Linux / Qt offscreen (diagnóstico independente)
         run: python -X faulthandler scripts/run_tests.py
         env:
@@ -32,7 +36,7 @@ jobs:
 
   windows-exe:
     # Manual ou commit explícito [build-windows] (não compilar em cada push).
-    if: (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'release/stable-') || startsWith(github.head_ref, 'fix/ota-'))) || (github.event_name == 'workflow_dispatch' && inputs.build_windows) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build-windows]'))
+    if: (github.event_name == 'pull_request' && (startsWith(github.head_ref, 'release/stable-') || startsWith(github.head_ref, 'fix/ota-') || startsWith(github.head_ref, 'claude/'))) || (github.event_name == 'workflow_dispatch' && inputs.build_windows) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[build-windows]'))
     permissions:
       contents: write
     runs-on: windows-2022  # validação obrigatória para distribuição Windows, independente do Qt Linux
@@ -102,9 +106,21 @@ jobs:
           copy /y x64\Release\examples\wdi-simple.exe %GITHUB_WORKSPACE%\drivers\ || exit /b 1
           copy /y COPYING-LGPL %GITHUB_WORKSPACE%\drivers\libwdi-COPYING-LGPL.txt
           %GITHUB_WORKSPACE%\drivers\wdi-simple.exe --help | findstr /C:"WinUSB" || exit /b 1
+      - name: Decodificadores RS41 (fsk_demod LGPL-2.1, rs41mod GPL-3.0)
+        shell: bash
+        run: |
+          set -e
+          if ! command -v gcc >/dev/null; then
+            for d in /c/mingw64/bin /c/ProgramData/mingw64/mingw64/bin /c/msys64/mingw64/bin; do
+              if [ -x "$d/gcc.exe" ]; then export PATH="$d:$PATH"; break; fi
+            done
+          fi
+          gcc --version | head -1
+          CC=gcc bash packaging/build_sonde_decoders.sh windows packaging/sonde_decoders
+          ls -la packaging/sonde_decoders
       - name: PyInstaller (pasta + portátil)
         env:
-          PT2VHF_RELEASE_TEXT_SPLASH: ${{ (github.head_ref == 'release/stable-v1.0.2-rsp1-20261115' || github.head_ref == 'fix/ota-launch-103-20261115' || github.head_ref == 'release/stable-v1.0.4-backlog-20261116' || github.head_ref == 'release/stable-v1.0.5-verified-20261119' || github.head_ref == 'release/stable-v1.0.6-waterfall-20261122') && '1' || '0' }}
+          PT2VHF_RELEASE_TEXT_SPLASH: ${{ (github.head_ref == 'release/stable-v1.0.2-rsp1-20261115' || github.head_ref == 'fix/ota-launch-103-20261115' || github.head_ref == 'release/stable-v1.0.4-backlog-20261116' || github.head_ref == 'release/stable-v1.0.5-verified-20261119' || github.head_ref == 'release/stable-v1.0.6-waterfall-20261122' || startsWith(github.head_ref, 'claude/')) && '1' || '0' }}
           # Only allow the missing splash in this isolated QA PR, never releases.
           PT2VHF_QA_ALLOW_MISSING_BANNER: ${{ (github.head_ref == 'release/stable-v1-windows-qa-20261114' || github.head_ref == 'release/stable-v1-upconverter-fix-20261114') && '1' || '0' }}
         run: pyinstaller --noconfirm pt2vhf.spec
@@ -145,6 +161,9 @@ jobs:
           $dir = Join-Path $env:LOCALAPPDATA "Programs\PT2VHF SDR Tool"
           if (-not (Test-Path "$dir\unins000.exe")) { throw "Instalação por usuário não encontrada em $dir" }
           if (-not (Test-Path "$dir\_internal\drivers\wdi-simple.exe")) { throw "wdi-simple.exe ausente da instalação" }
+          foreach ($f in @("fsk_demod.exe", "rs41mod.exe", "LICENSE-GPL-3.0.txt", "LICENSE-LGPL-2.1.txt", "source\demod\mod\rs41mod.c")) {
+            if (-not (Test-Path "$dir\_internal\sonde_decoders\$f")) { throw "sonde_decoders\$f ausente da instalação" }
+          }
           $p = Start-Process -FilePath "$dir\PT2VHF-SDR-Tool.exe" -ArgumentList "--selftest" -Wait -PassThru
           Get-Content "$env:TEMP\pt2vhf-sdr-selftest.log"
           if ($p.ExitCode -ne 0) { throw "Programa instalado falhou no autoteste" }

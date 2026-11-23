@@ -42,14 +42,14 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 ### Novo na v0.10.0 — navegação, LCD, RF e rastros
 - **Interface**: abas principais ADS-B, AIS e Sondas Meteorológicas independentes; painel APRS/DTMF/CTCSS reunido no Scanner; iGate APRS-IS removido da navegação e sem envios.
 - **Sondas meteorológicas**: recepção RS41 e importação JSON na mesma área; medidores de blocos IQ, quadros JSON, quadros sem GPS, posições, perdas, estados dos processos e mensagens de erro de fsk_demod/rs41mod; gravação manual e limitada a 20 segundos de IQ complexo 48 kS/s (.c16) para diagnóstico.
-- **Atenção**: a existência de IQ ou sinal no waterfall não comprova decodificação. A recepção RS41 real ainda depende dos binários externos fsk_demod/rs41mod e continua sem validação de campo; novos testes de bancada necessários.
+- **Atenção**: a existência de IQ ou sinal no waterfall não comprova decodificação. Os binários fsk_demod/rs41mod passam a vir embarcados no Setup/Portable Windows (ver `packaging/build_sonde_decoders.sh`), mas a recepção RS41 real continua sem validação de campo; o autoteste usa apenas quadros sintéticos.
 - **LCD**: as teclas de seleção de bandas agora estão dentro do painel LCD (junto das teclas de modos), mantendo cores e estados por tema; fontes menores/esmaecidas para bandas não suportadas.
 - **Tráfego e sondas**: mapas OSM exibem rastros por estação, histórico de posições limitado a 5 mil pontos e exportação GPX/KML, além de CSV. ADS-B e AIS mantêm ingestão por software de decodificação externo.
 - **Testes**: regressões dos módulos de tela, relatórios de diagnóstico e de formato GPX/KML.
 
 
 ### Novo na v0.9.0 — RS41 por IQ, órbitas e APRS iGate
-- RS41 diretamente do IQ do SDR: aba Decodificadores > RS41 IQ ao vivo, 400–406 MHz. A aplicação reutiliza a captura atual, converte para IQ complex int16 em 48 kS/s e conecta os programas externos fsk_demod e rs41mod (radiosonde_auto_rx). Os executáveis não são incluídos na distribuição; sem eles, a decodificação não funciona.
+- RS41 diretamente do IQ do SDR: aba Decodificadores > RS41 IQ ao vivo, 400–406 MHz. A aplicação reutiliza a captura atual, converte para IQ complex int16 em 48 kS/s e conecta os programas externos fsk_demod e rs41mod (radiosonde_auto_rx). O Setup e o Portable Windows embarcam fsk_demod (LGPL-2.1) e rs41mod (GPL-3.0), com licenças e código-fonte correspondente em `_internal/sonde_decoders`; um caminho configurado pelo usuário substitui a cópia embarcada. Pelo código-fonte, gere-os com `bash packaging/build_sonde_decoders.sh native`.
 - Satélites: TLE/SGP4 com previsão de passagens, azimute, elevação e correção Doppler opcional em recepção. Dependência sgp4 incluída; requer TLE do usuário. Não controla rotor ou PTT.
 - APRS iGate somente RX: habilitação explícita, indicativo e passcode pessoal, envio RF -> APRS-IS qAO; não envia pacotes à rede RF.
 - Menu de idiomas e bandeiras PT/EN/ES/FR/DE/IT/ZH, com tradução de abas e controles essenciais. Demais mensagens permanecem em português; tradução integral pendente.

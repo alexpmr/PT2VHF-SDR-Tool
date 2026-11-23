@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import time
-import shutil
-from pathlib import Path
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout, QLabel,
@@ -11,6 +9,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QAbstractItemView, QFileDialog, QPlainTextEdit, QApplication,
 )
 from ..traffic import Track
+from ..sonde_rx import locate_binary
 
 
 class SondeDecoderPanel(QWidget):
@@ -35,8 +34,8 @@ class SondeDecoderPanel(QWidget):
         self.frequency.setValue(float(cfg.get("sonde_iq_hz", 402_500_000)) / 1e6)
         self.fsk_path = QLineEdit(str(cfg.get("sonde_fsk_path", "")))
         self.rs_path = QLineEdit(str(cfg.get("sonde_rs41_path", "")))
-        self.fsk_path.setPlaceholderText("fsk_demod (no PATH ou caminho do executável)")
-        self.rs_path.setPlaceholderText("rs41mod (no PATH ou caminho do executável)")
+        self.fsk_path.setPlaceholderText("vazio = cópia embarcada de fsk_demod (ou caminho do executável)")
+        self.rs_path.setPlaceholderText("vazio = cópia embarcada de rs41mod (ou caminho do executável)")
         hz_row = QHBoxLayout()
         hz_row.addWidget(self.frequency)
         self.use_current = QPushButton("Usar sintonia atual do SDR")
@@ -91,8 +90,9 @@ class SondeDecoderPanel(QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
         lay.addWidget(self.table, 1)
         note = QLabel(
-            "Requer os binários fsk_demod e rs41mod do projeto radiosonde_auto_rx, instalados "
-            "separadamente pelo operador. O SDR Tool reutiliza o IQ do próprio dongle, "
+            "Usa fsk_demod (LGPL-2.1) e rs41mod (GPL-3.0) do projeto radiosonde_auto_rx, "
+            "embarcados no instalador (licenças e fonte em _internal/sonde_decoders). "
+            "Um caminho preenchido acima substitui a cópia embarcada. O SDR Tool reutiliza o IQ do próprio dongle, "
             "sem abrir um segundo receptor. O sinal é convertido a 48 kS/s e decodificado "
             "em processos externos. A implementação atual é somente para RS41 de 400–406 MHz; "
             "outros modelos continuam no backlog. Somente ter energia no waterfall não "
@@ -104,22 +104,8 @@ class SondeDecoderPanel(QWidget):
 
     @staticmethod
     def _locate_decoder(specified: str, executable: str) -> str | None:
-        """Resolve a configured decoder without executing it or changing PATH.
-
-        GUI may contain a quoted absolute Windows path, relative path, or a
-        bare executable found on PATH. Distinguish actual file existence from
-        the unverified presence of a name in the textbox.
-        """
-        name = str(specified or "").strip().strip('"').strip("'")
-        if not name:
-            name = executable
-        located = shutil.which(name)
-        if located:
-            return str(Path(located).resolve())
-        candidate = Path(name).expanduser()
-        if candidate.is_file():
-            return str(candidate.resolve())
-        return None
+        """Resolve without executing: user path > bundled copy > PATH."""
+        return locate_binary(executable, specified)[0]
 
     def verify_tools(self) -> dict[str, bool]:
         """Visible prerequisite diagnostic for the external RS41 pipeline.
@@ -127,13 +113,19 @@ class SondeDecoderPanel(QWidget):
         Presence of a decoder executable does NOT prove real IQ decoding.
         No SDR signal is consumed and no binary is executed by this check.
         """
-        tools = {
-            "fsk_demod": self._locate_decoder(self.fsk_path.text(), "fsk_demod"),
-            "rs41mod": self._locate_decoder(self.rs_path.text(), "rs41mod"),
-        }
-        for name, found in tools.items():
-            self.log.appendPlainText(
-                f"{name}: {'LOCALIZADO — ' + found if found else 'AUSENTE (configure caminho ou PATH)'}")
+        tools = {}
+        for name, field in (("fsk_demod", self.fsk_path), ("rs41mod", self.rs_path)):
+            found, origin = locate_binary(name, field.text())
+            tools[name] = found
+            if found:
+                label = "EMBARCADO" if origin == "embarcado" else f"LOCALIZADO ({origin})"
+                self.log.appendPlainText(f"{name}: {label} — {found}")
+            elif origin == "usuário":
+                self.log.appendPlainText(
+                    f"{name}: AUSENTE no caminho configurado (limpe o campo para usar a cópia embarcada)")
+            else:
+                self.log.appendPlainText(
+                    f"{name}: AUSENTE (cópia embarcada não encontrada; reinstale ou configure o caminho)")
         available = all(tools.values())
         self.status.setText(
             "Pré-requisitos localizados; falta confirmar decodificação RS41 com sinal IQ real."

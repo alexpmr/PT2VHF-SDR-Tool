@@ -2,7 +2,10 @@
 
 DSP próprio: deslocamento complexo para FI +12 kHz e decimação a 48 kS/s.
 Decodificação FSK/FEC/telemetria por fsk_demod e rs41mod (projeto auto_rx,
-binários externos de código aberto, não distribuídos no instalador).
+programas externos de código aberto). O Setup/Portable Windows embarca cópias
+compiladas em ``sonde_decoders/`` (ver packaging/build_sonde_decoders.sh);
+caminho configurado pelo usuário tem prioridade, depois a cópia embarcada e
+por fim o PATH.
 Executa subprocessos sem shell, fora da thread de recepção; desativado por padrão.
 """
 from __future__ import annotations
@@ -12,6 +15,7 @@ import os
 import queue
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import json
@@ -26,16 +30,63 @@ OUTPUT_RATE = 48000
 SIGNAL_OFFSET_HZ = 0  # centralizar portadora em 0 Hz; máscara FSK: -5 a +5 kHz
 
 
+BUNDLED_DIRNAME = "sonde_decoders"
+
+
+def bundled_decoder_dir() -> Path | None:
+    """Pasta dos decodificadores embarcados (PyInstaller) ou compilados localmente."""
+    candidates = []
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        candidates.append(Path(base) / BUNDLED_DIRNAME)
+    candidates.append(Path(__file__).resolve().parent.parent / "packaging" / BUNDLED_DIRNAME)
+    for folder in candidates:
+        if folder.is_dir():
+            return folder
+    return None
+
+
+def bundled_binary(executable: str) -> str | None:
+    folder = bundled_decoder_dir()
+    if folder is None:
+        return None
+    for name in (executable + ".exe", executable) if os.name == "nt" else (executable,):
+        path = folder / name
+        if path.is_file() and (os.name == "nt" or os.access(path, os.X_OK)):
+            return str(path)
+    return None
+
+
+def locate_binary(executable: str, supplied_path: str = "") -> tuple[str | None, str]:
+    """Resolve sem executar: (caminho, origem) com origem 'usuário', 'embarcado' ou 'PATH'.
+
+    Um caminho explícito do usuário prevalece e não cai para outra cópia se
+    estiver errado (evita usar silenciosamente um programa diferente).
+    """
+    name = str(supplied_path or "").strip().strip('"').strip("'")
+    if name and name.lower() not in (executable.lower(), executable.lower() + ".exe"):
+        located = shutil.which(name)
+        if not located and Path(name).expanduser().is_file():
+            located = str(Path(name).expanduser())
+        return (str(Path(located).resolve()) if located else None), "usuário"
+    bundled = bundled_binary(executable)
+    if bundled:
+        return str(Path(bundled).resolve()), "embarcado"
+    located = shutil.which(executable)
+    return (str(Path(located).resolve()) if located else None), "PATH"
+
+
 def find_binary(executable: str, supplied_path: str = "") -> str:
-    """Sem download automático ou execução de scripts; só .exe/binário do usuário ou PATH."""
-    name = supplied_path.strip() or executable
-    if not name:
+    """Sem download automático ou execução de scripts: usuário > embarcado > PATH."""
+    if not executable:
         raise ValueError("Nome vazio do decodificador")
-    located = shutil.which(name)
+    located, origin = locate_binary(executable, supplied_path)
     if not located:
+        where = ("o caminho configurado não existe" if origin == "usuário"
+                 else "nenhuma cópia embarcada nem no PATH")
         raise FileNotFoundError(
-            f"{executable} indisponível. Instale os demoduladores do projeto radiosonde_auto_rx "
-            f"e indique o executável em Configurações (ou adicione ao PATH).")
+            f"{executable} indisponível ({where}). Reinstale o PT2VHF SDR Tool, "
+            f"limpe o campo para usar a cópia embarcada ou indique o executável.")
     return located
 
 
@@ -343,3 +394,46 @@ class RS41Receiver:
         self._stderr_threads.clear()
         self._writer = self._reader = None
         self.demod = self.decoder = None
+
+
+def synthetic_pipeline_check(fsk_binary: str | None = None, rs41_binary: str | None = None,
+                             frames: int = 4, timeout: float = 90.0) -> list[dict]:
+    """Executa IQ RS41 *sintético* -> ChannelIQ -> fsk_demod -> rs41mod e retorna os JSON.
+
+    Usado no autoteste do executável para provar pipes binários, argumentos e
+    binários embarcados. Não é homologação RF: não substitui IQ real de sonda.
+    """
+    from .sonde_synth import rs41_frame, rs41_iq
+    fsk = fsk_binary or find_binary("fsk_demod")
+    rs = rs41_binary or find_binary("rs41mod")
+    station, rate = 403_000_000.0, 240_000
+    center = station - 30_000
+    iq = rs41_iq([rs41_frame(frame_nb=1000 + i) for i in range(frames)], rate,
+                 offset_hz=station - center)
+    channel = ChannelIQ(rate, station)
+    data = b"".join(channel.convert(iq[i:i + 16384], center) for i in range(0, len(iq), 16384))
+    argv_fsk, argv_rs = build_decoder_commands(station, fsk, rs)
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+    demod = subprocess.Popen(argv_fsk, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL, creationflags=flags)
+    decoder = subprocess.Popen(argv_rs, stdin=demod.stdout, stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, creationflags=flags)
+    demod.stdout.close()
+    feeder = threading.Thread(target=lambda: (demod.stdin.write(data), demod.stdin.close()),
+                              daemon=True)
+    feeder.start()
+    try:
+        out, _ = decoder.communicate(timeout=timeout)
+    finally:
+        for proc in (demod, decoder):
+            if proc.poll() is None:
+                proc.kill()
+        demod.wait(timeout=5)
+    result = []
+    for line in out.splitlines():
+        if line.lstrip().startswith(b"{"):
+            try:
+                result.append(json.loads(line))
+            except ValueError:
+                pass
+    return result

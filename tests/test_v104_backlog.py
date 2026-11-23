@@ -11,10 +11,12 @@ from pt2vhf.config import Config
 
 def test_rs41_prerequisite_check_does_not_execute_binary(tmp_path, monkeypatch, qt_lifecycle):
     from pt2vhf.ui.sonde_decoder_panel import SondeDecoderPanel
-    import pt2vhf.ui.sonde_decoder_panel as module
+    import pt2vhf.sonde_rx as module
 
     cfg = Config(tmp_path / "config.json")
     panel = SondeDecoderPanel(cfg)
+    # Sem cópia embarcada: só o PATH (simulado) pode resolver os programas.
+    monkeypatch.setattr(module, "bundled_decoder_dir", lambda: None)
     monkeypatch.setattr(module.shutil, "which",
                         lambda name: "/tmp/fsk_demod" if name == "fsk_demod" else None)
     try:
