@@ -35,6 +35,7 @@ from .occupancy_panel import OccupancyPanel
 from .traffic_panel import SourceTab
 from .satellite_panel import SatellitePanel
 from .sonde_decoder_panel import SondeDecoderPanel
+from .acars_panel import AcarsPanel
 from ..i18n import LANGUAGES, apply_language, flag_icon, translate
 from .rigctl_panel import RigCtlPanel
 from .live_captions_panel import LiveCaptionsPanel
@@ -175,6 +176,9 @@ class MainWindow(QMainWindow):
         self.sonde_area.addTab(self.sonde_panel, "Recepção RF · RS41")
         self.sonde_area.addTab(self.sonde_feed, "Telemetria externa")
         self.sonde_worker = None
+        self.acars_panel = AcarsPanel()
+        self.live_worker = None      # ADS-B, AIS ou ACARS pelo SDR atual (um por vez)
+        self.live_kind = ""
         self.scan_panel = ScannerPanel(self.cfg, self.bank.categories + ["Descobertas"])
         self.occupancy_panel = OccupancyPanel(self.occupancy)
         self.scan_panel.tabs.addTab(self.occupancy_panel, "Ocupação 24 h")
@@ -185,6 +189,7 @@ class MainWindow(QMainWindow):
         self.decoder_tabs.addTab(self.sonde_area, "Sondas Meteorológicas")
         self.decoder_tabs.addTab(_scroll(self.ais_panel), "AIS")
         self.decoder_tabs.addTab(_scroll(self.dec_panel), "APRS / DTMF / CTCSS")
+        self.decoder_tabs.addTab(self.acars_panel, "ACARS")
         # Configuração Whisper e histórico são páginas independentes, sem controles duplicados.
         self.tools_tabs = QTabWidget()
         self.caption_settings_page = _scroll(self.live_captions_panel.settings_widget)
@@ -668,6 +673,12 @@ class MainWindow(QMainWindow):
         self.sonde_panel.startRequested.connect(self._start_sonde)
         self.sonde_panel.stopRequested.connect(self._stop_sonde)
         self.sonde_panel.captureRequested.connect(self._capture_sonde_iq)
+        self.adsb_panel.liveStartRequested.connect(self._start_live)
+        self.adsb_panel.liveStopRequested.connect(lambda _k: self._stop_live())
+        self.ais_panel.liveStartRequested.connect(self._start_live)
+        self.ais_panel.liveStopRequested.connect(lambda _k: self._stop_live())
+        self.acars_panel.startRequested.connect(lambda: self._start_live("ACARS"))
+        self.acars_panel.stopRequested.connect(self._stop_live)
 
         self.fft.currentIndexChanged.connect(lambda _: self._set_engine("fft_size", self.fft.currentData()))
         self.cmap.currentTextChanged.connect(lambda n: (self.wf.set_colormap(n), self.cfg.__setitem__("wf_colormap", n)))
@@ -774,6 +785,7 @@ class MainWindow(QMainWindow):
 
     def start_source(self, opts: dict):
         self._stop_sonde()
+        self._stop_live()
         from ..sources.network_sources import RtlTcpSource, SoapySource
         from ..sources.mirics import SOURCE_NAME as RSP_SOURCE, is_rsp_device, MISSING_DRIVER
         from ..sources.rtlsdr_source import RtlSdrSource
@@ -884,6 +896,7 @@ class MainWindow(QMainWindow):
 
     def stop_source(self):
         self._stop_sonde()
+        self._stop_live()
         self._stop_scan()
         self._sscan_stop()
         self.engine.stop()
@@ -1649,8 +1662,9 @@ class MainWindow(QMainWindow):
     # ================================================================== anúncio / OTA
     def _startup_notices(self):
         from .assist_panels import show_welcome
-        show_welcome(self)
-        self.updates.show_last_result()
+        # Splash igual ao do Sat Tool: camada não modal dentro da janela; o aviso da
+        # atualização anterior (se houver) só aparece depois que o splash fecha.
+        show_welcome(self, on_close=lambda: self.updates.show_last_result())
 
     def operation_busy(self) -> str:
         """Motivo para adiar a atualização automática, ou '' se o programa está livre."""
@@ -1691,6 +1705,7 @@ class MainWindow(QMainWindow):
         """Usa o mesmo fluxo IQ que alimenta o waterfall, sem reabrir o SDR."""
         from ..sonde_rx import RS41Receiver
         self._stop_sonde()
+        self._stop_live()
         if not self.engine.running or self.engine.source is None:
             self.sonde_panel.status.setText("Ligue primeiro o receptor SDR. O waterfall isolado não decodifica.")
             return
@@ -1740,6 +1755,104 @@ class MainWindow(QMainWindow):
             self.sonde_worker = None
         if hasattr(self, "sonde_panel"):
             self.sonde_panel.running(False)
+
+    # ================================================================== ADS-B / AIS / ACARS
+    def _live_status(self, kind: str, text: str):
+        if kind == "ACARS":
+            self.acars_panel.status.setText(text)
+        else:
+            panel = self.adsb_panel if kind == "ADS-B" else self.ais_panel
+            panel.live_status.setText(text)
+
+    def _start_live(self, kind: str):
+        """Um modo por vez, no mesmo SDR: sintoniza a faixa e decodifica o IQ já capturado."""
+        from ..ais_rx import AISReceiver
+        from ..decoders.acars import ACARS_FREQS_HZ, AcarsReceiver
+        from ..decoders.modes import ADSB_FREQ_HZ, MIN_SAMPLE_RATE, ADSBReceiver
+        self._stop_live()
+        self._stop_sonde()
+        if not self.engine.running or self.engine.source is None:
+            self._live_status(kind, "Ligue primeiro o receptor SDR.")
+            return
+        if self.cfg.get("source") == "Simulador":
+            self._live_status(kind, "Selecione um receptor físico ou um arquivo IQ gravado.")
+            return
+        freq = {"ADS-B": ADSB_FREQ_HZ, "AIS": 161_975_000, "ACARS": ACARS_FREQS_HZ[0]}[kind]
+        if kind == "ADS-B" and self.engine.sample_rate < MIN_SAMPLE_RATE:
+            if not self.engine.source.tunable:
+                self._live_status(kind, "ADS-B exige IQ de pelo menos 2,4 MS/s.")
+                return
+            # Reabre o SDR a 2,4 MS/s (o seletor da interface acompanha a mudança).
+            opts = self.rx_panel.source_options()
+            opts["sample_rate"] = 2_400_000
+            idx = self.rx_panel.rate.findData(2_400_000)
+            if idx >= 0:
+                self.rx_panel.rate.setCurrentIndex(idx)
+            self.stop_source()
+            self.start_source(opts)
+            if not self.engine.running or self.engine.sample_rate < MIN_SAMPLE_RATE:
+                self._live_status(kind, "Não foi possível reabrir o SDR a 2,4 MS/s.")
+                return
+        if not self._freq_supported(freq):
+            self._live_status(kind, "A frequência está fora do alcance do dispositivo.")
+            return
+        self.tune(freq)
+        if kind == "ADS-B" and self.engine.source.tunable:
+            self.engine.set_center(ADSB_FREQ_HZ)      # pulsos centrados, sem aliasing
+        elif kind == "ACARS":
+            self.set_mode("AM")
+        elif kind == "AIS":
+            self.set_mode("NFM")
+        fs = int(self.engine.sample_rate)
+        put = self.engine.events.put
+        status = lambda msg: put(("live_status", (kind, msg), time.time()))  # noqa: E731
+        try:
+            if kind == "ADS-B":
+                worker = ADSBReceiver(fs, lambda snap: put(("live_adsb", snap, time.time())), status)
+            elif kind == "AIS":
+                worker = AISReceiver(fs, lambda track: put(("live_ais", track, time.time())), status)
+            else:
+                worker = AcarsReceiver(fs, lambda msg: put(("live_acars", msg, time.time())), status)
+            worker.start()
+        except (OSError, ValueError, RuntimeError) as exc:
+            self._live_status(kind, f"Não foi possível iniciar {kind}: {exc}")
+            return
+        self.live_worker, self.live_kind = worker, kind
+        self.engine.iq_listeners.append(worker.feed)
+        self._live_running(kind, True)
+
+    def _live_running(self, kind: str, on: bool):
+        if kind == "ACARS":
+            self.acars_panel.running(on)
+        elif kind in ("ADS-B", "AIS"):
+            (self.adsb_panel if kind == "ADS-B" else self.ais_panel).live_running(on)
+
+    def _stop_live(self):
+        worker = getattr(self, "live_worker", None)
+        kind = getattr(self, "live_kind", "")
+        if worker is not None:
+            try:
+                self.engine.iq_listeners.remove(worker.feed)
+            except ValueError:
+                pass
+            worker.stop()
+        self.live_worker, self.live_kind = None, ""
+        if kind:
+            self._live_running(kind, False)
+
+    def _handle_live_event(self, kind: str, data) -> bool:
+        if kind == "live_adsb":
+            from ..traffic import parse_adsb
+            self.adsb_panel.set_live_records(parse_adsb(data))
+        elif kind == "live_ais":
+            self.ais_panel.add_live_record(data)
+        elif kind == "live_acars":
+            self.acars_panel.add_message(data)
+        elif kind == "live_status":
+            self._live_status(*data)
+        else:
+            return False
+        return True
 
     # ================================================================== CAT · Hamlib
     def _cat_received(self, freq: float, mode: str):
@@ -2346,6 +2459,8 @@ class MainWindow(QMainWindow):
                     f"{self.sonde_worker.received if self.sonde_worker else 0} quadros")
             elif kind == "sonde_status":
                 self.sonde_panel.status.setText(str(data))
+            elif kind in ("live_adsb", "live_ais", "live_acars", "live_status"):
+                self._handle_live_event(kind, data)
             elif kind == "sonde_frame":
                 self.sonde_panel.add_frame(data)
             elif kind == "dtmf":
@@ -2550,6 +2665,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, ev):
         self._stop_sonde()
+        self._stop_live()
         self.rigctl_panel.stop()
         if self.web is not None:
             self.web.stop()

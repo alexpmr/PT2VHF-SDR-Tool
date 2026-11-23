@@ -1,6 +1,51 @@
 # Changelog
 
-## [0.13.3] — candidata, não publicada
+## [1.0.7] — 2026-11-23 — decodificadores embarcados e splash do Sat Tool
+### Splash
+- Mesmo splash do Sat Tool: banner oficial PT2VHF (`pt2vhf/assets/branding/welcome-banner.jpg`) em camada não modal, embarcado no Setup e no Portable (PR #28).
+
+### ADS-B, AIS e ACARS (mesmo SDR, um modo por vez)
+- **ADS-B**: decodificador Mode S nativo (DF17/18, CRC-24 com correção de 1 bit, identificação, posição CPR global, altitude barométrica, velocidade). O app sintoniza 1090 MHz e, se preciso, reabre o SDR a 2,4 MS/s. Validado com vetores públicos de Mode S e IQ sintético.
+- **AIS**: AIS-catcher v0.71 (GPL-3.0) embarcado. O IQ do SDR é reduzido a 288 kS/s em 162 MHz e servido por rtl_tcp local (127.0.0.1, porta efêmera); no Windows não se usa stdin porque o AIS-catcher lê `std::cin` em modo texto. Pacote oficial x64 com SHA-256 fixo, runtime MSVC app-local, licenças e fonte (git archive do commit) em `_internal/ais_catcher`.
+- **ACARS**: decodificador nativo (AM, MSK 2400 bit/s, paridade ímpar, BCS CRC-16) das três frequências 131,550/131,725/131,825 MHz ao mesmo tempo; nova aba Decodificação > ACARS. Gerador sintético conferido pelo acarsdec; 6 de 7 blocos na gravação real de referência do acarsdec (`test.wav`).
+- Abas ADS-B e AIS ganham "Receber pelo SDR"; importação de aircraft.json/NMEA externos continua disponível.
+- Autoteste do executável inclui ADS-B e ACARS nativos e AIS-catcher sintético.
+- Pendente: homologação com RF real (antena 1090 MHz, VHF marítimo e aeronáutico).
+
+### RS41
+- Setup e Portable Windows passam a incluir fsk_demod (codec2, LGPL-2.1) e rs41mod (rs1729/radiosonde_auto_rx, GPL-3.0), compilados no CI a partir de commit fixado, com textos de licença e código-fonte correspondente em `_internal/sonde_decoders`.
+- Aba Sondas > Recepção RF usa automaticamente a cópia embarcada; caminho configurado pelo usuário tem prioridade e não cai silenciosamente para outra cópia; PATH fica como último recurso.
+- Executáveis Windows forçam stdin/stdout binários (`packaging/sonde_win_binary_io.c`), evitando corrupção de IQ em pipes.
+- Autoteste do executável roda um quadro RS41 **sintético** (CRC e Reed-Solomon válidos) por IQ -> fsk_demod -> rs41mod -> JSON. Não substitui captura IQ real de sonda: homologação RF continua pendente.
+
+## [1.0.6] — 2026-11-22
+- Waterfall preserva os bins nativos da FFT (até 32.768) em histórico limitado a 400 linhas; zoom estreito não perde resolução (#24).
+- Zoom-out manual limitado à largura de banda IQ realmente amostrada (#23).
+- Botão sempre visível para ocultar/mostrar o painel de áudio/DSP (Ctrl+Shift+A), com preferência salva.
+
+## [1.0.5] — 2026-11-19
+- Consolidação de todos os recursos aprovados da v1.0.4, sem reescrever DSP, drivers ou OTA.
+- Testes de contrato da release (`tests/test_v105_stable_contract.py`).
+
+## [1.0.4] — 2026-11-16
+- Teste seguro do auxiliar OTA em Configurações e Ajuda (`-ProbeOnly`, sem instalar).
+- Verificação dos pré-requisitos RS41 (fsk_demod/rs41mod) com diagnóstico copiável; diagnóstico dos backends SDRplay/Mirics.
+- Campos de formulário compactos em telas grandes.
+
+## [1.0.3] — 2026-11-15
+- Corrige o erro "PowerShell exited before update" no OTA do Windows (lançador CREATE_NO_WINDOW com saída redirecionada) e grava `%TEMP%/PT2VHF-SDR-Tool-ota-launch.log`.
+- Instalação manual única da v1.0.3 necessária para quem está em versão anterior.
+
+## [1.0.2] — 2026-11-15
+- Detecção e seleção separadas de SDRplay API (SoapySDRPlay3) e Mirics (SoapyMiri); módulos e drivers USB não incluídos (experimental).
+
+## [1.0.1] — 2026-11-15
+- Checkbox do upconverter permite alterar habilitação e offset durante a recepção, com reinício controlado do SDR.
+
+## [1.0.0] — 2026-11-14
+- Correção de VHF/UHF no RTL R820T (direct sampling), offset para upconverter externo de 100 MHz, melhorias de LCD, checkbox, recursos e OTA.
+
+## [0.13.3] — 2026-11-11
 ### Manutenção OTA
 - Quando o manifesto anuncia versão nova, mas o pacote é rejeitado, o aplicativo não abre o navegador automaticamente e explica o problema (URL, tipo, tamanho ou SHA-256).
 - O fluxo válido continua baixando dentro do aplicativo e verifica tamanho e SHA-256 antes de executar o helper; nenhuma restrição de integridade foi reduzida.
@@ -10,9 +55,9 @@
 - Duplo clique na imagem do waterfall sintoniza o ponto RF selecionado e centraliza o VFO sem alterar o nível atual de zoom; o clique simples continua sintonizando e o duplo clique no espectro continua restaurando o zoom total.
 - Restrições de IQ disponível, capacidade do SDR e testes Qt de gesto nativo, pan e seleção inválida; QA cruzado Windows/Linux obrigatório.
 ### Status
-- Candidata aguardando conclusão do CI e teste OTA real entre versões Windows. IA IQ/ONNX continua fora da release.
+- Publicada no GitHub em 11/11/2026. IA IQ/ONNX continua fora da release.
 
-## [0.13.2] — candidata de manutenção, sem publicação confirmada
+## [0.13.2] — 2026-11-11
 ### Implementado no código (branch release/stable-v0.13.2)
 - Sintonia no waterfall/espectro respeita os limites da largura IQ realmente adquirida, mesmo com zoom ou pan fora da faixa; mantém arredondamento por passo e associação com o VFO.
 - Arrastar o passband para uma região não adquirida deixa o VFO original inalterado e restaura o marcador.
@@ -21,6 +66,9 @@
 - Novos testes Qt sintéticos de cena→RF, limites de IQ, ausência de sinal, passband e limites de arredondamento. **Aprovação do CI Windows e publicação ainda pendentes.**
 - IA neural IQ/ONNX continua isolada no PR #2; RS41, S-meter absoluto e qualidade RF real não foram homologados.
 - A sincronização do site oficial com a release GitHub foi registrada como bloqueio externo na issue PT2VHF-Site #18.
+
+## [0.13.1] — 2026-11-11
+- Manutenção estável publicada no GitHub (detalhes nas notas `docs/RELEASE_NOTES_0.13.1.md`).
 
 ## [0.13.0] — 2026-11-09
 ### Implementado no código
