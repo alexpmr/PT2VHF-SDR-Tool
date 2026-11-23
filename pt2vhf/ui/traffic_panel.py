@@ -1,16 +1,18 @@
-"""Consulta local a feeds externos de ADS-B, AIS e radiossondas.
+"""ADS-B, AIS e radiossondas: recepção pelo SDR atual ou arquivo local.
 
-Não é um demodulador de RF. Requer readsb/dump1090, AIS-catcher/rtl_ais ou
-radiosonde_auto_rx configurado para exportar os dados em arquivo local.
+ADS-B e AIS podem ser recebidos pelo próprio SDR (um modo por vez): ADS-B com
+decodificador nativo em 1090 MHz e AIS com o AIS-catcher embarcado. Também
+continua possível importar aircraft.json, NMEA ou JSON de decodificadores
+externos.
 """
 from __future__ import annotations
 
 from pathlib import Path
 import time
 
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import (QCheckBox, QFileDialog, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QCheckBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel,
                                QLineEdit, QMessageBox, QPushButton,
                                QTableWidget, QTableWidgetItem, QTabWidget,
                                QVBoxLayout, QWidget, QAbstractItemView)
@@ -20,6 +22,16 @@ from ..traffic import export_csv, export_gpx, export_kml, export_map, load_traff
 
 
 class SourceTab(QWidget):
+    liveStartRequested = Signal(str)
+    liveStopRequested = Signal(str)
+    LIVE = {
+        "ADS-B": ("Receber ADS-B pelo SDR (1090 MHz)",
+                  "Decodificador nativo do PT2VHF: o SDR é sintonizado em 1090 MHz a 2,4 MS/s "
+                  "e sai da faixa atual enquanto o ADS-B estiver ligado. Use antena para 1090 MHz."),
+        "AIS": ("Receber AIS pelo SDR (162 MHz)",
+                "AIS-catcher embarcado (GPL-3.0) demodula 161,975 e 162,025 MHz a partir do IQ "
+                "do SDR, sintonizado em 162 MHz enquanto o AIS estiver ligado."),
+    }
     COLUMNS = ("ID", "Nome / Indicativo", "Lat", "Lon", "Alt. (m)", "Vel. (km/h)",
                "Rumo", "Subida (m/s)", "Dados", "Recebido")
 
@@ -31,11 +43,29 @@ class SourceTab(QWidget):
         self.history = []
         self.last_stamp = None
         main = QVBoxLayout(self)
+        if kind in self.LIVE:
+            title, hint = self.LIVE[kind]
+            box = QGroupBox("Recepção RF pelo SDR atual (um modo por vez)")
+            bl = QVBoxLayout(box)
+            brow = QHBoxLayout()
+            self.live_start = QPushButton(title)
+            self.live_stop = QPushButton("Parar")
+            self.live_stop.setEnabled(False)
+            self.live_start.clicked.connect(lambda: self.liveStartRequested.emit(self.kind))
+            self.live_stop.clicked.connect(lambda: self.liveStopRequested.emit(self.kind))
+            brow.addWidget(self.live_start)
+            brow.addWidget(self.live_stop)
+            brow.addStretch(1)
+            bl.addLayout(brow)
+            self.live_status = QLabel(hint)
+            self.live_status.setWordWrap(True)
+            self.live_status.setObjectName("hintLabel")
+            bl.addWidget(self.live_status)
+            main.addWidget(box)
         explanation = {
-            "ADS-B": "Requer arquivo aircraft.json de readsb/dump1090 (1090 MHz). "
-                     "Ex.: C:/readsb/aircraft.json; o SDR não é sintonizado por esta aba.",
-            "AIS": "Requer log NMEA !AIVDM do AIS-catcher/rtl_ais (161,975/162,025 MHz). "
-                   "A mensagem AIS é decodificada localmente; o sinal RF vem do processo externo.",
+            "ADS-B": "Alternativa: arquivo aircraft.json de readsb/dump1090 (1090 MHz), "
+                     "ex.: C:/readsb/aircraft.json.",
+            "AIS": "Alternativa: log NMEA !AIVDM de outro decodificador (161,975/162,025 MHz).",
             "Sonda": "Importe telemetria JSON de radiosonde_auto_rx ou conversor compatível. "
                      "Para recepção direta do SDR, utilize a aba Recepção RF neste painel.",
         }
@@ -129,11 +159,26 @@ class SourceTab(QWidget):
             self.history.append(point)
         self.history = self.history[-5000:]
 
+    LABELS = {"ADS-B": "aeronaves", "AIS": "navios", "Sonda": "sondas meteorológicas"}
+
     def add_live_record(self, record):
         self._add_history([record])
         self.records = [record] + [x for x in self.records if x.ident != record.ident][:499]
         self._populate(self.records)
-        self.status.setText(f"{len(self.records)} posições de sondas meteorológicas")
+        self.status.setText(f"{len(self.records)} posições de {self.LABELS.get(self.kind, self.kind)}")
+
+    def set_live_records(self, records):
+        """Substitui a lista (ADS-B: instantâneo completo das aeronaves)."""
+        self._add_history(records)
+        self.records = list(records)[:500]
+        self._populate(self.records)
+        self.status.setText(f"{len(self.records)} posições de {self.LABELS.get(self.kind, self.kind)} "
+                            "recebidas pelo SDR")
+
+    def live_running(self, on: bool):
+        if hasattr(self, "live_start"):
+            self.live_start.setEnabled(not on)
+            self.live_stop.setEnabled(on)
 
     def _populate(self, records):
         self.table.setSortingEnabled(False)
