@@ -44,7 +44,7 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 - **Sondas meteorológicas**: recepção RS41 e importação JSON na mesma área; medidores de blocos IQ, quadros JSON, quadros sem GPS, posições, perdas, estados dos processos e mensagens de erro de fsk_demod/rs41mod; gravação manual e limitada a 20 segundos de IQ complexo 48 kS/s (.c16) para diagnóstico.
 - **Atenção**: a existência de IQ ou sinal no waterfall não comprova decodificação. Os binários fsk_demod/rs41mod passam a vir embarcados no Setup/Portable Windows (ver `packaging/build_sonde_decoders.sh`), mas a recepção RS41 real continua sem validação de campo; o autoteste usa apenas quadros sintéticos.
 - **LCD**: as teclas de seleção de bandas agora estão dentro do painel LCD (junto das teclas de modos), mantendo cores e estados por tema; fontes menores/esmaecidas para bandas não suportadas.
-- **Tráfego e sondas**: mapas OSM exibem rastros por estação, histórico de posições limitado a 5 mil pontos e exportação GPX/KML, além de CSV. ADS-B e AIS mantêm ingestão por software de decodificação externo.
+- **Tráfego e sondas**: mapas OSM exibem rastros por estação, histórico de posições limitado a 5 mil pontos e exportação GPX/KML, além de CSV. ADS-B, AIS e ACARS podem ser recebidos pelo próprio SDR (um modo por vez); a importação de arquivos externos continua disponível.
 - **Testes**: regressões dos módulos de tela, relatórios de diagnóstico e de formato GPX/KML.
 
 
@@ -56,8 +56,9 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 - Diagnóstico de sonda: verifique modelo RS41, instalação dos dois decodificadores, frequência, SNR e sinais válidos. A existência de RF no waterfall não equivale a dados decodificados. DFM, M10/M20, RS92 e outros modelos seguem pendentes.
 
 ### Novo na v0.8.0 — tráfego externo, mapas e CAT
-- **ADS-B (1090 MHz):** importa o arquivo `aircraft.json` de `readsb` ou `dump1090`, com indicativo, posição, altitude, velocidade e rumo. **Exige decodificador externo**; não demodula ADS-B em IQ dentro do SDR Tool.
-- **AIS (161,975/162,025 MHz):** lê arquivos NMEA `!AIVDM` de `AIS-catcher`/`rtl_ais` e decodifica mensagens de posição classe A/B (1, 2, 3, 18, 19) e identificação tipo 5, incluindo MMSI, posição, velocidade e rumo.
+- **ADS-B (1090 MHz):** botão *Receber ADS-B pelo SDR* usa o decodificador Mode S nativo (DF17/18) no IQ do próprio dongle, sintonizado em 1090 MHz a 2,4 MS/s (um modo por vez). Continua aceitando `aircraft.json` de `readsb`/`dump1090`. Sem homologação com RF real até o momento.
+- **ACARS (131,550/131,725/131,825 MHz AM):** aba Decodificação > ACARS com decodificador nativo (MSK 2400 bit/s, CRC verificado) das três frequências ao mesmo tempo.
+- **AIS (161,975/162,025 MHz):** botão *Receber AIS pelo SDR* usa o AIS-catcher embarcado (GPL-3.0) alimentado pelo IQ do dongle via rtl_tcp local. Também lê arquivos NMEA `!AIVDM` externos e decodifica mensagens de posição classe A/B (1, 2, 3, 18, 19) e identificação tipo 5, incluindo MMSI, posição, velocidade e rumo.
 - **Radiossondas:** acompanha JSON local produzido por `radiosonde_auto_rx` ou conversor, mostrando ID, posição, altura, velocidade vertical e dados meteorológicos quando presentes. Não decodifica RS41 diretamente no SDR Tool nem prevê automaticamente a queda.
 - **Mapa conjunto:** posições em mapa OSM/Leaflet gerado localmente, com exportação CSV por fonte. Os tiles exigem Internet; nenhum envio automático para servidores externos.
 - **CAT via Hamlib:** `rigctld` TCP, consulta frequência e modo por demanda ou sincronização de leitura; envio manual de sintonia/modo para o rádio. **Sem PTT**. Requer Hamlib externo configurado.

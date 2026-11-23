@@ -46,19 +46,21 @@ else:
 for f in ("drivers/wdi-simple.exe", "drivers/libwdi-COPYING-LGPL.txt"):
     if os.path.isfile(f):
         datas.append((f, "drivers"))
-# Decodificadores RS41 (fsk_demod LGPL-2.1, rs41mod GPL-3.0) + licenças e fonte
-# correspondente, gerados por packaging/build_sonde_decoders.sh. No Windows o
-# pacote é obrigatório: sem eles a aba Sondas > Recepção RF não funciona.
-sonde_dir = os.path.join("packaging", "sonde_decoders")
-if os.path.isdir(sonde_dir):
-    for root, _dirs, files in os.walk(sonde_dir):
-        rel = os.path.relpath(root, "packaging")
-        for f in files:
-            datas.append((os.path.join(root, f), rel))
-elif os.name == "nt" and os.environ.get("PT2VHF_ALLOW_MISSING_SONDE") != "1":
-    raise FileNotFoundError(
-        "packaging/sonde_decoders ausente. Rode packaging/build_sonde_decoders.sh "
-        "windows antes do PyInstaller (fsk_demod/rs41mod embarcados).")
+# Decodificadores externos embarcados, com licenças e fonte correspondente:
+#   sonde_decoders/  fsk_demod (LGPL-2.1) + rs41mod (GPL-3.0)  <- packaging/build_sonde_decoders.sh
+#   ais_catcher/     AIS-catcher (GPL-3.0)                     <- packaging/prepare_ais_catcher.sh
+# No Windows são obrigatórios: sem eles Sondas/AIS não funcionam pelo SDR.
+for bundle in ("sonde_decoders", "ais_catcher"):
+    bundle_dir = os.path.join("packaging", bundle)
+    if os.path.isdir(bundle_dir):
+        for root, _dirs, files in os.walk(bundle_dir):
+            rel = os.path.relpath(root, "packaging")
+            for f in files:
+                datas.append((os.path.join(root, f), rel))
+    elif os.name == "nt" and os.environ.get("PT2VHF_ALLOW_MISSING_DECODERS") != "1":
+        raise FileNotFoundError(
+            f"packaging/{bundle} ausente. Rode build_sonde_decoders.sh / prepare_ais_catcher.sh "
+            "antes do PyInstaller.")
 blog_dir = os.path.join("packaging", "rtlsdr_blog")
 if os.path.isdir(blog_dir):
     for f in os.listdir(blog_dir):

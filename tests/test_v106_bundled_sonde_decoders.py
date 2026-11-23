@@ -25,7 +25,7 @@ def _fake_bundle(tmp_path, names=("fsk_demod", "rs41mod")):
 
 def test_bundled_copy_preferred_over_path(tmp_path, monkeypatch):
     folder = _fake_bundle(tmp_path)
-    monkeypatch.setattr(sonde_rx, "bundled_decoder_dir", lambda: folder)
+    monkeypatch.setattr(sonde_rx, "bundled_decoder_dir", lambda *_: folder)
     monkeypatch.setattr(sonde_rx.shutil, "which", lambda name: "/usr/bin/" + name)
     path, origin = sonde_rx.locate_binary("rs41mod", "")
     assert origin == "embarcado" and Path(path).parent == folder.resolve()
@@ -36,7 +36,7 @@ def test_bundled_copy_preferred_over_path(tmp_path, monkeypatch):
 def test_user_path_wins_and_does_not_fall_back(tmp_path, monkeypatch):
     (tmp_path / "b").mkdir()
     folder = _fake_bundle(tmp_path / "b")
-    monkeypatch.setattr(sonde_rx, "bundled_decoder_dir", lambda: folder)
+    monkeypatch.setattr(sonde_rx, "bundled_decoder_dir", lambda *_: folder)
     custom = tmp_path / "meu_rs41mod"
     custom.write_bytes(b"")
     assert sonde_rx.locate_binary("rs41mod", str(custom)) == (str(custom.resolve()), "usuário")
@@ -47,7 +47,7 @@ def test_user_path_wins_and_does_not_fall_back(tmp_path, monkeypatch):
 
 
 def test_no_bundle_falls_back_to_path(monkeypatch):
-    monkeypatch.setattr(sonde_rx, "bundled_decoder_dir", lambda: None)
+    monkeypatch.setattr(sonde_rx, "bundled_decoder_dir", lambda *_: None)
     monkeypatch.setattr(sonde_rx.shutil, "which", lambda name: None)
     assert sonde_rx.locate_binary("fsk_demod") == (None, "PATH")
     with pytest.raises(FileNotFoundError, match="embarcada"):

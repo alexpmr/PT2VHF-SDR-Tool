@@ -33,21 +33,21 @@ SIGNAL_OFFSET_HZ = 0  # centralizar portadora em 0 Hz; máscara FSK: -5 a +5 kHz
 BUNDLED_DIRNAME = "sonde_decoders"
 
 
-def bundled_decoder_dir() -> Path | None:
+def bundled_decoder_dir(dirname: str = BUNDLED_DIRNAME) -> Path | None:
     """Pasta dos decodificadores embarcados (PyInstaller) ou compilados localmente."""
     candidates = []
     base = getattr(sys, "_MEIPASS", None)
     if base:
-        candidates.append(Path(base) / BUNDLED_DIRNAME)
-    candidates.append(Path(__file__).resolve().parent.parent / "packaging" / BUNDLED_DIRNAME)
+        candidates.append(Path(base) / dirname)
+    candidates.append(Path(__file__).resolve().parent.parent / "packaging" / dirname)
     for folder in candidates:
         if folder.is_dir():
             return folder
     return None
 
 
-def bundled_binary(executable: str) -> str | None:
-    folder = bundled_decoder_dir()
+def bundled_binary(executable: str, dirname: str = BUNDLED_DIRNAME) -> str | None:
+    folder = bundled_decoder_dir(dirname)
     if folder is None:
         return None
     for name in (executable + ".exe", executable) if os.name == "nt" else (executable,):
@@ -57,7 +57,8 @@ def bundled_binary(executable: str) -> str | None:
     return None
 
 
-def locate_binary(executable: str, supplied_path: str = "") -> tuple[str | None, str]:
+def locate_binary(executable: str, supplied_path: str = "",
+                  dirname: str = BUNDLED_DIRNAME) -> tuple[str | None, str]:
     """Resolve sem executar: (caminho, origem) com origem 'usuário', 'embarcado' ou 'PATH'.
 
     Um caminho explícito do usuário prevalece e não cai para outra cópia se
@@ -69,7 +70,7 @@ def locate_binary(executable: str, supplied_path: str = "") -> tuple[str | None,
         if not located and Path(name).expanduser().is_file():
             located = str(Path(name).expanduser())
         return (str(Path(located).resolve()) if located else None), "usuário"
-    bundled = bundled_binary(executable)
+    bundled = bundled_binary(executable, dirname)
     if bundled:
         return str(Path(bundled).resolve()), "embarcado"
     located = shutil.which(executable)
@@ -107,31 +108,44 @@ class ChannelIQ:
     Uma fase contínua é mantida entre blocos. Cada bloco é reamostrado com
     resample_poly; blocos grandes de SDR fornecem margem de filtro na entrada.
     """
-    def __init__(self, sample_rate: int, station_hz: float):
+    def __init__(self, sample_rate: int, station_hz: float, output_rate: int = OUTPUT_RATE,
+                 cutoff_hz: float = 19_000):
         self.sample_rate = int(sample_rate)
         self.station_hz = float(station_hz)
+        self.output_rate = int(output_rate)
         self.samples = 0
         self._center = None
         self._tail = np.empty(0, dtype=np.complex64)
-        if self.sample_rate < 96000:
-            raise ValueError("IQ com taxa inferior a 96 kS/s")
-        self._gcd = math.gcd(self.sample_rate, OUTPUT_RATE)
-        self._up, self._down = OUTPUT_RATE // self._gcd, self.sample_rate // self._gcd
-        # Taxas múltiplas de 48 kS/s: filtro IIR contínuo + seleção com fase
+        if self.sample_rate < 2 * self.output_rate:
+            raise ValueError(f"IQ com taxa inferior a {2 * self.output_rate // 1000} kS/s")
+        self._gcd = math.gcd(self.sample_rate, self.output_rate)
+        self._up, self._down = self.output_rate // self._gcd, self.sample_rate // self._gcd
+        # Taxas múltiplas da saída: filtro IIR contínuo + seleção com fase
         # persistente entre blocos, sem saltos de símbolos a cada read() do SDR.
-        self._sos = (butter(10, 19_000, btype="lowpass", fs=self.sample_rate,
+        self._sos = (butter(10, cutoff_hz, btype="lowpass", fs=self.sample_rate,
                             output="sos") if self._up == 1 else None)
         self._zi = (np.zeros((len(self._sos), 2), dtype=np.complex128)
                     if self._sos is not None else None)
 
     def convert(self, block, center_hz: float) -> bytes:
+        narrow = self.channelize(block, center_hz)
+        if narrow.size == 0:
+            return b""
+        # O fsk_demod moderno espera I/Q signed 16 bit little-endian, intercalado,
+        # portadora no centro do canal (-5 a +5 kHz), não na antiga FI +12 kHz.
+        vals = np.stack((narrow.real, narrow.imag), axis=-1)
+        ints = np.round(np.clip(vals, -1, 1) * 30000).astype("<i2")
+        return ints.tobytes()
+
+    def channelize(self, block, center_hz: float) -> np.ndarray:
+        """Canal complexo centrado na estação, na taxa de saída (complex64)."""
         samples = np.asarray(block, dtype=np.complex64).reshape(-1)
         if samples.size == 0:
-            return b""
+            return np.empty(0, dtype=np.complex64)
         center_hz = float(center_hz)
         off = self.station_hz - SIGNAL_OFFSET_HZ - center_hz
-        if abs(off) >= self.sample_rate / 2 - 30000:
-            raise ValueError("Frequência da sonda fora da banda IQ capturada")
+        if abs(off) >= self.sample_rate / 2 - max(30000, self.output_rate / 2):
+            raise ValueError("Frequência da estação fora da banda IQ capturada")
         if self._center != center_hz:
             self._center = center_hz
             self.samples = 0
@@ -154,11 +168,7 @@ class ChannelIQ:
             joined = np.concatenate((prefix, translated))
             narrow = resample_poly(joined, self._up, self._down)[n_prefix_out:]
             self._tail = joined[-min(len(joined), 10 * self._down):].copy()
-        # O fsk_demod moderno espera I/Q signed 16 bit little-endian, intercalado,
-        # portadora no centro do canal (-5 a +5 kHz), não na antiga FI +12 kHz.
-        vals = np.stack((narrow.real, narrow.imag), axis=-1)
-        ints = np.round(np.clip(vals, -1, 1) * 30000).astype("<i2")
-        return ints.tobytes()
+        return np.asarray(narrow, dtype=np.complex64)
 
 
 class RS41Receiver:

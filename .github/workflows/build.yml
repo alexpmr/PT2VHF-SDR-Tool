@@ -25,10 +25,12 @@ jobs:
           python --version
           ldconfig -p | grep 'libEGL.so.1'
       - run: python -m pip install numpy scipy PySide6==6.11.3 pyqtgraph pytest "sgp4>=2.23"
-      - name: Decodificadores RS41 nativos (teste ponta a ponta sintético)
+      - name: Decodificadores externos nativos (testes ponta a ponta sintéticos)
         run: |
           if command -v cc >/dev/null; then bash packaging/build_sonde_decoders.sh native
           else echo "sem compilador C: teste ponta a ponta RS41 será pulado"; fi
+          if command -v cmake >/dev/null && command -v c++ >/dev/null; then bash packaging/prepare_ais_catcher.sh native
+          else echo "sem cmake/c++: teste ponta a ponta AIS-catcher será pulado"; fi
       - name: Testes Linux / Qt offscreen (diagnóstico independente)
         run: python -X faulthandler scripts/run_tests.py
         env:
@@ -118,6 +120,17 @@ jobs:
           gcc --version | head -1
           CC=gcc bash packaging/build_sonde_decoders.sh windows packaging/sonde_decoders
           ls -la packaging/sonde_decoders
+      - name: AIS-catcher v0.71 (GPL-3.0, pacote oficial com SHA-256 fixo)
+        shell: bash
+        run: |
+          set -e
+          bash packaging/prepare_ais_catcher.sh windows packaging/ais_catcher
+          # Runtime MSVC app-local: o AIS-catcher oficial depende dele e a máquina
+          # do usuário pode não ter o Visual C++ Redistributable instalado.
+          for f in msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
+            cp "/c/Windows/System32/$f" packaging/ais_catcher/
+          done
+          ls -la packaging/ais_catcher
       - name: PyInstaller (pasta + portátil)
         env:
           PT2VHF_RELEASE_TEXT_SPLASH: ${{ (github.head_ref == 'release/stable-v1.0.2-rsp1-20261115' || github.head_ref == 'fix/ota-launch-103-20261115' || github.head_ref == 'release/stable-v1.0.4-backlog-20261116' || github.head_ref == 'release/stable-v1.0.5-verified-20261119' || github.head_ref == 'release/stable-v1.0.6-waterfall-20261122' || startsWith(github.head_ref, 'claude/')) && '1' || '0' }}
@@ -161,8 +174,11 @@ jobs:
           $dir = Join-Path $env:LOCALAPPDATA "Programs\PT2VHF SDR Tool"
           if (-not (Test-Path "$dir\unins000.exe")) { throw "Instalação por usuário não encontrada em $dir" }
           if (-not (Test-Path "$dir\_internal\drivers\wdi-simple.exe")) { throw "wdi-simple.exe ausente da instalação" }
-          foreach ($f in @("fsk_demod.exe", "rs41mod.exe", "LICENSE-GPL-3.0.txt", "LICENSE-LGPL-2.1.txt", "source\demod\mod\rs41mod.c")) {
-            if (-not (Test-Path "$dir\_internal\sonde_decoders\$f")) { throw "sonde_decoders\$f ausente da instalação" }
+          foreach ($f in @("sonde_decoders\fsk_demod.exe", "sonde_decoders\rs41mod.exe", "sonde_decoders\LICENSE-GPL-3.0.txt",
+                           "sonde_decoders\LICENSE-LGPL-2.1.txt", "sonde_decoders\source\demod\mod\rs41mod.c",
+                           "ais_catcher\AIS-catcher.exe", "ais_catcher\Licenses\AIS-catcher", "ais_catcher\msvcp140.dll",
+                           "ais_catcher\vcruntime140_1.dll", "ais_catcher\source\AIS-catcher-0.71-source.zip")) {
+            if (-not (Test-Path "$dir\_internal\$f")) { throw "$f ausente da instalação" }
           }
           $p = Start-Process -FilePath "$dir\PT2VHF-SDR-Tool.exe" -ArgumentList "--selftest" -Wait -PassThru
           Get-Content "$env:TEMP\pt2vhf-sdr-selftest.log"

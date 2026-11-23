@@ -17,7 +17,7 @@ def test_main_navigation_and_lcd_band_theme(monkeypatch, tmp_path, qt_lifecycle)
         assert "ADS-B" not in pages and "AIS" not in pages
         assert "Sondas Meteorológicas" not in pages and "Satélites" not in pages
         assert [w.decoder_tabs.tabText(i) for i in range(w.decoder_tabs.count())] == [
-            "ADS-B", "Sondas Meteorológicas", "AIS", "APRS / DTMF / CTCSS"]
+            "ADS-B", "Sondas Meteorológicas", "AIS", "APRS / DTMF / CTCSS", "ACARS"]
         assert w.decoder_tabs.widget(3).widget() is w.dec_panel
         assert w.scan_panel.tabs.indexOf(w.dec_panel) == -1
         assert [w.tools_tabs.tabText(i) for i in range(w.tools_tabs.count())] == [

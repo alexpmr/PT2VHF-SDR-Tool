@@ -1,7 +1,9 @@
 """Tráfego ADS-B (dump1090/readsb), AIS (NMEA VDM) e radiossondas (JSON local).
 
-A aquisição/decodificação RF pertence a processos externos: readsb/dump1090,
-rtl_ais/AIS-catcher e radiosonde_auto_rx. Não há promessa de demodulação IQ.
+Este módulo só interpreta dados já decodificados (aircraft.json, NMEA, JSON).
+A recepção pelo SDR fica em decoders/modes.py (ADS-B nativo), ais_rx.py
+(AIS-catcher embarcado) e sonde_rx.py (RS41); arquivos de readsb/dump1090,
+rtl_ais/AIS-catcher e radiosonde_auto_rx externos continuam aceitos.
 Nenhuma conexão é feita a servidores públicos ou serviços de terceiros.
 """
 from __future__ import annotations
