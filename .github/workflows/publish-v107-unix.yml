@@ -99,7 +99,12 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
           uname -m; sw_vers; cc --version | head -1; cmake --version | head -1
       - name: Dependências Python
-        run: python -m pip install -r requirements-dev.txt
+        # pyrnnoise 0.4.5 não publica wheel para macOS: usa a última 0.4.x disponível
+        # (o autoteste do executável empacotado confere o RNNoise logo abaixo).
+        run: |
+          grep -v '^pyrnnoise' requirements.txt > "$RUNNER_TEMP/req-macos.txt"
+          python -m pip install -r "$RUNNER_TEMP/req-macos.txt" "pyrnnoise>=0.4,<0.5" pytest "pyinstaller>=6.3"
+          python -m pip show pyrnnoise | head -2
       - name: Decodificadores nativos (RS41 e AIS-catcher)
         env:
           MACOSX_DEPLOYMENT_TARGET: "13.0"
