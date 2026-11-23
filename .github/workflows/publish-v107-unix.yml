@@ -101,11 +101,11 @@ jobs:
           uname -m; sw_vers; cc --version | head -1; cmake --version | head -1
       - name: Dependências Python
         # pyrnnoise 0.4.5 não publica wheel para macOS: usa a 0.4.x disponível, com o
-        # audiolab anterior à 0.5.2 (a 0.5.2 removeu o argumento rate usado pela 0.4.3) e PyAV < 18 (sem av.option).
+        # audiolab anterior à 0.5.2 (a 0.5.2 removeu o argumento rate usado pela 0.4.3) e PyAV 17.0.1 (a 17.1 removeu av.option).
         # (o autoteste do executável empacotado confere o RNNoise logo abaixo).
         run: |
           grep -v '^pyrnnoise' requirements.txt > "$RUNNER_TEMP/req-macos.txt"
-          python -m pip install -r "$RUNNER_TEMP/req-macos.txt" "pyrnnoise>=0.4,<0.5" "audiolab<0.5.2" "av<18" pytest "pyinstaller>=6.3"
+          python -m pip install -r "$RUNNER_TEMP/req-macos.txt" "pyrnnoise>=0.4,<0.5" "audiolab<0.5.2" "av==17.0.1" pytest "pyinstaller>=6.3"
           python -m pip show pyrnnoise | head -2
       - name: Decodificadores nativos (RS41 e AIS-catcher)
         env:
