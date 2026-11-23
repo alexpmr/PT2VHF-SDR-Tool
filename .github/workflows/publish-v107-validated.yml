@@ -1,0 +1,83 @@
+name: Publish PT2VHF SDR Tool v1.0.7 bundled decoders and Sat Tool splash
+on:
+  push:
+    branches: [release/publish-v1.0.7-20261123]
+    paths:
+      - .github/workflows/publish-v107-validated.yml
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: pt2vhf-sdr-publish-v107
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SOURCE_RUN_ID: "45098073427"
+      SOURCE_SHA: "252fe4e6a18e34aaf6ee0a623525f6227c293134"
+      VERSION: "1.0.7"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Await successful exact SHA candidate CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          for attempt in $(seq 1 40); do
+            status="$(gh api "repos/$repo/actions/runs/$SOURCE_RUN_ID" --jq '.status')"
+            conclusion="$(gh api "repos/$repo/actions/runs/$SOURCE_RUN_ID" --jq '.conclusion // ""')"
+            actual="$(gh api "repos/$repo/actions/runs/$SOURCE_RUN_ID" --jq '.head_sha')"
+            test "$actual" = "$SOURCE_SHA"
+            if [ "$status" = "completed" ]; then
+              test "$conclusion" = "success" || { echo "::error::CI ended: $conclusion"; exit 1; }
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "::error::CI completion timeout"
+          exit 1
+      - name: Verify exact tested build and binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          actual="$(gh api "repos/$repo/actions/runs/$SOURCE_RUN_ID" --jq '.head_sha')"
+          result="$(gh api "repos/$repo/actions/runs/$SOURCE_RUN_ID" --jq '.conclusion')"
+          test "$actual" = "$SOURCE_SHA"
+          test "$result" = "success"
+          gh run download "$SOURCE_RUN_ID" --repo "$repo" \
+            --name "PT2VHF-SDR-Tool-$VERSION-windows" --dir release
+          for flavor in Setup Portable; do
+            test -s "release/PT2VHF-SDR-Tool-v$VERSION-Win11-x64-$flavor.exe"
+          done
+          test -s "release/SHA256SUMS.txt"
+          cd release
+          sed '1s/^\xef\xbb\xbf//' SHA256SUMS.txt | tr -d '\r' | \
+            awk 'NF == 3 {print $1 "  " $3}' | sha256sum --check --strict
+          test "$(awk 'NF == 3 {n++} END {print n}' SHA256SUMS.txt)" -eq 2
+      - name: Publish verified v1.0.7 release after all Windows/Linux CI gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          if gh api "repos/$repo/releases/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::Release v$VERSION already exists; refusing to overwrite"
+            exit 1
+          fi
+          gh release create "v$VERSION" release/*.exe release/SHA256SUMS.txt \
+            --repo "$repo" --target "$SOURCE_SHA" \
+            --title "PT2VHF SDR Tool v$VERSION — Windows x64" \
+            --notes "v$VERSION — Bundled decoders and Sat Tool splash. RS41: fsk_demod (LGPL-2.1) and rs41mod (GPL-3.0) built in CI from a pinned commit and bundled with licenses and corresponding source; automatic detection. ADS-B: native Mode S decoder (tunes 1090 MHz, raises sample rate to 2.4 MS/s). AIS: AIS-catcher v0.71 (GPL-3.0) bundled, fed by a local 127.0.0.1 rtl_tcp server. ACARS: native decoder for 131.550/131.725/131.825 MHz and new Decoding > ACARS tab. Same SDR, one mode at a time. Splash: official PT2VHF banner as in Sat Tool, non-modal. Qt/Linux suite: 282 passed, 1 skipped. Windows suite, packaged Setup/Portable selftests (synthetic RS41/ADS-B/ACARS/AIS), silent Setup installation and OTA smoke passed on exact CI run $SOURCE_RUN_ID / SHA $SOURCE_SHA. Real-RF homologation of RS41, ADS-B, AIS and ACARS is still pending; RS41 issue #1, Windows crash #8 and physical OTA #18 remain open. IQ/ONNX remains experimental outside this stable release. See BACKLOG.md."
+          tag_sha="$(gh api "repos/$repo/git/ref/tags/v$VERSION" --jq '.object.sha')"
+          test "$tag_sha" = "$SOURCE_SHA"
+          gh api "repos/$repo/releases/tags/v$VERSION" > /tmp/release.json
+          jq -e --arg v "$VERSION" '
+            .draft == false and .prerelease == false and
+            ([.assets[].name] | index("SHA256SUMS.txt") != null) and
+            ([.assets[].name] | index("PT2VHF-SDR-Tool-v"+$v+"-Win11-x64-Setup.exe") != null) and
+            ([.assets[].name] | index("PT2VHF-SDR-Tool-v"+$v+"-Win11-x64-Portable.exe") != null)
+          ' /tmp/release.json
+          echo "PT2VHF_SDR_V107_PUBLISHED=$tag_sha"
