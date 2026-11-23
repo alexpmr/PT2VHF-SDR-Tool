@@ -2,7 +2,10 @@
 
 DSP próprio: deslocamento complexo para FI +12 kHz e decimação a 48 kS/s.
 Decodificação FSK/FEC/telemetria por fsk_demod e rs41mod (projeto auto_rx,
-binários externos de código aberto, não distribuídos no instalador).
+programas externos de código aberto). O Setup/Portable Windows embarca cópias
+compiladas em ``sonde_decoders/`` (ver packaging/build_sonde_decoders.sh);
+caminho configurado pelo usuário tem prioridade, depois a cópia embarcada e
+por fim o PATH.
 Executa subprocessos sem shell, fora da thread de recepção; desativado por padrão.
 """
 from __future__ import annotations
@@ -12,6 +15,7 @@ import os
 import queue
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import json
@@ -26,16 +30,64 @@ OUTPUT_RATE = 48000
 SIGNAL_OFFSET_HZ = 0  # centralizar portadora em 0 Hz; máscara FSK: -5 a +5 kHz
 
 
+BUNDLED_DIRNAME = "sonde_decoders"
+
+
+def bundled_decoder_dir(dirname: str = BUNDLED_DIRNAME) -> Path | None:
+    """Pasta dos decodificadores embarcados (PyInstaller) ou compilados localmente."""
+    candidates = []
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        candidates.append(Path(base) / dirname)
+    candidates.append(Path(__file__).resolve().parent.parent / "packaging" / dirname)
+    for folder in candidates:
+        if folder.is_dir():
+            return folder
+    return None
+
+
+def bundled_binary(executable: str, dirname: str = BUNDLED_DIRNAME) -> str | None:
+    folder = bundled_decoder_dir(dirname)
+    if folder is None:
+        return None
+    for name in (executable + ".exe", executable) if os.name == "nt" else (executable,):
+        path = folder / name
+        if path.is_file() and (os.name == "nt" or os.access(path, os.X_OK)):
+            return str(path)
+    return None
+
+
+def locate_binary(executable: str, supplied_path: str = "",
+                  dirname: str = BUNDLED_DIRNAME) -> tuple[str | None, str]:
+    """Resolve sem executar: (caminho, origem) com origem 'usuário', 'embarcado' ou 'PATH'.
+
+    Um caminho explícito do usuário prevalece e não cai para outra cópia se
+    estiver errado (evita usar silenciosamente um programa diferente).
+    """
+    name = str(supplied_path or "").strip().strip('"').strip("'")
+    if name and name.lower() not in (executable.lower(), executable.lower() + ".exe"):
+        located = shutil.which(name)
+        if not located and Path(name).expanduser().is_file():
+            located = str(Path(name).expanduser())
+        return (str(Path(located).resolve()) if located else None), "usuário"
+    bundled = bundled_binary(executable, dirname)
+    if bundled:
+        return str(Path(bundled).resolve()), "embarcado"
+    located = shutil.which(executable)
+    return (str(Path(located).resolve()) if located else None), "PATH"
+
+
 def find_binary(executable: str, supplied_path: str = "") -> str:
-    """Sem download automático ou execução de scripts; só .exe/binário do usuário ou PATH."""
-    name = supplied_path.strip() or executable
-    if not name:
+    """Sem download automático ou execução de scripts: usuário > embarcado > PATH."""
+    if not executable:
         raise ValueError("Nome vazio do decodificador")
-    located = shutil.which(name)
+    located, origin = locate_binary(executable, supplied_path)
     if not located:
+        where = ("o caminho configurado não existe" if origin == "usuário"
+                 else "nenhuma cópia embarcada nem no PATH")
         raise FileNotFoundError(
-            f"{executable} indisponível. Instale os demoduladores do projeto radiosonde_auto_rx "
-            f"e indique o executável em Configurações (ou adicione ao PATH).")
+            f"{executable} indisponível ({where}). Reinstale o PT2VHF SDR Tool, "
+            f"limpe o campo para usar a cópia embarcada ou indique o executável.")
     return located
 
 
@@ -56,31 +108,44 @@ class ChannelIQ:
     Uma fase contínua é mantida entre blocos. Cada bloco é reamostrado com
     resample_poly; blocos grandes de SDR fornecem margem de filtro na entrada.
     """
-    def __init__(self, sample_rate: int, station_hz: float):
+    def __init__(self, sample_rate: int, station_hz: float, output_rate: int = OUTPUT_RATE,
+                 cutoff_hz: float = 19_000):
         self.sample_rate = int(sample_rate)
         self.station_hz = float(station_hz)
+        self.output_rate = int(output_rate)
         self.samples = 0
         self._center = None
         self._tail = np.empty(0, dtype=np.complex64)
-        if self.sample_rate < 96000:
-            raise ValueError("IQ com taxa inferior a 96 kS/s")
-        self._gcd = math.gcd(self.sample_rate, OUTPUT_RATE)
-        self._up, self._down = OUTPUT_RATE // self._gcd, self.sample_rate // self._gcd
-        # Taxas múltiplas de 48 kS/s: filtro IIR contínuo + seleção com fase
+        if self.sample_rate < 2 * self.output_rate:
+            raise ValueError(f"IQ com taxa inferior a {2 * self.output_rate // 1000} kS/s")
+        self._gcd = math.gcd(self.sample_rate, self.output_rate)
+        self._up, self._down = self.output_rate // self._gcd, self.sample_rate // self._gcd
+        # Taxas múltiplas da saída: filtro IIR contínuo + seleção com fase
         # persistente entre blocos, sem saltos de símbolos a cada read() do SDR.
-        self._sos = (butter(10, 19_000, btype="lowpass", fs=self.sample_rate,
+        self._sos = (butter(10, cutoff_hz, btype="lowpass", fs=self.sample_rate,
                             output="sos") if self._up == 1 else None)
         self._zi = (np.zeros((len(self._sos), 2), dtype=np.complex128)
                     if self._sos is not None else None)
 
     def convert(self, block, center_hz: float) -> bytes:
+        narrow = self.channelize(block, center_hz)
+        if narrow.size == 0:
+            return b""
+        # O fsk_demod moderno espera I/Q signed 16 bit little-endian, intercalado,
+        # portadora no centro do canal (-5 a +5 kHz), não na antiga FI +12 kHz.
+        vals = np.stack((narrow.real, narrow.imag), axis=-1)
+        ints = np.round(np.clip(vals, -1, 1) * 30000).astype("<i2")
+        return ints.tobytes()
+
+    def channelize(self, block, center_hz: float) -> np.ndarray:
+        """Canal complexo centrado na estação, na taxa de saída (complex64)."""
         samples = np.asarray(block, dtype=np.complex64).reshape(-1)
         if samples.size == 0:
-            return b""
+            return np.empty(0, dtype=np.complex64)
         center_hz = float(center_hz)
         off = self.station_hz - SIGNAL_OFFSET_HZ - center_hz
-        if abs(off) >= self.sample_rate / 2 - 30000:
-            raise ValueError("Frequência da sonda fora da banda IQ capturada")
+        if abs(off) >= self.sample_rate / 2 - max(30000, self.output_rate / 2):
+            raise ValueError("Frequência da estação fora da banda IQ capturada")
         if self._center != center_hz:
             self._center = center_hz
             self.samples = 0
@@ -103,11 +168,7 @@ class ChannelIQ:
             joined = np.concatenate((prefix, translated))
             narrow = resample_poly(joined, self._up, self._down)[n_prefix_out:]
             self._tail = joined[-min(len(joined), 10 * self._down):].copy()
-        # O fsk_demod moderno espera I/Q signed 16 bit little-endian, intercalado,
-        # portadora no centro do canal (-5 a +5 kHz), não na antiga FI +12 kHz.
-        vals = np.stack((narrow.real, narrow.imag), axis=-1)
-        ints = np.round(np.clip(vals, -1, 1) * 30000).astype("<i2")
-        return ints.tobytes()
+        return np.asarray(narrow, dtype=np.complex64)
 
 
 class RS41Receiver:
@@ -343,3 +404,46 @@ class RS41Receiver:
         self._stderr_threads.clear()
         self._writer = self._reader = None
         self.demod = self.decoder = None
+
+
+def synthetic_pipeline_check(fsk_binary: str | None = None, rs41_binary: str | None = None,
+                             frames: int = 4, timeout: float = 90.0) -> list[dict]:
+    """Executa IQ RS41 *sintético* -> ChannelIQ -> fsk_demod -> rs41mod e retorna os JSON.
+
+    Usado no autoteste do executável para provar pipes binários, argumentos e
+    binários embarcados. Não é homologação RF: não substitui IQ real de sonda.
+    """
+    from .sonde_synth import rs41_frame, rs41_iq
+    fsk = fsk_binary or find_binary("fsk_demod")
+    rs = rs41_binary or find_binary("rs41mod")
+    station, rate = 403_000_000.0, 240_000
+    center = station - 30_000
+    iq = rs41_iq([rs41_frame(frame_nb=1000 + i) for i in range(frames)], rate,
+                 offset_hz=station - center)
+    channel = ChannelIQ(rate, station)
+    data = b"".join(channel.convert(iq[i:i + 16384], center) for i in range(0, len(iq), 16384))
+    argv_fsk, argv_rs = build_decoder_commands(station, fsk, rs)
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+    demod = subprocess.Popen(argv_fsk, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL, creationflags=flags)
+    decoder = subprocess.Popen(argv_rs, stdin=demod.stdout, stdout=subprocess.PIPE,
+                               stderr=subprocess.DEVNULL, creationflags=flags)
+    demod.stdout.close()
+    feeder = threading.Thread(target=lambda: (demod.stdin.write(data), demod.stdin.close()),
+                              daemon=True)
+    feeder.start()
+    try:
+        out, _ = decoder.communicate(timeout=timeout)
+    finally:
+        for proc in (demod, decoder):
+            if proc.poll() is None:
+                proc.kill()
+        demod.wait(timeout=5)
+    result = []
+    for line in out.splitlines():
+        if line.lstrip().startswith(b"{"):
+            try:
+                result.append(json.loads(line))
+            except ValueError:
+                pass
+    return result

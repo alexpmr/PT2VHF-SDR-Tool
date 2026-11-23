@@ -188,6 +188,57 @@ def selftest() -> int:
     except Exception as ex:  # noqa: BLE001
         check(f"Interface web ({ex})", False)
     try:
+        from .sonde_rx import locate_binary, synthetic_pipeline_check
+        tools = {n: locate_binary(n) for n in ("fsk_demod", "rs41mod")}
+        bundled = all(origin == "embarcado" and path for path, origin in tools.values())
+        if getattr(sys, "frozen", False):
+            check("Decodificadores RS41 embarcados (fsk_demod, rs41mod)", bundled)
+        if all(path for path, _ in tools.values()):
+            frames = synthetic_pipeline_check(tools["fsk_demod"][0], tools["rs41mod"][0])
+            check(f"Pipeline RS41 sintético IQ->fsk_demod->rs41mod ({len(frames)} quadro(s) JSON)",
+                  len(frames) >= 2 and all(f.get("id") == "T1234567" for f in frames))
+        else:
+            say("[INFO] Decodificadores RS41 ausentes neste ambiente (execução pelo código-fonte)")
+    except Exception as ex:  # noqa: BLE001
+        check(f"Decodificadores RS41 ({ex})", False)
+    try:
+        from .decoders.modes import ADSBDecoder, ModeSDemodulator, synth_adsb_iq
+        vectors = [bytes.fromhex(h) for h in ("8D4840D6202CC371C32CE0576098",
+                                               "8D40621D58C386435CC412692AD6",
+                                               "8D40621D58C382D690C8AC2863A7")]
+        demod, dec = ModeSDemodulator(2_400_000), ADSBDecoder()
+        got = demod.process(synth_adsb_iq(vectors, 2_400_000, snr_db=20, freq_offset_hz=50e3))
+        for i, msg in enumerate(got):
+            dec.ingest(msg, 100.0 + i)
+        plane = dec.aircraft.get("40621D", {})
+        check(f"ADS-B nativo sintético ({len(got)}/3 quadros Mode S)",
+              len(got) == 3 and abs(plane.get("lat", 0) - 52.2572) < 1e-3
+              and dec.aircraft.get("4840D6", {}).get("flight") == "KLM1023")
+    except Exception as ex:  # noqa: BLE001
+        check(f"ADS-B nativo ({ex})", False)
+    try:
+        from .decoders.acars import AcarsDemodulator, build_block, synth_acars_audio
+        demod = AcarsDemodulator()
+        msgs = demod.process(synth_acars_audio([build_block(text="M01APT2VHFAUTOTESTE")]))
+        msgs += demod.flush()
+        check(f"ACARS nativo sintético ({len(msgs)} bloco(s) com CRC)",
+              len(msgs) == 1 and msgs[0].get("text") == "AUTOTESTE")
+    except Exception as ex:  # noqa: BLE001
+        check(f"ACARS nativo ({ex})", False)
+    try:
+        from .ais_rx import find_ais_catcher, synthetic_ais_check
+        path, origin = find_ais_catcher()
+        if getattr(sys, "frozen", False):
+            check("AIS-catcher embarcado", bool(path) and origin == "embarcado")
+        if path:
+            ships = synthetic_ais_check(path)
+            check(f"Pipeline AIS sintético IQ->rtl_tcp local->AIS-catcher ({len(ships)}/3 navios)",
+                  len(ships) == 3)
+        else:
+            say("[INFO] AIS-catcher ausente neste ambiente (execução pelo código-fonte)")
+    except Exception as ex:  # noqa: BLE001
+        check(f"AIS-catcher ({ex})", False)
+    try:
         from pyrnnoise import RNNoise
         import numpy as np
         den = RNNoise(sample_rate=48000)
