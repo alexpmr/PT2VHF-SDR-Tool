@@ -10,6 +10,7 @@
 # é copiado para <saida>/source junto com os textos de licença, cumprindo a
 # GPL-3.0/LGPL-2.1 na distribuição dos binários.
 set -euo pipefail
+# ${EXTRA[@]+...}: compatível com o bash 3.2 do macOS (array vazio + set -u).
 
 TARGET="${1:-windows}"
 OUT="${2:-packaging/sonde_decoders}"
@@ -35,9 +36,9 @@ mkdir -p "$OUT"
 CFLAGS=(-O2 -Wall -Wno-unused -Wno-unused-result)
 "$CC" "${CFLAGS[@]}" -o "$OUT/fsk_demod$EXE" \
   "$U/fsk_demod.c" "$U/fsk.c" "$U/modem_stats.c" "$U/kiss_fftr.c" "$U/kiss_fft.c" \
-  "${EXTRA[@]}" -lm
+  ${EXTRA[@]+"${EXTRA[@]}"} -lm
 "$CC" "${CFLAGS[@]}" -o "$OUT/rs41mod$EXE" \
-  "$M/rs41mod.c" "$M/bch_ecc_mod.c" "$M/demod_mod.c" "${EXTRA[@]}" -lm
+  "$M/rs41mod.c" "$M/bch_ecc_mod.c" "$M/demod_mod.c" ${EXTRA[@]+"${EXTRA[@]}"} -lm
 
 # Fonte correspondente + licenças (obrigatório para redistribuir binários GPL/LGPL).
 SRC="$OUT/source"
