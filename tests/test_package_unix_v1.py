@@ -67,9 +67,32 @@ def test_deb_and_tgz_contain_bundle_and_desktop_launcher(tmp_path, monkeypatch):
     # Fake JPEG payload is intentionally NOT used for a distributable build:
     # this checks package layout, not the real PT2VHF splash image quality.
     (source / "welcome-banner.jpg").write_bytes(b"synthetic-test-artifact" * 1600)
+    for folder, name in (("sonde_decoders", "fsk_demod"), ("sonde_decoders", "rs41mod"),
+                         ("ais_catcher", "AIS-catcher")):
+        tool = bundle / folder / name
+        tool.parent.mkdir(exist_ok=True)
+        tool.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        tool.chmod(0o755)
     monkeypatch.setattr(pkg, "DIST", dist)
     monkeypatch.setattr(pkg, "RELEASE", tmp_path / "release")
     artifacts = pkg.linux_packages("1.0.0", platform.machine())
     assert {x.suffix for x in artifacts} == {".deb", ".tgz"}
     assert all(x.stat().st_size > 300 for x in artifacts)
     assert pkg.checksums(artifacts).is_file()
+
+
+def test_packaging_fails_closed_without_bundled_decoders(tmp_path):
+    folder = tmp_path / "app" / "sonde_decoders"
+    folder.mkdir(parents=True)
+    for name in ("fsk_demod", "rs41mod"):
+        (folder / name).write_text("#!/bin/sh\n", encoding="utf-8")
+        (folder / name).chmod(0o755)
+    with pytest.raises(FileNotFoundError, match="AIS-catcher"):
+        pkg.assert_decoders(tmp_path / "app")
+    ais = tmp_path / "app" / "ais_catcher" / "AIS-catcher"
+    ais.parent.mkdir()
+    ais.write_text("#!/bin/sh\n", encoding="utf-8")
+    with pytest.raises(FileNotFoundError):  # sem bit de execução
+        pkg.assert_decoders(tmp_path / "app")
+    ais.chmod(0o755)
+    assert len(pkg.assert_decoders(tmp_path / "app")) == 3
