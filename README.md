@@ -100,7 +100,7 @@ Plataforma inicial: **Windows** (também roda em Linux/macOS).
 - **Pacotes de memórias prontas** (botão *Memórias prontas…*): radioamador (chamada e fonia),
   FT8/FT4/WSPR, satélites/ISS, aviação, marítimo VHF (simplex, DSC, AIS), PX 11 m (40 canais),
   FRS/PMR446 e sinais horários (WWV/CHU).
-- **Barra de favoritos ★** acima do waterfall: teclas de memória de um clique, como num rádio.
+- **Favoritos ★** acima do waterfall: menu suspenso compacto, do mais usado para o menos usado; escolha um para escutar. "+ Favorito" salva a frequência atual e "−" remove o selecionado.
 
 ### Scanner por espectro
 - Varre faixas inteiras **pelo FFT**, segmento a segmento — salta direto para onde há sinal

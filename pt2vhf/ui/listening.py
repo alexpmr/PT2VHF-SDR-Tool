@@ -9,9 +9,9 @@ from PySide6.QtCore import QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QDialog,
                                QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
-                               QFrame, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
+                               QGroupBox, QHBoxLayout, QHeaderView, QLabel,
                                QListWidget, QListWidgetItem, QMenu, QPushButton, QRadioButton,
-                               QScrollArea, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
+                               QSpinBox, QSplitter, QTableWidget, QTableWidgetItem,
                                QTabWidget, QToolButton, QVBoxLayout, QWidget)
 
 from ..dsp.receiver import MODES
@@ -22,7 +22,7 @@ from ..scanner import SCAN_PRESETS
 
 # =============================================================================
 class FavoritesBar(QWidget):
-    """Teclas de memória favoritas (um clique = escutar)."""
+    """Favoritos num menu suspenso compacto, do mais usado para o menos usado."""
 
     recallRequested = Signal(object)
     addCurrentRequested = Signal()
@@ -36,63 +36,86 @@ class FavoritesBar(QWidget):
         star = QLabel("★")
         star.setObjectName("favStar")
         lay.addWidget(star)
-        self.area = QScrollArea()
-        self.area.setWidgetResizable(True)
-        self.area.setFrameShape(QFrame.NoFrame)
-        self.area.setFixedHeight(46)
-        self.area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.inner = QWidget()
-        self.row = QHBoxLayout(self.inner)
-        self.row.setContentsMargins(0, 0, 0, 0)
-        self.row.setSpacing(4)
-        self.area.setWidget(self.inner)
-        lay.addWidget(self.area, 1)
+        self.combo = QComboBox()
+        self.combo.setObjectName("favCombo")
+        self.combo.setMinimumContentsLength(28)
+        self.combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.combo.setMaxVisibleItems(25)
+        self.combo.setToolTip("Favoritos, do mais usado para o menos usado. Escolha um para escutar.\n"
+                              "Botão direito: remover dos favoritos.")
+        self.combo.activated.connect(self._activated)
+        self.combo.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.combo.customContextMenuRequested.connect(self._menu)
+        lay.addWidget(self.combo, 1)
+        self.remove_btn = QToolButton()
+        self.remove_btn.setText("−")
+        self.remove_btn.setToolTip("Remover o favorito selecionado")
+        self.remove_btn.clicked.connect(self._remove_selected)
+        lay.addWidget(self.remove_btn)
         add = QPushButton("+ Favorito")
         add.setToolTip("Salvar a frequência atual como favorito")
         add.clicked.connect(self.addCurrentRequested)
         lay.addWidget(add)
-        self._buttons: list[QToolButton] = []
+        self._favs: list[MemoryChannel] = []
+
+    @staticmethod
+    def _label(ch: MemoryChannel) -> str:
+        uses = int(ch.use_count or 0)
+        tail = f"  ·  {uses}×" if uses else ""
+        return f"{ch.name}  —  {ch.freq / 1e6:.4f} MHz {ch.mode}{tail}"
+
+    def favorites(self) -> list[MemoryChannel]:
+        return list(self._favs)
 
     def refresh(self, channels: list[MemoryChannel], current_freq: float | None = None):
-        for b in self._buttons:
-            b.deleteLater()
-        self._buttons = []
-        while self.row.count():
-            self.row.takeAt(0)
-        favs = sorted((c for c in channels if c.favorite), key=lambda c: (c.category, c.freq))
-        if not favs:
-            hint = QLabel("Marque memórias como favoritas (★) para criar teclas de acesso rápido aqui.")
-            hint.setObjectName("hintLabel")
-            self.row.addWidget(hint)
-            self._buttons.append(hint)
+        favs = [c for c in channels if c.favorite]
+        favs.sort(key=lambda c: (-int(c.use_count or 0), -float(c.last_used or 0.0),
+                                 c.name.lower(), c.freq))
+        self._favs = favs
+        self.combo.blockSignals(True)
+        self.combo.clear()
         for ch in favs:
-            b = QToolButton()
-            b.setObjectName("favButton")
-            b.setText(f"{ch.name}\n{ch.freq / 1e6:.4f} {ch.mode}")
-            b.setToolTip(f"{ch.name} — {ch.freq / 1e6:.5f} MHz {ch.mode}\n{ch.category}  {ch.notes}")
-            b.setCheckable(True)
-            b.setChecked(current_freq is not None and abs(current_freq - ch.freq) < 1)
-            b.clicked.connect(lambda _=False, c=ch: self.recallRequested.emit(c))
-            b.setContextMenuPolicy(Qt.CustomContextMenu)
-            b.customContextMenuRequested.connect(lambda pos, c=ch, btn=b: self._menu(c, btn, pos))
-            self.row.addWidget(b)
-            self._buttons.append(b)
-        self.row.addStretch(1)
+            self.combo.addItem(self._label(ch))
+            self.combo.setItemData(self.combo.count() - 1,
+                                   f"{ch.name} — {ch.freq / 1e6:.5f} MHz {ch.mode}\n"
+                                   f"{ch.category}  {ch.notes}".strip(), Qt.ToolTipRole)
+        self.combo.setPlaceholderText(
+            f"Favoritos ({len(favs)}) — escolha para escutar" if favs
+            else "Marque memórias como favoritas (★) para acessá-las aqui")
+        self.combo.setEnabled(bool(favs))
+        self.remove_btn.setEnabled(bool(favs))
+        self.combo.setCurrentIndex(-1)
+        self.combo.blockSignals(False)
+        if current_freq is not None:
+            self.mark_current(current_freq)
 
-    def _menu(self, ch, btn, pos):
+    def _activated(self, index: int):
+        if 0 <= index < len(self._favs):
+            self.recallRequested.emit(self._favs[index])
+
+    def _current(self) -> MemoryChannel | None:
+        i = self.combo.currentIndex()
+        return self._favs[i] if 0 <= i < len(self._favs) else None
+
+    def _remove_selected(self):
+        ch = self._current()
+        if ch is not None:
+            self.unfavoriteRequested.emit(ch)
+
+    def _menu(self, pos):
+        ch = self._current()
+        if ch is None:
+            return
         m = QMenu(self)
-        m.addAction("Remover dos favoritos", lambda: self.unfavoriteRequested.emit(ch))
-        m.exec(btn.mapToGlobal(pos))
+        m.addAction(f"Remover “{ch.name}” dos favoritos", lambda: self.unfavoriteRequested.emit(ch))
+        m.exec(self.combo.mapToGlobal(pos))
 
     def mark_current(self, freq: float):
-        for b in self._buttons:
-            if isinstance(b, QToolButton):
-                try:
-                    f = float(b.text().split("\n")[1].split()[0]) * 1e6
-                except (IndexError, ValueError):
-                    continue
-                b.setChecked(abs(f - freq) < 60)
+        idx = next((i for i, c in enumerate(self._favs) if abs(c.freq - freq) < 60), -1)
+        if idx != self.combo.currentIndex():
+            self.combo.blockSignals(True)
+            self.combo.setCurrentIndex(idx)
+            self.combo.blockSignals(False)
 
 
 # =============================================================================

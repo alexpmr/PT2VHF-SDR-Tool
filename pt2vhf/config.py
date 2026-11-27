@@ -60,6 +60,7 @@ DEFAULTS = {
     "fft_size": 4096,
     "wf_min_db": -110.0,
     "wf_max_db": -40.0,
+    "wf_auto_levels": True,
     "wf_colormap": "Kiwi",
     "wf_speed": 20,
     "spectrum_avg": 0.5,

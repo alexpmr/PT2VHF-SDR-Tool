@@ -49,6 +49,7 @@ class SpectrumWaterfall(QWidget):
     centerTuneRequested = Signal(float)  # duplo clique no waterfall: VFO + centro visual
     passbandChanged = Signal(float, float)  # low, high relativos ao VFO (Hz)
     panRequested = Signal(float)            # arrastou para fora da faixa recebida: novo centro (Hz)
+    viewChanged = Signal(float, float)      # vista RF atual: centro e largura (Hz), para o zoom FFT
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -74,6 +75,11 @@ class SpectrumWaterfall(QWidget):
         self._image_left_mhz = 0.0
         self._image_right_mhz = 0.0
         self._updating_region = False
+        # Zoom FFT: linhas de alta resolução vindas do DDC do engine.
+        self._zoom_mode = False
+        self._zavg = None
+        self._zkey = None
+        self._zx = None
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -155,7 +161,7 @@ class SpectrumWaterfall(QWidget):
 
         self._redraw_timer = QTimer(self)
         self._redraw_timer.setSingleShot(True)
-        self._redraw_timer.timeout.connect(self._redraw_history)
+        self._redraw_timer.timeout.connect(self._view_timer)
         redraw_ref = weakref.ref(self._redraw_timer)
         def request_redraw(*_args):
             timer = redraw_ref()
@@ -180,10 +186,11 @@ class SpectrumWaterfall(QWidget):
             self.set_markers(self._marker_data)
 
     def auto_levels(self):
-        if self._avg is None:
+        data = self._zavg if self._zoom_mode and self._zavg is not None else self._avg
+        if data is None:
             return
-        floor = float(np.percentile(self._avg, 20))
-        top = float(np.percentile(self._avg, 99.8))
+        floor = float(np.percentile(data, 20))
+        top = float(np.percentile(data, 99.8))
         self.set_levels(floor - 8, max(top + 8, floor + 30))
         return self.min_db, self.max_db
 
@@ -295,12 +302,14 @@ class SpectrumWaterfall(QWidget):
         if hi_mhz * 1e6 < left or lo_mhz * 1e6 > left + self.fs:
             return None
         plot_width = max(300, float(self.spec.getViewBox().width()))
-        columns = min(stop - start, self.MAX_WF_COLS,
-                      max(256, int(plot_width * 1.5)))
+        screen_cols = min(self.MAX_WF_COLS, max(256, int(plot_width * 1.5)))
+        # Com zoom FFT as linhas têm mais bins que a FFT nativa: a imagem
+        # acompanha a largura da tela, não o número de bins nativos.
+        columns = screen_cols if self._zoom_mode else min(stop - start, screen_cols)
         # Half-bin edges align this image with the native FFT bin centers.
         left_mhz = (left + (start - 0.5) * hz_per_bin) / 1e6
         right_mhz = (left + (stop - 0.5) * hz_per_bin) / 1e6
-        key = (self.center, self.fs, n, start, stop, columns)
+        key = (self.center, self.fs, n, start, stop, columns, self._zoom_mode)
         return key, start, stop, columns, left_mhz, right_mhz
 
     def _raster_line(self, values, center, fs, selection):
@@ -315,6 +324,10 @@ class SpectrumWaterfall(QWidget):
             portion = raw[start:stop]
             if len(portion) == cols:
                 return portion.copy()
+            if len(portion) < cols:
+                # Mais colunas que bins (zoom FFT ligado): repete o bin nativo.
+                idx = (np.arange(cols) * len(portion)) // cols
+                return portion[idx].astype(np.float32)
             edges = np.linspace(0, len(portion), cols + 1, dtype=np.int32)
             power = np.power(10.0, np.clip(portion, -180.0, 40.0) / 10.0)
             sums = np.add.reduceat(power, edges[:-1])
@@ -324,10 +337,28 @@ class SpectrumWaterfall(QWidget):
         # not in the new center frequency's coordinates.
         if fs <= 0 or len(raw) == 0:
             return np.full(cols, self.min_db - 10, dtype=np.float32)
+        old_left = center - fs / 2
+        nraw = len(raw)
+        edges_hz = np.linspace(left_mhz * 1e6, right_mhz * 1e6, cols + 1, dtype=np.float64)
+        edges = (edges_hz - old_left) * nraw / fs
+        if edges[1] - edges[0] >= 1.0:
+            # Mais bins que colunas (linha do zoom FFT): potência média por
+            # coluna, para não perder portadoras estreitas entre amostras.
+            out = np.full(cols, self.min_db - 10, dtype=np.float32)
+            inside = (edges[:-1] >= 0) & (edges[1:] <= nraw)
+            if inside.any():
+                cut = np.clip(np.round(edges).astype(np.int64), 0, nraw)
+                first = int(np.argmax(inside))
+                last = len(inside) - int(np.argmax(inside[::-1]))
+                e = cut[first:last + 1]
+                power = np.power(10.0, np.clip(raw[e[0]:e[-1]], -180.0, 40.0) / 10.0)
+                sums = np.add.reduceat(power, e[:-1] - e[0])
+                widths = np.maximum(np.diff(e), 1)
+                out[first:last] = 10.0 * np.log10(np.maximum(sums / widths, 1e-18))
+            return out
         targets = np.linspace(left_mhz * 1e6, right_mhz * 1e6, cols,
                               endpoint=False, dtype=np.float64)
         targets += (right_mhz - left_mhz) * 1e6 / max(2 * cols, 1)
-        old_left = center - fs / 2
         indices = (targets - old_left) * len(raw) / fs
         return np.interp(indices, np.arange(len(raw)), raw,
                          left=self.min_db - 10, right=self.min_db - 10).astype(np.float32)
@@ -355,10 +386,77 @@ class SpectrumWaterfall(QWidget):
                           levels=(self.min_db, self.max_db))
         self._set_image_rect()
 
+    def _view_timer(self):
+        lo, hi = self.spec.getViewBox().viewRange()[0]
+        self.viewChanged.emit((lo + hi) / 2 * 1e6, (hi - lo) * 1e6)
+        self._redraw_history()
+
+    def _push_row(self, row_values, center, fs):
+        """Desloca o waterfall uma linha (ou rerasteriza se a vista mudou)."""
+        selection = self._view_selection()
+        if selection is None:
+            self._buf = None
+            self._view_key = None
+            self.img.clear()
+        elif selection[0] != self._view_key or self._buf is None:
+            self._view_key = None
+            self._redraw_history()
+        else:
+            self._buf[1:] = self._buf[:-1]
+            self._buf[0] = self._raster_line(row_values, center, fs, selection)
+            self.img.setImage(self._buf, autoLevels=False,
+                              levels=(self.min_db, self.max_db))
+
+    def add_zoom_line(self, spec_db: np.ndarray, zoom_center: float, zoom_fs: float,
+                      center: float, fs: float):
+        """Linha de alta resolução (DDC da faixa visível) no lugar da nativa."""
+        z = np.asarray(spec_db, dtype=np.float32)
+        if len(z) <= 1 or zoom_fs <= 0:
+            return
+        if fs != self.fs or self._source_fft_size <= 0:
+            # Taxa mudou: volta à vista total; o engine retoma as linhas nativas.
+            self.reset_zoom()
+            return
+        if center != self.center:
+            self.center = center
+            self._buf_center = center
+            self._avg = None
+            self._peak = None
+            self._view_key = None
+        self._zoom_mode = True
+        self._raw_lines.appendleft((z.astype(np.float16), zoom_center, zoom_fs))
+        self._push_row(z, zoom_center, zoom_fs)
+        n = len(z)
+        key = (zoom_center, zoom_fs, n)
+        if self._zavg is None or self._zkey != key:
+            self._zavg = z.copy()
+            self._zkey = key
+            self._zx = (zoom_center + (np.arange(n) - n / 2) * zoom_fs / n) / 1e6
+            self._peak = None
+        else:
+            self._zavg = self.avg_alpha * self._zavg + (1 - self.avg_alpha) * z
+        self.curve.setData(self._zx, self._zavg)
+        if self.peak_hold:
+            self._peak = (self._zavg.copy() if self._peak is None or len(self._peak) != n
+                          else np.maximum(self._peak, self._zavg))
+            self.peak_curve.setData(self._zx, self._peak)
+        self.peak_curve.setVisible(self.peak_hold)
+
+    @property
+    def zoom_active(self) -> bool:
+        return self._zoom_mode
+
     def add_line(self, spec_db: np.ndarray, center: float, fs: float):
         full = np.asarray(spec_db, dtype=np.float32)
         if len(full) <= 1 or fs <= 0:
             return
+        if self._zoom_mode:
+            self._zoom_mode = False
+            self._zavg = None
+            self._zkey = None
+            self._view_key = None
+            self._avg = None
+            self._peak = None
         span_changed = (fs != self.fs or self._source_fft_size != len(full))
         if span_changed:
             self.fs = fs
@@ -381,19 +479,7 @@ class SpectrumWaterfall(QWidget):
                 self.reset_zoom()
 
         self._raw_lines.appendleft((full.astype(np.float16), center, fs))
-        selection = self._view_selection()
-        if selection is None:
-            self._buf = None
-            self._view_key = None
-            self.img.clear()
-        elif selection[0] != self._view_key or self._buf is None:
-            self._view_key = None
-            self._redraw_history()
-        else:
-            self._buf[1:] = self._buf[:-1]
-            self._buf[0] = self._raster_line(full, center, fs, selection)
-            self.img.setImage(self._buf, autoLevels=False,
-                              levels=(self.min_db, self.max_db))
+        self._push_row(full, center, fs)
 
         n = len(full)
         if self._avg is None or len(self._avg) != n:

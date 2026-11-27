@@ -416,7 +416,10 @@ class MainWindow(QMainWindow):
         for s in (self.wf_min, self.wf_max):
             s.setMaximumWidth(130)
         self.wf_auto = QPushButton("Auto")
-        self.wf_auto.setToolTip("Ajusta piso/teto do waterfall automaticamente (como no KiwiSDR)")
+        self.wf_auto.setCheckable(True)
+        self.wf_auto.setChecked(bool(self.cfg.get("wf_auto_levels", True)))
+        self.wf_auto.setToolTip("Liga/desliga o ajuste contínuo de piso/teto do waterfall (como no KiwiSDR). "
+                                "Mexer nos controles Piso/Teto desliga. Ctrl+L ajusta uma vez.")
         self.speed = QComboBox()
         for v in (5, 10, 20, 30, 50):
             self.speed.addItem(f"{v} linhas/s", v)
@@ -684,7 +687,12 @@ class MainWindow(QMainWindow):
         self.cmap.currentTextChanged.connect(lambda n: (self.wf.set_colormap(n), self.cfg.__setitem__("wf_colormap", n)))
         self.wf_min.valueChanged.connect(self._levels)
         self.wf_max.valueChanged.connect(self._levels)
-        self.wf_auto.clicked.connect(self._auto_levels)
+        self.wf_auto.toggled.connect(self._auto_levels_toggled)
+        self._auto_levels_timer = QTimer(self)
+        self._auto_levels_timer.timeout.connect(self._auto_levels_tick)
+        if self.wf_auto.isChecked():
+            self._auto_levels_timer.start(1000)
+        self.wf.viewChanged.connect(self._wf_view_changed)
         self.speed.currentIndexChanged.connect(lambda _: self._set_engine("wf_speed", self.speed.currentData()))
         self.avg.valueChanged.connect(lambda v: (setattr(self.wf, "avg_alpha", v / 100), self.cfg.__setitem__("spectrum_avg", v / 100)))
         self.peak.toggled.connect(lambda v: (setattr(self.wf, "peak_hold", v), self.wf.clear_peak()))
@@ -1437,6 +1445,18 @@ class MainWindow(QMainWindow):
         self._stop_scan()
         self._recall(ch)
         self._after_select()
+        self._count_memory_use(ch)
+
+    def _count_memory_use(self, ch: MemoryChannel):
+        """Conta o uso da memória para ordenar os favoritos (mais usados primeiro)."""
+        ch.mark_used()
+        try:
+            self.bank.save()
+        except OSError as exc:
+            log.warning("Não foi possível salvar o uso da memória: %s", exc)
+        if ch.favorite:
+            # Fora do sinal do próprio combo: reordena no próximo ciclo do Qt.
+            QTimer.singleShot(0, lambda: self.fav_bar.refresh(self.bank.channels, self.engine.vfo))
 
     def _recall(self, ch: MemoryChannel):
         self.set_mode(ch.mode, ch.bandwidth)
@@ -2283,6 +2303,8 @@ class MainWindow(QMainWindow):
 
     # ================================================================== waterfall
     def _levels(self):
+        if self.wf_auto.isChecked():
+            self.wf_auto.setChecked(False)  # ajuste manual assume o controle
         lo, hi = self.wf_min.value(), self.wf_max.value()
         self.wf.set_levels(lo, hi)
         self.cfg["wf_min_db"], self.cfg["wf_max_db"] = lo, hi
@@ -2319,6 +2341,25 @@ class MainWindow(QMainWindow):
             ap.neural_strength.setValue(saved["neural_strength"])
             ap.neural.setChecked(saved["neural"])
             self.statusBar().showMessage("Perfil de sinal fraco desativado; ajustes anteriores restaurados", 6000)
+
+    def _auto_levels_toggled(self, on):
+        self.cfg["wf_auto_levels"] = bool(on)
+        if on:
+            self._auto_levels()
+            self._auto_levels_timer.start(1000)
+        else:
+            self._auto_levels_timer.stop()
+        self.statusBar().showMessage("Piso/teto automático: " + ("ligado" if on else "desligado"), 3000)
+
+    def _auto_levels_tick(self):
+        if self.engine.running:
+            self._auto_levels()
+
+    def _wf_view_changed(self, center_hz, span_hz):
+        """Zoom FFT: o engine refaz a FFT só da faixa visível quando vale a pena."""
+        fs = self.engine.sample_rate
+        full = span_hz <= 0 or (fs > 0 and span_hz >= fs * 0.99)
+        self.engine.zoom_view = None if full else (float(center_hz), float(span_hz))
 
     def _auto_levels(self):
         r = self.wf.auto_levels()
@@ -2407,8 +2448,19 @@ class MainWindow(QMainWindow):
                 self.occupancy_panel.refresh()
                 self._last_occupancy_refresh = now
             self.occupancy.flush()
-        for spec, center, fs in lines[-8:]:
-            self.wf.add_line(spec, center, fs)
+        zlines = []
+        while eng.wf_zoom_lines:
+            try:
+                zlines.append(eng.wf_zoom_lines.popleft())
+            except IndexError:
+                break
+        if zlines:
+            # Zoom FFT ativo: o waterfall mostra a FFT da faixa visível.
+            for zl in zlines[-8:]:
+                self.wf.add_zoom_line(*zl)
+        else:
+            for spec, center, fs in lines[-8:]:
+                self.wf.add_line(spec, center, fs)
         if lines and abs(getattr(self, "_marker_center", 0) - eng.center_freq) > 1:
             self._refresh_markers()
             self.wf.set_vfo(eng.vfo, self.low, self.high)
