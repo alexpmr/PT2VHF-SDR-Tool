@@ -18,17 +18,17 @@
 
 ## Fase 2: Escavação 🏗️
 
-- [ ] **Arqueólogo** — Análise do módulo `sources`
-- [ ] **Arqueólogo** — Análise do módulo `dsp`
-- [ ] **Arqueólogo** — Análise do módulo `decoders`
-- [ ] **Arqueólogo** — Análise do módulo `engine`
-- [ ] **Arqueólogo** — Análise do módulo `scanner`
-- [ ] **Arqueólogo** — Análise do módulo `memory`
-- [ ] **Arqueólogo** — Análise do módulo `traffic`
-- [ ] **Arqueólogo** — Análise do módulo `ai_audio`
-- [ ] **Arqueólogo** — Análise do módulo `integrations`
-- [ ] **Arqueólogo** — Análise do módulo `ui`
-- [ ] **Arqueólogo** — Análise do módulo `app`
+- [x] ✅ **Arqueólogo** — Análise do módulo `sources`
+- [x] ✅ **Arqueólogo** — Análise do módulo `dsp`
+- [x] ✅ **Arqueólogo** — Análise do módulo `decoders`
+- [x] ✅ **Arqueólogo** — Análise do módulo `engine`
+- [x] ✅ **Arqueólogo** — Análise do módulo `scanner`
+- [x] ✅ **Arqueólogo** — Análise do módulo `memory`
+- [x] ✅ **Arqueólogo** — Análise do módulo `traffic`
+- [x] ✅ **Arqueólogo** — Análise do módulo `ai_audio`
+- [x] ✅ **Arqueólogo** — Análise do módulo `integrations`
+- [x] ✅ **Arqueólogo** — Análise do módulo `ui`
+- [x] ✅ **Arqueólogo** — Análise do módulo `app`
 
 ## Fase 3: Interpretação 🧠
 

@@ -8,12 +8,12 @@
   "doc_level": "completo",
   "output_folder": "_reversa_sdd",
   "forward_folder": "_reversa_forward",
-  "phase": "escavacao",
+  "phase": "interpretacao",
   "completed": [
-    "reconhecimento"
+    "reconhecimento",
+    "escavacao"
   ],
   "pending": [
-    "escavacao",
     "interpretacao",
     "geracao",
     "revisao"
@@ -25,6 +25,29 @@
         "_reversa_sdd/inventory.md",
         "_reversa_sdd/dependencies.md",
         ".reversa/context/surface.json"
+      ]
+    },
+    "archaeologist": {
+      "completed_at": "2026-11-27T18:30:00Z",
+      "modules_analyzed": [
+        "sources",
+        "dsp",
+        "decoders",
+        "engine",
+        "scanner",
+        "memory",
+        "traffic",
+        "ai_audio",
+        "integrations",
+        "ui",
+        "app"
+      ],
+      "modules_pending": [],
+      "files": [
+        "_reversa_sdd/code-analysis.md",
+        "_reversa_sdd/data-dictionary.md",
+        "_reversa_sdd/flowcharts/",
+        "reversa/context/modules.json"
       ]
     }
   },

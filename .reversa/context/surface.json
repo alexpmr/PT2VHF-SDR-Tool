@@ -2,35 +2,117 @@
   "generated_at": "2026-11-27T17:10:00Z",
   "project_root": ".",
   "languages": [
-    { "name": "Python", "extensions": [".py"], "file_count": 90 },
-    { "name": "PowerShell", "extensions": [".ps1"], "file_count": 3 },
-    { "name": "Inno Setup", "extensions": [".iss"], "file_count": 1 }
+    {
+      "name": "Python",
+      "extensions": [
+        ".py"
+      ],
+      "file_count": 90
+    },
+    {
+      "name": "PowerShell",
+      "extensions": [
+        ".ps1"
+      ],
+      "file_count": 3
+    },
+    {
+      "name": "Inno Setup",
+      "extensions": [
+        ".iss"
+      ],
+      "file_count": 1
+    }
   ],
   "primary_language": "Python",
   "frameworks": [
-    { "name": "PySide6", "version": "6.11.3", "source": "pyproject.toml" },
-    { "name": "pyqtgraph", "version": ">=0.13.3", "source": "pyproject.toml" },
-    { "name": "numpy", "version": ">=1.26", "source": "pyproject.toml" },
-    { "name": "scipy", "version": ">=1.11", "source": "pyproject.toml" },
-    { "name": "sounddevice", "version": ">=0.4.6", "source": "pyproject.toml" },
-    { "name": "pyrtlsdr", "version": ">=0.3.0", "source": "pyproject.toml" },
-    { "name": "sgp4", "version": ">=2.23", "source": "pyproject.toml" },
-    { "name": "pyrnnoise", "version": "0.4.5", "source": "pyproject.toml" },
-    { "name": "faster-whisper", "version": ">=1.2,<2.0", "source": "pyproject.toml" },
-    { "name": "pytest", "version": ">=8", "source": "requirements-dev.txt" },
-    { "name": "PyInstaller", "version": ">=6.3", "source": "requirements-dev.txt" }
+    {
+      "name": "PySide6",
+      "version": "6.11.3",
+      "source": "pyproject.toml"
+    },
+    {
+      "name": "pyqtgraph",
+      "version": ">=0.13.3",
+      "source": "pyproject.toml"
+    },
+    {
+      "name": "numpy",
+      "version": ">=1.26",
+      "source": "pyproject.toml"
+    },
+    {
+      "name": "scipy",
+      "version": ">=1.11",
+      "source": "pyproject.toml"
+    },
+    {
+      "name": "sounddevice",
+      "version": ">=0.4.6",
+      "source": "pyproject.toml"
+    },
+    {
+      "name": "pyrtlsdr",
+      "version": ">=0.3.0",
+      "source": "pyproject.toml"
+    },
+    {
+      "name": "sgp4",
+      "version": ">=2.23",
+      "source": "pyproject.toml"
+    },
+    {
+      "name": "pyrnnoise",
+      "version": "0.4.5",
+      "source": "pyproject.toml"
+    },
+    {
+      "name": "faster-whisper",
+      "version": ">=1.2,<2.0",
+      "source": "pyproject.toml"
+    },
+    {
+      "name": "pytest",
+      "version": ">=8",
+      "source": "requirements-dev.txt"
+    },
+    {
+      "name": "PyInstaller",
+      "version": ">=6.3",
+      "source": "requirements-dev.txt"
+    }
   ],
   "package_manager": "pip",
   "entry_points": [
-    { "path": "run_pt2vhf.py", "type": "app_entry" },
-    { "path": "pt2vhf/__main__.py", "type": "app_entry" },
-    { "path": "pt2vhf/app.py", "type": "app_entry" },
-    { "path": "pt2vhf/webserver.py", "type": "server_entry" },
-    { "path": "pt2vhf.spec", "type": "build_entry" }
+    {
+      "path": "run_pt2vhf.py",
+      "type": "app_entry"
+    },
+    {
+      "path": "pt2vhf/__main__.py",
+      "type": "app_entry"
+    },
+    {
+      "path": "pt2vhf/app.py",
+      "type": "app_entry"
+    },
+    {
+      "path": "pt2vhf/webserver.py",
+      "type": "server_entry"
+    },
+    {
+      "path": "pt2vhf.spec",
+      "type": "build_entry"
+    }
   ],
   "config_files": [
-    "pyproject.toml", "requirements.txt", "requirements-dev.txt", "pt2vhf/config.py",
-    "pt2vhf.spec", "packaging/installer.iss", "packaging/version_info.txt"
+    "pyproject.toml",
+    "requirements.txt",
+    "requirements-dev.txt",
+    "pt2vhf/config.py",
+    "pt2vhf.spec",
+    "packaging/installer.iss",
+    "packaging/version_info.txt"
   ],
   "ci_cd": [
     ".github/workflows/build.yml",
@@ -41,33 +123,117 @@
   "test_framework": "pytest",
   "test_file_count": 24,
   "modules": [
-    "sources", "dsp", "decoders", "engine", "scanner", "memory",
-    "traffic", "ai_audio", "integrations", "ui", "app"
+    "sources",
+    "dsp",
+    "decoders",
+    "engine",
+    "scanner",
+    "memory",
+    "traffic",
+    "ai_audio",
+    "integrations",
+    "ui",
+    "app"
   ],
   "module_files": {
-    "sources": ["pt2vhf/sources/"],
-    "dsp": ["pt2vhf/dsp/"],
-    "decoders": ["pt2vhf/decoders/"],
-    "engine": ["pt2vhf/engine.py", "pt2vhf/audio.py", "pt2vhf/timeshift.py"],
-    "scanner": ["pt2vhf/scanner.py", "pt2vhf/occupancy.py"],
-    "memory": ["pt2vhf/memory.py", "pt2vhf/memory_regions.py", "pt2vhf/presets.py", "pt2vhf/config.py"],
-    "traffic": ["pt2vhf/traffic.py", "pt2vhf/sonde_rx.py", "pt2vhf/aprs_map.py", "pt2vhf/aprs_igate.py", "pt2vhf/satellites.py"],
-    "ai_audio": ["pt2vhf/neural_audio.py", "pt2vhf/live_caption.py", "pt2vhf/transcribe.py"],
-    "integrations": ["pt2vhf/webserver.py", "pt2vhf/rigctl.py", "pt2vhf/updater.py"],
-    "ui": ["pt2vhf/ui/", "pt2vhf/i18n.py"],
-    "app": ["pt2vhf/app.py", "pt2vhf/__main__.py", "run_pt2vhf.py"]
+    "sources": [
+      "pt2vhf/sources/"
+    ],
+    "dsp": [
+      "pt2vhf/dsp/"
+    ],
+    "decoders": [
+      "pt2vhf/decoders/"
+    ],
+    "engine": [
+      "pt2vhf/engine.py",
+      "pt2vhf/audio.py",
+      "pt2vhf/timeshift.py"
+    ],
+    "scanner": [
+      "pt2vhf/scanner.py",
+      "pt2vhf/occupancy.py"
+    ],
+    "memory": [
+      "pt2vhf/memory.py",
+      "pt2vhf/memory_regions.py",
+      "pt2vhf/presets.py",
+      "pt2vhf/config.py"
+    ],
+    "traffic": [
+      "pt2vhf/traffic.py",
+      "pt2vhf/sonde_rx.py",
+      "pt2vhf/aprs_map.py",
+      "pt2vhf/aprs_igate.py",
+      "pt2vhf/satellites.py"
+    ],
+    "ai_audio": [
+      "pt2vhf/neural_audio.py",
+      "pt2vhf/live_caption.py",
+      "pt2vhf/transcribe.py"
+    ],
+    "integrations": [
+      "pt2vhf/webserver.py",
+      "pt2vhf/rigctl.py",
+      "pt2vhf/updater.py"
+    ],
+    "ui": [
+      "pt2vhf/ui/",
+      "pt2vhf/i18n.py"
+    ],
+    "app": [
+      "pt2vhf/app.py",
+      "pt2vhf/__main__.py",
+      "run_pt2vhf.py"
+    ]
   },
   "external_integrations": [
-    "www.pt2vhf.com (OTA)", "dump1090/readsb", "AIS NMEA", "fsk_demod/rs41mod",
-    "APRS-IS", "Hamlib rigctld", "Leaflet/OpenStreetMap", "PowerShell/libwdi", "HTTP local/LAN"
+    "www.pt2vhf.com (OTA)",
+    "dump1090/readsb",
+    "AIS NMEA",
+    "fsk_demod/rs41mod",
+    "APRS-IS",
+    "Hamlib rigctld",
+    "Leaflet/OpenStreetMap",
+    "PowerShell/libwdi",
+    "HTTP local/LAN"
   ],
   "total_files": 133,
   "organization_suggestion": {
     "granularity": "module",
     "rationale": "O pacote pt2vhf já se divide em subpacotes de domínio (sources, dsp, decoders, ui) e o restante agrupa bem por responsabilidade; não há roteamento central nem specs BDD.",
     "signals": [
-      { "type": "top_level_domain_folders", "evidence": ["pt2vhf/sources/", "pt2vhf/dsp/", "pt2vhf/decoders/", "pt2vhf/ui/"] }
+      {
+        "type": "top_level_domain_folders",
+        "evidence": [
+          "pt2vhf/sources/",
+          "pt2vhf/dsp/",
+          "pt2vhf/decoders/",
+          "pt2vhf/ui/"
+        ]
+      }
     ],
-    "features": []
+    "features": [
+      "recepcao-sdr",
+      "demodulacao-e-audio",
+      "espectro-e-waterfall",
+      "display-e-instrumentos",
+      "scanner-e-ocupacao",
+      "memorias-e-favoritos",
+      "gravacao-e-timeshift",
+      "aprs-packet",
+      "tons-dtmf-ctcss",
+      "assistente-de-sintonia",
+      "trafego-adsb-ais",
+      "radiossonda-rs41",
+      "satelites",
+      "igate-aprs",
+      "reducao-de-ruido-neural",
+      "legendas-e-transcricao",
+      "painel-web",
+      "cat-rigctl",
+      "atualizacao-ota",
+      "idiomas-e-configuracoes"
+    ]
   }
 }

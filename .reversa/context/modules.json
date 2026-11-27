@@ -1,0 +1,1632 @@
+{
+  "generated_at": "2026-11-27T18:30:00Z",
+  "modules": [
+    {
+      "name": "sources",
+      "path": "pt2vhf/sources",
+      "purpose": "Aquisição de IQ: RTL-SDR USB robusto, preparação de driver WinUSB, rtl_tcp, SoapySDR, simulador e WAV IQ",
+      "primary_files": [
+        "pt2vhf/sources/base.py",
+        "pt2vhf/sources/rtlsdr_source.py",
+        "pt2vhf/sources/rtl_driver.py",
+        "pt2vhf/sources/network_sources.py",
+        "pt2vhf/sources/sim_sources.py"
+      ],
+      "functions": [
+        {
+          "name": "IQSource.read",
+          "file": "pt2vhf/sources/base.py",
+          "params": [
+            "timeout: float = 0.5"
+          ],
+          "returns": "np.ndarray | None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "IQSource.check_freq",
+          "file": "pt2vhf/sources/base.py",
+          "params": [
+            "hz: float"
+          ],
+          "returns": "str ('' = alcançável)",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "RtlSdrSource.set_center_freq",
+          "file": "pt2vhf/sources/rtlsdr_source.py",
+          "params": [
+            "hz: float"
+          ],
+          "returns": "bool",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "tuning_range",
+          "file": "pt2vhf/sources/rtlsdr_source.py",
+          "params": [
+            "tuner: str",
+            "blog_lib: bool",
+            "direct_sampling: int",
+            "product: str"
+          ],
+          "returns": "tuple[float, float]",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "load_library",
+          "file": "pt2vhf/sources/rtlsdr_source.py",
+          "params": [
+            "kind: str | None"
+          ],
+          "returns": "librtlsdr",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "rtl_driver.prepare",
+          "file": "pt2vhf/sources/rtl_driver.py",
+          "params": [],
+          "returns": "tuple[bool, str]",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "rtl_driver.diagnose",
+          "file": "pt2vhf/sources/rtl_driver.py",
+          "params": [],
+          "returns": "str",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "SimulatorSource.generate",
+          "file": "pt2vhf/sources/sim_sources.py",
+          "params": [
+            "n: int"
+          ],
+          "returns": "np.ndarray",
+          "confidence": "confirmed"
+        }
+      ],
+      "entities": [
+        {
+          "name": "UsbInterface",
+          "fields": [
+            {
+              "name": "instance_id",
+              "type": "str",
+              "required": true
+            },
+            {
+              "name": "pid",
+              "type": "str",
+              "required": true
+            },
+            {
+              "name": "mi",
+              "type": "int | None",
+              "required": true
+            },
+            {
+              "name": "service",
+              "type": "str",
+              "required": true
+            }
+          ],
+          "confidence": "confirmed"
+        }
+      ],
+      "business_rules": [
+        {
+          "description": "Fila de 32 blocos; cheia descarta o mais antigo e conta dropped",
+          "location": "pt2vhf/sources/base.py:60",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Bloco = max(16384, floor(fs/20/16384)*16384)",
+          "location": "pt2vhf/sources/base.py:39",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "UI nunca chama librtlsdr: comandos via fila e thread de controle",
+          "location": "pt2vhf/sources/rtlsdr_source.py:1",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Sem amostras por 2 s ou comando > 3 s: reabre até 3 vezes, depois failed",
+          "location": "pt2vhf/sources/rtlsdr_source.py:451",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Driver Blog primeiro no Windows, cai para biblioteca padrão",
+          "location": "pt2vhf/sources/rtlsdr_source.py:181",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Frequência salva fora do alcance abre em 145,5 MHz",
+          "location": "pt2vhf/sources/rtlsdr_source.py:265",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "WinUSB só na interface 0 via wdi-simple com um UAC",
+          "location": "pt2vhf/sources/rtl_driver.py:99",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "rtl_tcp/SoapySDR lançam SourceError fora da faixa (RTL-SDR retorna False)",
+          "location": "pt2vhf/sources/network_sources.py:89",
+          "confidence": "confirmed"
+        }
+      ],
+      "dependencies": [
+        "decoders"
+      ],
+      "algorithms": [
+        "conversão u8 para complex"
+      ],
+      "complexity": "high"
+    },
+    {
+      "name": "dsp",
+      "path": "pt2vhf/dsp",
+      "purpose": "Cadeia de recepção IQ -> áudio 48 kHz, demodulação, AGC, squelch, efeitos de áudio e assistente de sintonia",
+      "primary_files": [
+        "pt2vhf/dsp/filters.py",
+        "pt2vhf/dsp/demod.py",
+        "pt2vhf/dsp/receiver.py",
+        "pt2vhf/dsp/audiofx.py",
+        "pt2vhf/dsp/assist.py"
+      ],
+      "functions": [
+        {
+          "name": "Receiver.process",
+          "file": "pt2vhf/dsp/receiver.py",
+          "params": [
+            "iq: np.ndarray"
+          ],
+          "returns": "tuple[audio, raw]",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "Receiver.set_mode",
+          "file": "pt2vhf/dsp/receiver.py",
+          "params": [
+            "mode: str",
+            "width: float | None"
+          ],
+          "returns": "None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "passband_for",
+          "file": "pt2vhf/dsp/receiver.py",
+          "params": [
+            "mode: str",
+            "width: float"
+          ],
+          "returns": "tuple[float, float]",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "compute_spectrum",
+          "file": "pt2vhf/dsp/receiver.py",
+          "params": [
+            "iq",
+            "nfft",
+            "max_frames=8",
+            "window='blackmanharris'"
+          ],
+          "returns": "np.ndarray | None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "dbfs_to_s_units",
+          "file": "pt2vhf/dsp/demod.py",
+          "params": [
+            "dbfs: float",
+            "calibration_db: float"
+          ],
+          "returns": "tuple[float, str]",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "estimate_ssb_offset",
+          "file": "pt2vhf/dsp/assist.py",
+          "params": [
+            "iq",
+            "fs",
+            "sideband",
+            "max_offset=600"
+          ],
+          "returns": "tuple[float, float] | None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "detect_mode",
+          "file": "pt2vhf/dsp/assist.py",
+          "params": [
+            "iq",
+            "fs",
+            "freq_hz"
+          ],
+          "returns": "ModeGuess | None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "fine_tune",
+          "file": "pt2vhf/dsp/assist.py",
+          "params": [
+            "iq",
+            "fs",
+            "mode",
+            "vfo",
+            "step",
+            "search_hz"
+          ],
+          "returns": "tuple[float, str] | None",
+          "confidence": "confirmed"
+        }
+      ],
+      "entities": [
+        {
+          "name": "ModeInfo",
+          "fields": [
+            {
+              "name": "name",
+              "type": "str",
+              "required": true
+            },
+            {
+              "name": "low",
+              "type": "float",
+              "required": true
+            },
+            {
+              "name": "high",
+              "type": "float",
+              "required": true
+            },
+            {
+              "name": "step",
+              "type": "int",
+              "required": true
+            },
+            {
+              "name": "bw_presets",
+              "type": "tuple",
+              "required": true
+            }
+          ],
+          "confidence": "confirmed"
+        },
+        {
+          "name": "ModeGuess",
+          "fields": [
+            {
+              "name": "mode",
+              "type": "str",
+              "required": true
+            },
+            {
+              "name": "bandwidth",
+              "type": "float",
+              "required": true
+            },
+            {
+              "name": "center_offset",
+              "type": "float",
+              "required": true
+            },
+            {
+              "name": "confidence",
+              "type": "float",
+              "required": true
+            },
+            {
+              "name": "reason",
+              "type": "str",
+              "required": true
+            }
+          ],
+          "confidence": "confirmed"
+        }
+      ],
+      "business_rules": [
+        {
+          "description": "Taxa de entrada deve ser múltiplo de 240 kHz",
+          "location": "pt2vhf/dsp/receiver.py:57",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "De-ênfase WFM 75 µs (Américas)",
+          "location": "pt2vhf/dsp/receiver.py:63",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "AGC só em AM/USB/LSB/CW/DSB/RAW; NFM ganho fixo 0,5",
+          "location": "pt2vhf/dsp/receiver.py:121",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Squelch -150 dBFS = sempre aberto; histerese 3 dB; cauda 0,25 s",
+          "location": "pt2vhf/dsp/demod.py:Squelch",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "S9 = -93 dBm, 6 dB/S, dBm = dBFS - 45 + calibração",
+          "location": "pt2vhf/dsp/demod.py:dbfs_to_s_units",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Áudio dos decoders é o demodulado bruto, antes de AGC/squelch/efeitos",
+          "location": "pt2vhf/dsp/receiver.py:process",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "detect_mode: WFM > 60 kHz; CW < 700 Hz ou manipulado; NFM CV < 0,35; AM portadora > 25% simétrica; SSB 1,2-4,5 kHz",
+          "location": "pt2vhf/dsp/assist.py:detect_mode",
+          "confidence": "confirmed"
+        }
+      ],
+      "dependencies": [],
+      "algorithms": [
+        "overlap-save FIR",
+        "discriminador de quadratura",
+        "AGC com hang",
+        "subtração espectral",
+        "estimativa de offset SSB por pente de harmônicos",
+        "classificação de modo por envoltória/portadora/largura"
+      ],
+      "complexity": "high"
+    },
+    {
+      "name": "decoders",
+      "path": "pt2vhf/decoders",
+      "purpose": "AFSK1200, AX.25/HDLC, parser APRS, DTMF e CTCSS",
+      "primary_files": [
+        "pt2vhf/decoders/afsk.py",
+        "pt2vhf/decoders/ax25.py",
+        "pt2vhf/decoders/aprs.py",
+        "pt2vhf/decoders/tones.py"
+      ],
+      "functions": [
+        {
+          "name": "AFSKDemodulator.process",
+          "file": "pt2vhf/decoders/afsk.py",
+          "params": [
+            "audio: np.ndarray"
+          ],
+          "returns": "None (callback on_frame)",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "parse_frame",
+          "file": "pt2vhf/decoders/ax25.py",
+          "params": [
+            "data: bytes"
+          ],
+          "returns": "AX25Frame | None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "aprs.parse",
+          "file": "pt2vhf/decoders/aprs.py",
+          "params": [
+            "frame: AX25Frame"
+          ],
+          "returns": "APRSPacket",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "distance_bearing",
+          "file": "pt2vhf/decoders/aprs.py",
+          "params": [
+            "lat1",
+            "lon1",
+            "lat2",
+            "lon2"
+          ],
+          "returns": "tuple[km, graus]",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "maidenhead",
+          "file": "pt2vhf/decoders/aprs.py",
+          "params": [
+            "lat",
+            "lon",
+            "precision=6"
+          ],
+          "returns": "str",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "DTMFDecoder.process",
+          "file": "pt2vhf/decoders/tones.py",
+          "params": [
+            "audio"
+          ],
+          "returns": "None (callback on_digit)",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "CTCSSDetector.process",
+          "file": "pt2vhf/decoders/tones.py",
+          "params": [
+            "audio"
+          ],
+          "returns": "float | None",
+          "confidence": "confirmed"
+        }
+      ],
+      "entities": [
+        {
+          "name": "AX25Frame",
+          "fields": [
+            {
+              "name": "source",
+              "type": "str",
+              "required": true
+            },
+            {
+              "name": "dest",
+              "type": "str",
+              "required": true
+            },
+            {
+              "name": "path",
+              "type": "list[str]",
+              "required": false
+            },
+            {
+              "name": "info",
+              "type": "bytes",
+              "required": false
+            }
+          ],
+          "confidence": "confirmed"
+        },
+        {
+          "name": "APRSPacket",
+          "fields": [
+            {
+              "name": "source",
+              "type": "str",
+              "required": true
+            },
+            {
+              "name": "type",
+              "type": "str",
+              "required": true
+            },
+            {
+              "name": "lat",
+              "type": "float | None",
+              "required": false
+            },
+            {
+              "name": "lon",
+              "type": "float | None",
+              "required": false
+            }
+          ],
+          "confidence": "confirmed"
+        }
+      ],
+      "business_rules": [
+        {
+          "description": "5 fatiadores com pesos 0,5..2,0; mesmo quadro em < 2 s emitido uma vez",
+          "location": "pt2vhf/decoders/afsk.py",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "FCS CRC-16/X.25 obrigatório; mínimo 18 bytes",
+          "location": "pt2vhf/decoders/ax25.py:parse_frame",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Símbolo terminado em _ = clima; ccc/sss vira vento",
+          "location": "pt2vhf/decoders/aprs.py:parse",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "DTMF: tons > 60% da energia, twist ±8 dB, 2 quadros iguais",
+          "location": "pt2vhf/decoders/tones.py:_frame",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "CTCSS: pico > 15 dB sobre a mediana e > 2% da energia em janela de 1 s",
+          "location": "pt2vhf/decoders/tones.py:CTCSSDetector",
+          "confidence": "confirmed"
+        }
+      ],
+      "dependencies": [
+        "dsp"
+      ],
+      "algorithms": [
+        "correlação não coerente",
+        "DPLL",
+        "NRZI",
+        "HDLC destuffing",
+        "CRC-16 X.25",
+        "base 91",
+        "Mic-E",
+        "Goertzel",
+        "haversine"
+      ],
+      "complexity": "medium"
+    },
+    {
+      "name": "engine",
+      "path": "pt2vhf",
+      "purpose": "Thread DSP, distribuição de áudio/eventos, gravação, receptores extras e voltar no tempo",
+      "primary_files": [
+        "pt2vhf/engine.py",
+        "pt2vhf/audio.py",
+        "pt2vhf/timeshift.py"
+      ],
+      "functions": [
+        {
+          "name": "Engine.start",
+          "file": "pt2vhf/engine.py",
+          "params": [
+            "source: IQSource"
+          ],
+          "returns": "None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "Engine.call",
+          "file": "pt2vhf/engine.py",
+          "params": [
+            "fn: Callable[[Receiver], None]"
+          ],
+          "returns": "None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "Engine.tune",
+          "file": "pt2vhf/engine.py",
+          "params": [
+            "freq: float"
+          ],
+          "returns": "None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "Engine.process_block",
+          "file": "pt2vhf/engine.py",
+          "params": [
+            "blk: np.ndarray"
+          ],
+          "returns": "None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "Engine.add_extra",
+          "file": "pt2vhf/engine.py",
+          "params": [
+            "freq",
+            "mode",
+            "width"
+          ],
+          "returns": "ExtraReceiver | None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "Engine.capture_if",
+          "file": "pt2vhf/engine.py",
+          "params": [
+            "seconds",
+            "callback"
+          ],
+          "returns": "None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "ActivityRecorder.process",
+          "file": "pt2vhf/audio.py",
+          "params": [
+            "audio",
+            "opened",
+            "freq",
+            "mode",
+            "level_db"
+          ],
+          "returns": "dict | None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "TimeShiftBuffer.read",
+          "file": "pt2vhf/timeshift.py",
+          "params": [
+            "pos",
+            "n"
+          ],
+          "returns": "tuple[iq, centro] | None",
+          "confidence": "confirmed"
+        }
+      ],
+      "entities": [
+        {
+          "name": "Engine.status",
+          "fields": [
+            {
+              "name": "signal_db",
+              "type": "float",
+              "required": true
+            },
+            {
+              "name": "sq_open",
+              "type": "bool",
+              "required": true
+            },
+            {
+              "name": "ctcss",
+              "type": "float | None",
+              "required": true
+            },
+            {
+              "name": "dropped",
+              "type": "int",
+              "required": true
+            },
+            {
+              "name": "cpu",
+              "type": "float",
+              "required": true
+            }
+          ],
+          "confidence": "confirmed"
+        }
+      ],
+      "business_rules": [
+        {
+          "description": "Comandos da UI executados entre blocos na thread DSP",
+          "location": "pt2vhf/engine.py:171",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Novo centro = VFO + fs/8 se fs >= 900 kHz (fora do pico DC)",
+          "location": "pt2vhf/engine.py:219",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Máximo de 4 receptores extras",
+          "location": "pt2vhf/engine.py:273",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Tone squelch silencia se CTCSS medido difere > 1 Hz",
+          "location": "pt2vhf/engine.py:407",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "AFSK/DTMF/CTCSS só em NFM",
+          "location": "pt2vhf/engine.py:403",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Gravação IQ VOX: squelch aberto ou até 1,5 s depois",
+          "location": "pt2vhf/engine.py:341",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "VOX: pré 0,5 s, cauda 1,5 s, mínimo 1 s (apaga), máximo 300 s",
+          "location": "pt2vhf/audio.py:ActivityRecorder",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Áudio: prime 150 ms, teto 500 ms",
+          "location": "pt2vhf/audio.py:AudioOutput",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Timeshift int8, 20 s por padrão, guarda centro por trecho",
+          "location": "pt2vhf/timeshift.py",
+          "confidence": "confirmed"
+        }
+      ],
+      "dependencies": [
+        "sources",
+        "dsp",
+        "decoders",
+        "ai_audio"
+      ],
+      "algorithms": [
+        "buffer circular",
+        "mistura com tanh"
+      ],
+      "complexity": "high"
+    },
+    {
+      "name": "scanner",
+      "path": "pt2vhf",
+      "purpose": "Varredura por espectro com máquina de estados, canal prioritário, lockout e ocupação 24 h",
+      "primary_files": [
+        "pt2vhf/scanner.py",
+        "pt2vhf/occupancy.py"
+      ],
+      "functions": [
+        {
+          "name": "detect_signals",
+          "file": "pt2vhf/scanner.py",
+          "params": [
+            "spec_db",
+            "center",
+            "fs",
+            "f0",
+            "f1",
+            "resolution",
+            "snr_db",
+            "usable=0.85",
+            "dc_guard_hz=3000",
+            "gap_bins=2"
+          ],
+          "returns": "tuple[list[Detection], float]",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "SpectrumScanner.feed",
+          "file": "pt2vhf/scanner.py",
+          "params": [
+            "spec",
+            "center",
+            "fs",
+            "now"
+          ],
+          "returns": "list[tuple]",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "OccupancyHistory.record",
+          "file": "pt2vhf/occupancy.py",
+          "params": [
+            "freq_hz",
+            "ts"
+          ],
+          "returns": "bool",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "OccupancyHistory.matrix",
+          "file": "pt2vhf/occupancy.py",
+          "params": [
+            "now",
+            "limit=80"
+          ],
+          "returns": "tuple[horas, linhas]",
+          "confidence": "confirmed"
+        }
+      ],
+      "entities": [
+        {
+          "name": "ScannerConfig",
+          "fields": [
+            {
+              "name": "start",
+              "type": "float",
+              "required": true
+            },
+            {
+              "name": "end",
+              "type": "float",
+              "required": true
+            },
+            {
+              "name": "resolution",
+              "type": "int",
+              "required": false
+            },
+            {
+              "name": "snr_db",
+              "type": "float",
+              "required": false
+            },
+            {
+              "name": "listen",
+              "type": "bool",
+              "required": false
+            }
+          ],
+          "confidence": "confirmed"
+        },
+        {
+          "name": "Hit",
+          "fields": [
+            {
+              "name": "freq",
+              "type": "float",
+              "required": true
+            },
+            {
+              "name": "hits",
+              "type": "int",
+              "required": false
+            },
+            {
+              "name": "max_snr",
+              "type": "float",
+              "required": false
+            }
+          ],
+          "confidence": "confirmed"
+        }
+      ],
+      "business_rules": [
+        {
+          "description": "Decisão por SNR no espectro, não pelo squelch",
+          "location": "pt2vhf/scanner.py:1",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Segmento útil = 80% da taxa; faixa pequena põe o centro 10 kHz acima do fim",
+          "location": "pt2vhf/scanner.py:start",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Cooldown de 8 s por frequência após escutar",
+          "location": "pt2vhf/scanner.py:ScannerConfig",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Ocupação: bins de 12,5 kHz, 1 contagem/min/bin, janela 24 h",
+          "location": "pt2vhf/occupancy.py",
+          "confidence": "confirmed"
+        }
+      ],
+      "dependencies": [
+        "engine"
+      ],
+      "algorithms": [
+        "max-hold",
+        "mediana como piso",
+        "centróide de potência",
+        "máquina de estados"
+      ],
+      "complexity": "medium"
+    },
+    {
+      "name": "memory",
+      "path": "pt2vhf",
+      "purpose": "Memórias de canais, plano de bandas, CSV CHIRP, perfis regionais, pacotes prontos e configuração",
+      "primary_files": [
+        "pt2vhf/memory.py",
+        "pt2vhf/memory_regions.py",
+        "pt2vhf/presets.py",
+        "pt2vhf/config.py"
+      ],
+      "functions": [
+        {
+          "name": "MemoryBank.import_csv",
+          "file": "pt2vhf/memory.py",
+          "params": [
+            "path",
+            "category"
+          ],
+          "returns": "int",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "MemoryBank.export_csv",
+          "file": "pt2vhf/memory.py",
+          "params": [
+            "path",
+            "channels"
+          ],
+          "returns": "None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "band_for",
+          "file": "pt2vhf/memory.py",
+          "params": [
+            "freq"
+          ],
+          "returns": "Band | None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "RegionMemoryStore.load_bank",
+          "file": "pt2vhf/memory_regions.py",
+          "params": [
+            "name",
+            "bank"
+          ],
+          "returns": "int",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "import_packs",
+          "file": "pt2vhf/presets.py",
+          "params": [
+            "bank",
+            "keys",
+            "favorite"
+          ],
+          "returns": "int",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "config_dir",
+          "file": "pt2vhf/config.py",
+          "params": [],
+          "returns": "Path",
+          "confidence": "confirmed"
+        }
+      ],
+      "entities": [
+        {
+          "name": "MemoryChannel",
+          "fields": [
+            {
+              "name": "name",
+              "type": "str",
+              "required": true
+            },
+            {
+              "name": "freq",
+              "type": "float",
+              "required": true
+            },
+            {
+              "name": "mode",
+              "type": "str",
+              "required": false
+            },
+            {
+              "name": "bandwidth",
+              "type": "float",
+              "required": false
+            },
+            {
+              "name": "category",
+              "type": "str",
+              "required": false
+            },
+            {
+              "name": "ctcss",
+              "type": "float | None",
+              "required": false
+            },
+            {
+              "name": "id",
+              "type": "str",
+              "required": false
+            }
+          ],
+          "confidence": "confirmed"
+        },
+        {
+          "name": "Band",
+          "fields": [
+            {
+              "name": "name",
+              "type": "str",
+              "required": true
+            },
+            {
+              "name": "start",
+              "type": "float",
+              "required": true
+            },
+            {
+              "name": "end",
+              "type": "float",
+              "required": true
+            },
+            {
+              "name": "mode",
+              "type": "str",
+              "required": true
+            },
+            {
+              "name": "step",
+              "type": "int",
+              "required": true
+            }
+          ],
+          "confidence": "confirmed"
+        }
+      ],
+      "business_rules": [
+        {
+          "description": "Pacotes não duplicam: mesma categoria e freq/100",
+          "location": "pt2vhf/presets.py:import_packs",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Nome de região 1-100 caracteres sem controle",
+          "location": "pt2vhf/memory_regions.py:_check",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "CHIRP: FM->NFM 12k, NFM->8k, WFM->180k, AM->8k, SSB->2,7k, CW->500",
+          "location": "pt2vhf/memory.py:import_csv",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Config inválida volta aos padrões sem aviso; save não atômico",
+          "location": "pt2vhf/config.py",
+          "confidence": "confirmed"
+        }
+      ],
+      "dependencies": [],
+      "algorithms": [],
+      "complexity": "low"
+    },
+    {
+      "name": "traffic",
+      "path": "pt2vhf",
+      "purpose": "ADS-B/AIS/sondas por feeds externos, RS41 por IQ + binários externos, mapas, iGate RX-only e satélites",
+      "primary_files": [
+        "pt2vhf/traffic.py",
+        "pt2vhf/sonde_rx.py",
+        "pt2vhf/aprs_map.py",
+        "pt2vhf/aprs_igate.py",
+        "pt2vhf/satellites.py"
+      ],
+      "functions": [
+        {
+          "name": "load_traffic",
+          "file": "pt2vhf/traffic.py",
+          "params": [
+            "path",
+            "kind"
+          ],
+          "returns": "list[Track]",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "AISDecoder.ingest",
+          "file": "pt2vhf/traffic.py",
+          "params": [
+            "line",
+            "now"
+          ],
+          "returns": "Track | None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "export_gpx / export_kml / export_map / export_csv",
+          "file": "pt2vhf/traffic.py",
+          "params": [
+            "tracks",
+            "path"
+          ],
+          "returns": "Path",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "RS41Receiver.feed",
+          "file": "pt2vhf/sonde_rx.py",
+          "params": [
+            "iq",
+            "center_hz",
+            "sample_rate"
+          ],
+          "returns": "None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "build_decoder_commands",
+          "file": "pt2vhf/sonde_rx.py",
+          "params": [
+            "freq_hz",
+            "fsk_binary",
+            "rs41_binary"
+          ],
+          "returns": "tuple[list, list]",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "gate_line",
+          "file": "pt2vhf/aprs_igate.py",
+          "params": [
+            "raw",
+            "gate_call"
+          ],
+          "returns": "str | None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "look_angle",
+          "file": "pt2vhf/satellites.py",
+          "params": [
+            "sat",
+            "lat",
+            "lon",
+            "at",
+            "height_m"
+          ],
+          "returns": "LookAngle",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "next_passes",
+          "file": "pt2vhf/satellites.py",
+          "params": [
+            "sat",
+            "lat",
+            "lon",
+            "start",
+            "hours=24",
+            "step_s=45",
+            "min_elevation=0"
+          ],
+          "returns": "list[dict]",
+          "confidence": "confirmed"
+        }
+      ],
+      "entities": [
+        {
+          "name": "Track",
+          "fields": [
+            {
+              "name": "source",
+              "type": "str",
+              "required": true
+            },
+            {
+              "name": "ident",
+              "type": "str",
+              "required": true
+            },
+            {
+              "name": "lat",
+              "type": "float",
+              "required": true
+            },
+            {
+              "name": "lon",
+              "type": "float",
+              "required": true
+            },
+            {
+              "name": "altitude_m",
+              "type": "float | None",
+              "required": false
+            }
+          ],
+          "confidence": "confirmed"
+        }
+      ],
+      "business_rules": [
+        {
+          "description": "ADS-B/AIS/sondas não demodulados do IQ; só arquivos externos",
+          "location": "pt2vhf/traffic.py:1",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "AIS lê só os últimos 2 MB; JSON > 8 MB recusado",
+          "location": "pt2vhf/traffic.py:load_traffic",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "RS41 só 400-406 MHz; IQ >= 96 kS/s; binários sem download automático",
+          "location": "pt2vhf/sonde_rx.py",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "iGate qAO obrigatório; bloqueia TCPIP/NOGATE/RFONLY/qA*; 512 bytes; dedupe 45 s",
+          "location": "pt2vhf/aprs_igate.py",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "iGate e painel de feeds não estão ligados à janela",
+          "location": "pt2vhf/ui/main_window.py",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Status RS41 em campo não comprovado (P0)",
+          "location": "CLAUDE.md",
+          "confidence": "unknown"
+        }
+      ],
+      "dependencies": [
+        "engine"
+      ],
+      "algorithms": [
+        "decodificação AIS 6 bits",
+        "SGP4 TEME->ECEF",
+        "Doppler não relativístico",
+        "conversão de canal com fase contínua"
+      ],
+      "complexity": "high"
+    },
+    {
+      "name": "ai_audio",
+      "path": "pt2vhf",
+      "purpose": "RNNoise, legendas ao vivo e transcrição local com faster-whisper",
+      "primary_files": [
+        "pt2vhf/neural_audio.py",
+        "pt2vhf/live_caption.py",
+        "pt2vhf/transcribe.py"
+      ],
+      "functions": [
+        {
+          "name": "NeuralAudioWorker.feed",
+          "file": "pt2vhf/neural_audio.py",
+          "params": [
+            "audio",
+            "mode"
+          ],
+          "returns": "bool",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "LiveCaptionWorker.feed",
+          "file": "pt2vhf/live_caption.py",
+          "params": [
+            "audio"
+          ],
+          "returns": "None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "install_local_model",
+          "file": "pt2vhf/live_caption.py",
+          "params": [
+            "size"
+          ],
+          "returns": "Path",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "find_callsigns",
+          "file": "pt2vhf/transcribe.py",
+          "params": [
+            "text"
+          ],
+          "returns": "list[str]",
+          "confidence": "confirmed"
+        }
+      ],
+      "entities": [],
+      "business_rules": [
+        {
+          "description": "RNNoise só em NFM/AM/USB/LSB/DSB; fila de 8 descarta o mais antigo",
+          "location": "pt2vhf/neural_audio.py",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Falha do RNNoise nunca silencia o áudio",
+          "location": "pt2vhf/neural_audio.py:_run",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Modelos tiny/base/small baixados só por ação explícita; inferência local_files_only",
+          "location": "pt2vhf/live_caption.py",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Legenda a cada >= 4 s, ignora pico < 0,009",
+          "location": "pt2vhf/live_caption.py:feed",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Qualidade com RF real não homologada",
+          "location": "CLAUDE.md",
+          "confidence": "unknown"
+        }
+      ],
+      "dependencies": [
+        "config"
+      ],
+      "algorithms": [
+        "RNNoise",
+        "Whisper"
+      ],
+      "complexity": "medium"
+    },
+    {
+      "name": "integrations",
+      "path": "pt2vhf",
+      "purpose": "Painel web local/LAN somente leitura, CAT via rigctld sem PTT, atualização OTA com hash",
+      "primary_files": [
+        "pt2vhf/webserver.py",
+        "pt2vhf/rigctl.py",
+        "pt2vhf/updater.py"
+      ],
+      "functions": [
+        {
+          "name": "WebServer.start",
+          "file": "pt2vhf/webserver.py",
+          "params": [],
+          "returns": "None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "is_private_lan",
+          "file": "pt2vhf/webserver.py",
+          "params": [
+            "addr"
+          ],
+          "returns": "bool",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "RigCtlClient.read / write",
+          "file": "pt2vhf/rigctl.py",
+          "params": [
+            "hz",
+            "sdr_mode"
+          ],
+          "returns": "tuple[float, str] | None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "updater.check",
+          "file": "pt2vhf/updater.py",
+          "params": [
+            "kind",
+            "base_url",
+            "timeout",
+            "allow_test_host"
+          ],
+          "returns": "UpdateInfo | None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "updater.download",
+          "file": "pt2vhf/updater.py",
+          "params": [
+            "info",
+            "progress",
+            "dest_dir",
+            "timeout"
+          ],
+          "returns": "Path",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "updater.is_official",
+          "file": "pt2vhf/updater.py",
+          "params": [
+            "url",
+            "name"
+          ],
+          "returns": "bool",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "updater.apply",
+          "file": "pt2vhf/updater.py",
+          "params": [
+            "path",
+            "kind",
+            "version"
+          ],
+          "returns": "None",
+          "confidence": "confirmed"
+        }
+      ],
+      "entities": [
+        {
+          "name": "UpdateInfo",
+          "fields": [
+            {
+              "name": "version",
+              "type": "str",
+              "required": true
+            },
+            {
+              "name": "file",
+              "type": "dict | None",
+              "required": true
+            },
+            {
+              "name": "unavailable_reason",
+              "type": "str",
+              "required": false
+            }
+          ],
+          "confidence": "confirmed"
+        }
+      ],
+      "business_rules": [
+        {
+          "description": "Web: só GET, loopback livre, LAN com chave ou IP privado se chave desligada",
+          "location": "pt2vhf/webserver.py:_authorized",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Web: áudio PCM 16 kHz; fila de 40 por ouvinte",
+          "location": "pt2vhf/webserver.py:AudioHub",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "CAT sem PTT; comandos f, m, F, M",
+          "location": "pt2vhf/rigctl.py",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "OTA: manifesto sem redirect; pacote em www.pt2vhf.com; redirect só para a release GitHub da versão; tamanho e SHA-256 obrigatórios",
+          "location": "pt2vhf/updater.py",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "OTA adiada durante gravação/scanner/replay/diálogo",
+          "location": "pt2vhf/ui/main_window.py:operation_busy",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "OTA em campo registrada como falhando",
+          "location": "CLAUDE.md",
+          "confidence": "unknown"
+        }
+      ],
+      "dependencies": [
+        "dsp"
+      ],
+      "algorithms": [
+        "HMAC compare",
+        "SHA-256 em streaming"
+      ],
+      "complexity": "medium"
+    },
+    {
+      "name": "ui",
+      "path": "pt2vhf/ui",
+      "purpose": "Janela principal Qt, LCD, waterfall com clique para sintonizar, painéis, níveis de interface e idiomas",
+      "primary_files": [
+        "pt2vhf/ui/main_window.py",
+        "pt2vhf/ui/waterfall.py",
+        "pt2vhf/ui/lcd.py",
+        "pt2vhf/ui/panels.py",
+        "pt2vhf/ui/listening.py",
+        "pt2vhf/ui/assist_panels.py",
+        "pt2vhf/i18n.py"
+      ],
+      "functions": [
+        {
+          "name": "MainWindow.tune",
+          "file": "pt2vhf/ui/main_window.py",
+          "params": [
+            "freq",
+            "snap=False"
+          ],
+          "returns": "bool | None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "MainWindow.select_transmission",
+          "file": "pt2vhf/ui/main_window.py",
+          "params": [
+            "freq"
+          ],
+          "returns": "None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "MainWindow.jump_neighbor",
+          "file": "pt2vhf/ui/main_window.py",
+          "params": [
+            "direction"
+          ],
+          "returns": "None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "MainWindow._tick",
+          "file": "pt2vhf/ui/main_window.py",
+          "params": [],
+          "returns": "None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "SpectrumWaterfall._pick_frequency",
+          "file": "pt2vhf/ui/waterfall.py",
+          "params": [
+            "x_mhz"
+          ],
+          "returns": "float | None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "apply_language",
+          "file": "pt2vhf/i18n.py",
+          "params": [
+            "root",
+            "code"
+          ],
+          "returns": "None",
+          "confidence": "confirmed"
+        }
+      ],
+      "entities": [],
+      "business_rules": [
+        {
+          "description": "Sintonia limitada a 24 kHz-1766 MHz",
+          "location": "pt2vhf/ui/main_window.py:851",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Clique no waterfall só dentro do IQ adquirido, arredondado ao passo",
+          "location": "pt2vhf/ui/waterfall.py:_pick_frequency",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "AUTO aplica só com confiança >= 0,55 e se a seleção não mudou",
+          "location": "pt2vhf/ui/main_window.py:_auto_result",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Widgets só na thread principal; resultados chegam por engine.events no tick de 33 ms",
+          "location": "pt2vhf/ui/main_window.py:_tick",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Níveis Essencial/Intermediário/Avançado escondem sem perder configurações",
+          "location": "pt2vhf/ui/main_window.py:apply_level",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Visibilidade por nível depende de títulos em PT-BR",
+          "location": "pt2vhf/ui/main_window.py:apply_level",
+          "confidence": "inferred"
+        }
+      ],
+      "dependencies": [
+        "engine",
+        "scanner",
+        "memory",
+        "traffic",
+        "ai_audio",
+        "integrations",
+        "dsp"
+      ],
+      "algorithms": [
+        "deslocamento de histórico do waterfall",
+        "max-pooling de colunas"
+      ],
+      "complexity": "high"
+    },
+    {
+      "name": "app",
+      "path": "pt2vhf",
+      "purpose": "Ponto de entrada, argumentos de linha de comando e autoteste",
+      "primary_files": [
+        "pt2vhf/app.py",
+        "pt2vhf/__main__.py",
+        "run_pt2vhf.py"
+      ],
+      "functions": [
+        {
+          "name": "main",
+          "file": "pt2vhf/app.py",
+          "params": [],
+          "returns": "None",
+          "confidence": "confirmed"
+        },
+        {
+          "name": "selftest",
+          "file": "pt2vhf/app.py",
+          "params": [],
+          "returns": "int (0/1)",
+          "confidence": "confirmed"
+        }
+      ],
+      "entities": [],
+      "business_rules": [
+        {
+          "description": "Mutex PT2VHF_SDR_Tool_Running no Windows",
+          "location": "pt2vhf/app.py",
+          "confidence": "confirmed"
+        },
+        {
+          "description": "Autoteste sem RF real; não valida RS41/ADS-B/AIS/OTA ponta a ponta",
+          "location": "pt2vhf/app.py:selftest",
+          "confidence": "confirmed"
+        }
+      ],
+      "dependencies": [
+        "ui",
+        "engine",
+        "sources",
+        "dsp",
+        "integrations",
+        "ai_audio"
+      ],
+      "algorithms": [],
+      "complexity": "low"
+    }
+  ]
+}
