@@ -346,9 +346,13 @@
       "recepcao-sdr",
       "demodulacao-e-audio",
       "espectro-e-waterfall",
-      "display-e-instrumentos"
+      "display-e-instrumentos",
+      "scanner-e-ocupacao",
+      "memorias-e-favoritos",
+      "gravacao-e-timeshift",
+      "assistente-de-sintonia"
     ],
     "globals_done": [],
-    "last_file": "display-e-instrumentos/tasks.md"
+    "last_file": "assistente-de-sintonia/tasks.md"
   }
 }
