@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.9] — 2026-11-27 — favoritos, Auto contínuo e zoom de verdade no waterfall
+### Favoritos
+- A fileira de teclas de favoritos virou um menu suspenso compacto ao lado de "+ Favorito": ocupa uma linha só e comporta dezenas de entradas.
+- Favoritos ordenados por frequência de uso (mais usados primeiro; empate pelo uso mais recente). Cada memória chamada conta um uso, salvo em `memories.json` (`use_count`, `last_used`); arquivos antigos continuam abrindo.
+- Botão "−" e botão direito no menu removem o favorito selecionado.
+### Waterfall
+- Botão **Auto** virou liga/desliga: com ele ligado, piso e teto acompanham o sinal a cada segundo (acima de 800 MHz com FFT 32768 a tela não fica mais preta). Vem ligado por padrão; mexer em Piso/Teto desliga. Ctrl+L continua ajustando uma vez.
+- **Zoom FFT:** com zoom alto (ex.: 10 kHz), o waterfall e o espectro passam a vir de um DDC da faixa visível (mistura, filtro FIR polifásico + Chebyshev II, decimação) com FFT própria de ~2048 bins na tela. Em 2,4 MS/s, 10 kHz de zoom passam de ~73 Hz/bin para ~3,7 Hz/bin; dois tons a 150 Hz aparecem separados. Rejeição de imagens ≥ 70 dB. Só roda enquanto o zoom está ativo (~5% de um núcleo em 2,4 MS/s).
+### Decodificadores
+- ACARS (131,550/131,725/131,825 MHz) e ADS-B (1090 MHz) já estão embarcados desde a v1.0.7; sem mudança de código nesta versão. Homologação com RF real continua pendente.
+
 ## [1.0.8] — 2026-11-27 — HF no RTL-SDR Blog V4/V4L
 ### RTL-SDR Blog V4 / V4 Lite (V4L)
 - HF passa a ser recebido pelo conversor interno (upconverter) do V4 e do V4L com o driver RTL-SDR Blog. Antes, no V4L (sintonizador R820T) só era possível sintonizar HF ligando a amostragem direta, que desliga o sintonizador e deixava o waterfall só com ruído (PR #31).

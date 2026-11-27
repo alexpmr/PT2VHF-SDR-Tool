@@ -81,6 +81,13 @@ class MemoryChannel:
     favorite: bool = False
     skip_scan: bool = False
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:10])
+    use_count: int = 0           # quantas vezes foi chamada (ordena os favoritos)
+    last_used: float = 0.0       # epoch da última chamada (desempate)
+
+    def mark_used(self, now: float | None = None):
+        import time
+        self.use_count = int(self.use_count or 0) + 1
+        self.last_used = float(now if now is not None else time.time())
 
     @property
     def band(self) -> str:
@@ -149,6 +156,12 @@ class MemoryBank:
 
     def by_category(self, cat: str) -> list[MemoryChannel]:
         return sorted((c for c in self.channels if c.category == cat), key=lambda c: c.freq)
+
+    def favorites(self) -> list[MemoryChannel]:
+        """Favoritos do mais usado para o menos usado (empate: mais recente, nome)."""
+        return sorted((c for c in self.channels if c.favorite),
+                      key=lambda c: (-int(c.use_count or 0), -float(c.last_used or 0.0),
+                                     c.name.lower(), c.freq))
 
     def in_range(self, f0: float, f1: float) -> list[MemoryChannel]:
         return [c for c in self.channels if f0 <= c.freq <= f1]

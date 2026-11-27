@@ -21,6 +21,7 @@ from .neural_audio import NeuralAudioWorker
 from .decoders import aprs as aprs_mod
 from .decoders.afsk import AFSKDemodulator
 from .decoders.tones import CTCSSDetector, DTMFDecoder
+from .dsp.zoom import ZoomSpectrum, zoom_needed
 from .dsp.receiver import AUDIO_RATE, Receiver, compute_spectrum
 from .sources.base import IQSource
 from .timeshift import TimeShiftBuffer
@@ -66,6 +67,11 @@ class Engine:
         self._capture: dict | None = None
         self.events: queue.Queue = queue.Queue()
         self.wf_lines: deque = deque(maxlen=200)
+        # Zoom FFT: a UI publica a vista (centro_hz, largura_hz) ou None.
+        # Com zoom alto, as linhas do waterfall saem de um DDC da faixa visível.
+        self.zoom_view: tuple[float, float] | None = None
+        self.wf_zoom_lines: deque = deque(maxlen=200)
+        self._zoom = None
         self.spectrum: np.ndarray | None = None
         self.spectrum_center = 0.0
         self.status = {"signal_db": -150.0, "sq_open": False, "ctcss": None, "dropped": 0,
@@ -189,6 +195,7 @@ class Engine:
                 self.source.set_center_freq(freq)
                 self._flush_source()
                 self.wf_lines.clear()
+                self.wf_zoom_lines.clear()
                 self._wf_acc = 1.0  # próxima linha sai já com o novo centro
                 self._retune(self.vfo)
         self.call(_do)
@@ -222,7 +229,20 @@ class Engine:
                 rx.set_offset(min(max(vfo - src.center_freq, -lim), lim))
                 return
             self.wf_lines.clear()
+            self.wf_zoom_lines.clear()
         rx.set_offset(vfo - src.center_freq)
+
+    def _zoom_feed(self, blk, center: float, fs: float):
+        """Alimenta o DDC do zoom (ou o desliga) conforme a vista do waterfall."""
+        view = self.zoom_view
+        if view is None or not zoom_needed(view[0], view[1], center, fs, self.fft_size):
+            self._zoom = None
+            return None
+        z = self._zoom
+        if z is None or not z.covers(view[0], view[1], center, fs):
+            z = self._zoom = ZoomSpectrum(fs, center, view[0], view[1])
+        z.feed(blk)
+        return z
 
     @property
     def center_freq(self) -> float:
@@ -347,6 +367,7 @@ class Engine:
                 listener(blk, src.center_freq, fs)
             except Exception as exc:
                 log.warning("IQ listener: %s", exc)
+        zoom = self._zoom_feed(blk, src.center_freq, fs)
         self._wf_acc += len(blk) / fs
         if self._wf_acc >= 1.0 / self.wf_speed:
             self._wf_acc = min(self._wf_acc - 1.0 / self.wf_speed, 1.0)
@@ -354,7 +375,12 @@ class Engine:
             if spec is not None:
                 self.spectrum = spec
                 self.spectrum_center = src.center_freq
+            if spec is not None:
+                # Linhas nativas seguem sempre (scanner por espectro usa).
                 self.wf_lines.append((spec, src.center_freq, fs))
+            zspec = zoom.spectrum() if zoom is not None else None
+            if zspec is not None:
+                self.wf_zoom_lines.append((zspec, zoom.zoom_center, zoom.fs_out, src.center_freq, fs))
 
         center = src.center_freq
         if self.timeshift is not None:

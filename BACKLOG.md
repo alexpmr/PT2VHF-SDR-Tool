@@ -1,5 +1,15 @@
 # Backlog — PT2VHF SDR Tool
 
+## v1.0.9 — Favoritos, Auto contínuo e zoom FFT do waterfall (27/11/2026)
+
+**Origem:** branch `release/stable-v1.0.9-backlog-20261127`, a partir da v1.0.8 publicada. PR #32 (Reversa) e a branch experimental IQ/ONNX não foram incluídos.
+
+- Favoritos em menu suspenso, ordenados por uso (`use_count`/`last_used` em `memories.json`).
+- Waterfall: Auto piso/teto contínuo (liga/desliga, padrão ligado).
+- Waterfall: zoom FFT (DDC da faixa visível) para resolução real com zoom alto (`pt2vhf/dsp/zoom.py`).
+- ACARS e ADS-B: conferidos; já embarcados desde a v1.0.7.
+- **Evidência:** `tests/test_v109_backlog.py`, suíte Linux offscreen e autoteste do executável Windows. **Homologação com SDR real (zoom em HF/UHF, CPU) e RF real de ACARS/ADS-B pendentes.**
+
 ## v1.0.8 — HF no RTL-SDR Blog V4/V4L (27/11/2026)
 
 **Origem:** branch `release/stable-v1.0.8-v4l-hf-20261127`, a partir da v1.0.7 publicada, com a correção do PR #31 (aplicada sobre a v1.0.7, conflitos resolvidos preservando a troca automática HF/VHF). PR #32 (Reversa) e a branch experimental IQ/ONNX não foram incluídos.

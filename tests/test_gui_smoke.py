@@ -50,7 +50,7 @@ def test_scanner_and_favorites_gui(tmp_path, monkeypatch):
     w.bank.channels = []  # sem as memórias de exemplo (que já cobrem os sinais do simulador)
     import_packs(w.bank, ["marine"], favorite=True)
     w._memories_changed()
-    assert len([b for b in w.fav_bar._buttons if isinstance(b, QtWidgets.QToolButton)]) >= 17
+    assert len(w.fav_bar.favorites()) >= 17
     w.rx_panel.source.setCurrentText("Simulador")
     w.rx_panel.start_btn.setChecked(True)
     sp = w.scan_panel
