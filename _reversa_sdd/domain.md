@@ -59,7 +59,7 @@ Escala: 🟢 confirmado no código · 🟡 inferido · 🔴 lacuna (precisa de v
 
 ### 2.2 DSP e demodulação
 - 🟢 Taxa de entrada deve ser múltiplo de 240 kHz (`dsp/receiver.py:57`).
-- 🟢 De-ênfase WFM fixa em 75 µs, padrão das Américas (`dsp/receiver.py:63`). 🟡 Não há opção de 50 µs para Europa.
+- 🟢 De-ênfase WFM padrão 75 µs (Américas), configurável para 50 µs em `wfm_deemph_us` (`dsp/receiver.py:63`, `ui/main_window.py:820,1021`, `ui/panels.py:289`).
 - 🟢 AGC só em AM/USB/LSB/CW/DSB/RAW; NFM usa ganho fixo 0,5 (`dsp/receiver.py:121`).
 - 🟢 Squelch: −150 dBFS = sempre aberto; histerese 3 dB; cauda 0,25 s (`dsp/demod.py:146`).
 - 🟢 S-meter: S9 = −93 dBm, 6 dB por unidade S, dBm = dBFS − 45 + calibração (`dsp/demod.py:dbfs_to_s_units`). 🔴 Offset nominal, não calibrado em RF real.

@@ -339,5 +339,16 @@
     ".reversa/plan.md",
     ".reversa/version",
     ".reversa/_config/manifest.yaml"
-  ]
+  ],
+  "redator_progress": {
+    "units_total": 20,
+    "units_done": [
+      "recepcao-sdr",
+      "demodulacao-e-audio",
+      "espectro-e-waterfall",
+      "display-e-instrumentos"
+    ],
+    "globals_done": [],
+    "last_file": "display-e-instrumentos/tasks.md"
+  }
 }
