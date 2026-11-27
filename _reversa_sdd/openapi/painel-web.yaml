@@ -1,0 +1,134 @@
+# Extraído pelo Reversa (Redator) de pt2vhf/webserver.py e pt2vhf/ui/main_window.py.
+# Confiança: 🟢 rotas, códigos e cabeçalhos confirmados no código. Servidor só leitura.
+openapi: 3.0.3
+info:
+  title: PT2VHF SDR Tool, painel web local
+  version: 0.13.3
+  description: >
+    Servidor HTTP embutido, desligado por padrão. Só GET, sem TLS.
+    Escuta em 127.0.0.1 (sem LAN) ou 0.0.0.0 (com LAN). Não expor à Internet.
+    Nenhuma rota altera o rádio.
+servers:
+  - url: http://127.0.0.1:8095
+    description: Porta padrão (1024-65535 configurável)
+security:
+  - {}
+  - chaveQuery: []
+  - chaveCookie: []
+components:
+  securitySchemes:
+    chaveQuery:
+      type: apiKey
+      in: query
+      name: key
+      description: Chave gerada a cada início (secrets.token_urlsafe(24)). Loopback dispensa.
+    chaveCookie:
+      type: apiKey
+      in: cookie
+      name: PT2VHFSDR
+      description: Gravado como HttpOnly; SameSite=Strict; Path=/ quando a chave da query é válida.
+  headers:
+    NoStore:
+      schema: {type: string, example: no-store}
+    NoSniff:
+      schema: {type: string, example: nosniff}
+  responses:
+    Negado:
+      description: Origem não autorizada (ver permissions.md §2)
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: "Acesso negado: use o endereço com a chave copiado no PT2VHF SDR Tool."
+  schemas:
+    PacoteAprs:
+      type: object
+      properties:
+        t: {type: string, example: "12:34:56"}
+        src: {type: string, example: "N0CALL-9"}
+        type: {type: string, example: "Posição"}
+        pos: {type: string}
+        text: {type: string, maxLength: 80}
+    Estado:
+      type: object
+      properties:
+        version: {type: string, example: "0.13.3"}
+        freq: {type: number, description: Hz}
+        mode: {type: string, example: NFM}
+        bw: {type: number, description: Hz}
+        s_text: {type: string, example: S9}
+        dbm: {type: number}
+        sq_open: {type: boolean}
+        ctcss: {type: number, nullable: true}
+        mem: {type: string}
+        scan: {type: boolean}
+        replay: {type: boolean}
+        running: {type: boolean}
+        aprs:
+          type: array
+          items: {$ref: '#/components/schemas/PacoteAprs'}
+        listeners: {type: integer}
+    Espectro:
+      type: object
+      required: [c, fs, db]
+      properties:
+        c: {type: number, description: Frequência central em Hz}
+        fs: {type: number, description: Taxa de amostragem em S/s}
+        db:
+          type: array
+          maxItems: 1024
+          items: {type: number, description: dB arredondado a 0,1}
+paths:
+  /:
+    get:
+      summary: Página HTML (LCD, espectro, APRS)
+      parameters:
+        - {name: key, in: query, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: Página
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+            Set-Cookie:
+              description: Só quando key válida
+              schema: {type: string}
+          content:
+            text/html: {schema: {type: string}}
+        '403': {$ref: '#/components/responses/Negado'}
+  /state:
+    get:
+      summary: Estado atual do receptor
+      responses:
+        '200':
+          description: Estado
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Estado'}
+        '403': {$ref: '#/components/responses/Negado'}
+  /spectrum:
+    get:
+      summary: Espectro reduzido por máximo
+      responses:
+        '200':
+          description: Espectro
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Espectro'}
+        '204': {description: Sem espectro disponível}
+        '403': {$ref: '#/components/responses/Negado'}
+  /audio:
+    get:
+      summary: Áudio ao vivo, PCM s16le 16 kHz mono, chunked
+      responses:
+        '200':
+          description: Stream contínuo; 100 ms de silêncio após 1 s sem áudio
+          headers:
+            X-Audio-Format:
+              schema: {type: string, example: "s16le;rate=16000;channels=1"}
+            Transfer-Encoding:
+              schema: {type: string, example: chunked}
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '403': {$ref: '#/components/responses/Negado'}

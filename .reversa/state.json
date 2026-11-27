@@ -8,14 +8,14 @@
   "doc_level": "completo",
   "output_folder": "_reversa_sdd",
   "forward_folder": "_reversa_forward",
-  "phase": "geracao",
+  "phase": "revisao",
   "completed": [
     "reconhecimento",
     "escavacao",
-    "interpretacao"
+    "interpretacao",
+    "geracao"
   ],
   "pending": [
-    "geracao",
     "revisao"
   ],
   "checkpoints": {
@@ -75,6 +75,17 @@
       ],
       "integrations": 19,
       "tech_debts": 14
+    },
+    "writer": {
+      "completed_at": "2026-11-27T21:00:00Z",
+      "units": 20,
+      "files": [
+        "_reversa_sdd/<unit>/ (20 pastas)",
+        "_reversa_sdd/openapi/painel-web.yaml",
+        "_reversa_sdd/user-stories/",
+        "_reversa_sdd/traceability/code-spec-matrix.md"
+      ],
+      "code_spec_coverage": "87/87 funcionais (12 n/a)"
     }
   },
   "engines": [
@@ -364,7 +375,11 @@
       "atualizacao-ota",
       "idiomas-e-configuracoes"
     ],
-    "globals_done": [],
-    "last_file": "idiomas-e-configuracoes/tasks.md"
+    "globals_done": [
+      "openapi/painel-web.yaml",
+      "user-stories/",
+      "traceability/code-spec-matrix.md"
+    ],
+    "last_file": "traceability/code-spec-matrix.md"
   }
 }
