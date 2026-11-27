@@ -354,9 +354,13 @@
       "aprs-packet",
       "tons-dtmf-ctcss",
       "trafego-adsb-ais",
-      "radiossonda-rs41"
+      "radiossonda-rs41",
+      "satelites",
+      "igate-aprs",
+      "reducao-de-ruido-neural",
+      "legendas-e-transcricao"
     ],
     "globals_done": [],
-    "last_file": "radiossonda-rs41/questions.md"
+    "last_file": "legendas-e-transcricao/tasks.md"
   }
 }

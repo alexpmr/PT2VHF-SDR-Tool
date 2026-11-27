@@ -151,11 +151,14 @@ stateDiagram-v2
 stateDiagram-v2
     [*] --> desligado
     desligado --> conectando: start() com indicativo e passcode válidos
-    conectando --> verificado: servidor confirma login
+    conectando --> verificado: logresp verified em até 12 s
     conectando --> recusado: login não verificado
-    verificado --> conectando: queda de conexão (reconecta)
+    conectando --> indisponivel: erro de socket
+    recusado --> conectando: espera 15 s
+    verificado --> indisponivel: queda de conexão
+    indisponivel --> conectando: espera 5 s
     verificado --> desligado: stop()
-    recusado --> desligado
+    recusado --> desligado: stop()
 ```
 
 ## Lacunas
