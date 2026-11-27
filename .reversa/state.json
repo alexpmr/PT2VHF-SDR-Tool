@@ -8,13 +8,13 @@
   "doc_level": "completo",
   "output_folder": "_reversa_sdd",
   "forward_folder": "_reversa_forward",
-  "phase": "interpretacao",
+  "phase": "geracao",
   "completed": [
     "reconhecimento",
-    "escavacao"
+    "escavacao",
+    "interpretacao"
   ],
   "pending": [
-    "interpretacao",
     "geracao",
     "revisao"
   ],
@@ -61,6 +61,20 @@
       "adrs": 18,
       "state_machines": 9,
       "gaps_red": 4
+    },
+    "architect": {
+      "completed_at": "2026-11-27T19:40:00Z",
+      "files": [
+        "_reversa_sdd/architecture.md",
+        "_reversa_sdd/c4-context.md",
+        "_reversa_sdd/c4-containers.md",
+        "_reversa_sdd/c4-components.md",
+        "_reversa_sdd/erd-complete.md",
+        "_reversa_sdd/integrations.md",
+        "_reversa_sdd/traceability/spec-impact-matrix.md"
+      ],
+      "integrations": 19,
+      "tech_debts": 14
     }
   },
   "engines": [

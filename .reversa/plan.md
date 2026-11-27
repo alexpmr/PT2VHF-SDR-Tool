@@ -35,9 +35,9 @@
 - [x] **Detetive** — Arqueologia Git e ADRs retroativos ✅
 - [x] **Detetive** — Regras de negócio implícitas e máquinas de estado ✅
 - [x] **Detetive** — Matriz de permissões (RBAC/ACL) ✅
-- [ ] **Arquiteto** — Diagramas C4 (Contexto, Containers, Componentes)
-- [ ] **Arquiteto** — ERD completo e integrações externas
-- [ ] **Arquiteto** — Spec Impact Matrix
+- [x] **Arquiteto** — Diagramas C4 (Contexto, Containers, Componentes) ✅
+- [x] **Arquiteto** — ERD completo e integrações externas ✅
+- [x] **Arquiteto** — Spec Impact Matrix ✅
 
 ## Fase 4: Geração 📝
 
