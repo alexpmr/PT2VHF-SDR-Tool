@@ -705,6 +705,11 @@ class MainWindow(QMainWindow):
                 src.set_bias_tee(self.cfg["bias_tee"]) if self.cfg["bias_tee"] else None
                 if self.cfg["direct_sampling"]:
                     src.set_direct_sampling(self.cfg["direct_sampling"])
+                    if not src.direct_sampling:  # V4/V4L: HF pelo conversor interno, sem amostragem direta
+                        self.cfg["direct_sampling"] = 0
+                        self.rx_panel.direct.blockSignals(True)
+                        self.rx_panel.direct.setCurrentIndex(0)
+                        self.rx_panel.direct.blockSignals(False)
             elif name == "rtl_tcp":
                 src = RtlTcpSource(fs, center, opts["host"], opts["port"], opts["gain"], opts["ppm"])
                 self.cfg["rtl_tcp_host"], self.cfg["rtl_tcp_port"] = opts["host"], opts["port"]

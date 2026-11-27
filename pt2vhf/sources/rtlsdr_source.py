@@ -6,8 +6,8 @@ Regras (v0.4.0):
 - a leitura é assíncrona; um vigia percebe quando as amostras param (erro de USB/sintonizador),
   reabre o dispositivo, reaplica frequência/ganho/ppm/bias-T e retoma sozinho;
 - frequência fora do alcance do dongle é recusada com aviso, mantendo a anterior;
-- no Windows usa, quando incluída no pacote, a biblioteca do driver RTL-SDR Blog (suporte ao V4, HF pelo
-  upconverter interno).
+- no Windows usa, quando incluída no pacote, a biblioteca do driver RTL-SDR Blog (suporte ao V4 e ao V4L,
+  HF pelo upconverter interno; nesses modelos a amostragem direta fica desligada).
 """
 from __future__ import annotations
 
@@ -146,8 +146,31 @@ def list_devices() -> list[str]:
         return []
 
 
+def is_blog_v4(product: str) -> bool:
+    """RTL-SDR Blog V4 (R828D) ou V4 Lite "V4L" (R820T): HF pelo upconverter interno.
+
+    Strings USB gravadas na EEPROM: fabricante "RTLSDRBlog", produto "Blog V4" ou "Blog V4L". O driver
+    RTL-SDR Blog liga o conversor (+28,8 MHz) e a entrada HF sozinho ao sintonizar abaixo de 28,8 MHz;
+    nesses modelos a amostragem direta NÃO é o caminho de HF (o ADC fica sem sinal: só ruído plano)."""
+    return "BLOG V4" in (product or "").upper()
+
+
+def usb_product(index: int) -> str:
+    """'Fabricante Produto' das strings USB do dongle (vazio se não der para ler)."""
+    try:
+        import ctypes
+        lib = load_library()
+        m, p, s = (ctypes.create_string_buffer(256) for _ in range(3))
+        lib.rtlsdr_get_device_usb_strings(index, m, p, s)
+        return f"{m.value.decode(errors='replace')} {p.value.decode(errors='replace')}".strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def tuning_range(tuner: str, blog_lib: bool, direct_sampling: int, product: str = "") -> tuple[float, float]:
     """Faixa sintonizável (Hz) conforme o sintonizador e a biblioteca."""
+    if blog_lib and is_blog_v4(product):
+        return 500e3, 1766e6  # V4 (R828D) / V4L (R820T): HF pelo upconverter, amostragem direta ignorada
     if direct_sampling:
         return 500e3, 28.8e6
     t = (tuner or "").upper()
@@ -157,8 +180,6 @@ def tuning_range(tuner: str, blog_lib: bool, direct_sampling: int, product: str 
         return 22e6, 1100e6
     if "FC2580" in t:
         return 146e6, 924e6
-    if "R828D" in t and blog_lib and ("V4" in product.upper() or "BLOG" in product.upper()):
-        return 500e3, 1766e6  # RTL-SDR Blog V4: HF pelo upconverter interno
     return 24e6, 1766e6       # R820T/R828D
 
 
@@ -196,6 +217,14 @@ class RtlSdrSource(IQSource):
         self.tuner = self._tuner_name()
         self.product = self._product_name()
         self.range = tuning_range(self.tuner, library_info().get("blog", False), 0, self.product)
+        if is_blog_v4(self.product) and not library_info().get("blog", False):
+            self._messages.put(f"{self.product}: HF (abaixo de 24 MHz) só funciona com o driver RTL-SDR Blog; "
+                               "em Configurações → Biblioteca do RTL-SDR, use Automático ou Driver RTL-SDR Blog.")
+
+    @property
+    def hf_upconverter(self) -> bool:
+        """V4/V4L com o driver RTL-SDR Blog: HF pelo conversor interno, sem amostragem direta."""
+        return is_blog_v4(self.product) and bool(library_info().get("blog", False))
 
     # ------------------------------------------------------------ abertura
     def _default_factory(self, index: int):
@@ -300,14 +329,7 @@ class RtlSdrSource(IQSource):
             return ""
 
     def _product_name(self) -> str:
-        try:
-            from rtlsdr.librtlsdr import librtlsdr
-            import ctypes
-            m, p, s = (ctypes.create_string_buffer(256) for _ in range(3))
-            librtlsdr.rtlsdr_get_device_usb_strings(self.device_index, m, p, s)
-            return f"{m.value.decode(errors='replace')} {p.value.decode(errors='replace')}".strip()
-        except Exception:  # noqa: BLE001
-            return ""
+        return usb_product(self.device_index)
 
     def _say(self, msg: str):
         self.message = msg
@@ -430,8 +452,12 @@ class RtlSdrSource(IQSource):
         what = self.product or f"RTL-SDR ({self.tuner or 'sintonizador desconhecido'})"
         hint = ""
         if hz < 24e6:
-            hint = (" Para HF: RTL-SDR Blog V4 (HF pelo conversor interno), V3 com Amostragem direta → Ramo Q, "
-                    "ou um upconverter.")
+            if is_blog_v4(self.product):
+                hint = (" O V4/V4L recebe HF pelo conversor interno, mas isso exige o driver RTL-SDR Blog "
+                        "(Configurações → Biblioteca do RTL-SDR → Automático ou Driver RTL-SDR Blog).")
+            else:
+                hint = (" Para HF: RTL-SDR Blog V4/V4L (HF pelo conversor interno), V3 com Amostragem direta → "
+                        "Ramo Q, ou um upconverter.")
         return f"{what} sintoniza de {lo / 1e6:g} a {hi / 1e6:g} MHz; {hz / 1e6:.4f} MHz está fora.{hint}"
 
     def set_center_freq(self, hz: float):
@@ -471,6 +497,14 @@ class RtlSdrSource(IQSource):
         self._submit("bias", lambda sdr: sdr.set_bias_tee(bool(on)))
 
     def set_direct_sampling(self, mode: int):
+        if int(mode) and self.hf_upconverter:
+            # No V4/V4L o HF entra pelo upconverter; amostragem direta desliga o sintonizador e o ADC
+            # fica sem sinal (só ruído plano). Mantém desligada para o driver acionar o conversor.
+            self._say(f"{self.product}: HF é recebido pelo conversor interno; amostragem direta "
+                      "não se aplica a este modelo e foi mantida desligada.")
+            mode = 0
+            if not self.direct_sampling:
+                return
         self.direct_sampling = int(mode)
         self._submit("direct", lambda sdr: sdr.set_direct_sampling(int(mode)))
 
