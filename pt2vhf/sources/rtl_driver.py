@@ -155,7 +155,7 @@ def prepare() -> tuple[bool, str]:
 
 def diagnose() -> str:
     """Relatório para a tela e o log: biblioteca, USB, driver e abertura do dispositivo."""
-    from .rtlsdr_source import library_info, list_devices, tuning_range
+    from .rtlsdr_source import is_blog_v4, library_info, list_devices, tuning_range, usb_product
     lines = [f"Sistema: {sys.platform}"]
     info = library_info()
     if info.get("error"):
@@ -181,8 +181,13 @@ def diagnose() -> str:
             names = {1: "E4000", 2: "FC0012", 3: "FC0013", 4: "FC2580", 5: "R820T", 6: "R828D"}
             tuner = names.get(int(radio.get_tuner_type()), "?")
             radio.close()
-            lo, hi = tuning_range(tuner, info.get("blog", False), 0, devices[0])
-            lines.append(f"Abertura do dispositivo #0: OK (sintonizador {tuner}, {lo / 1e6:g}–{hi / 1e6:g} MHz)")
+            product = usb_product(0)
+            lo, hi = tuning_range(tuner, info.get("blog", False), 0, product or devices[0])
+            lines.append(f"Abertura do dispositivo #0: OK ({product or 'produto ?'}, sintonizador {tuner}, "
+                         f"{lo / 1e6:g}–{hi / 1e6:g} MHz)")
+            if is_blog_v4(product):
+                lines.append("RTL-SDR Blog V4/V4L: HF pelo conversor interno — deixe a Amostragem direta "
+                             "Desligada" + ("." if info.get("blog") else " e use o driver RTL-SDR Blog."))
         except Exception as exc:  # noqa: BLE001
             lines.append(f"Abertura do dispositivo #0: FALHOU — {exc}")
             lines.append("Recomendação: feche outros programas SDR, use Preparar RTL-SDR e reconecte o dongle.")

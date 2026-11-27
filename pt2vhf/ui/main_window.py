@@ -821,6 +821,8 @@ class MainWindow(QMainWindow):
                             "Amostragem direta desativada: VHF/UHF usa o sintonizador R820T.", 10000)
                 if selected:
                     src.set_direct_sampling(selected)
+                    if not src.direct_sampling:  # V4/V4L: HF pelo conversor interno, sem amostragem direta
+                        self._set_rtl_sampling_state(0)
             elif name == "rtl_tcp":
                 src = RtlTcpSource(fs, center, opts["host"], opts["port"], opts["gain"], opts["ppm"])
                 self.cfg["rtl_tcp_host"], self.cfg["rtl_tcp_port"] = opts["host"], opts["port"]
@@ -974,6 +976,8 @@ class MainWindow(QMainWindow):
                                      self.cfg.get("direct_sampling", 0)))
         physical_freq = freq + float(getattr(src, "offset_hz", 0.0))
         chosen = select_direct_sampling_mode(physical_freq, src.sample_rate, current, preferred)
+        if chosen and getattr(src, "hf_upconverter", False):
+            chosen = 0  # V4/V4L: HF pelo conversor interno; nunca amostragem direta
         if chosen == current:
             return
         if current in (1, 2) and chosen == 0:

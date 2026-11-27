@@ -206,3 +206,46 @@ def test_recovery_reuses_single_control_thread():
         s.close()
     original.join(timeout=1.0)
     assert not original.is_alive()
+
+
+def test_tuning_range_v4_lite_and_v3():
+    """V4L (RTL-SDR Blog V4 Lite) usa R820T: HF vem do upconverter, não da amostragem direta."""
+    assert tuning_range("R820T", True, 0, "RTLSDRBlog Blog V4L") == (500e3, 1766e6)
+    assert tuning_range("R820T", True, 2, "RTLSDRBlog Blog V4L") == (500e3, 1766e6)
+    assert tuning_range("R828D", True, 2, "RTLSDRBlog Blog V4") == (500e3, 1766e6)
+    assert tuning_range("R820T", False, 0, "RTLSDRBlog Blog V4L")[0] == 24e6  # biblioteca padrão: sem HF
+    # V3 continua igual: HF só com amostragem direta (Ramo Q)
+    assert tuning_range("R820T", True, 0, "RTLSDRBlog Blog V3")[0] == 24e6
+    assert tuning_range("R820T", True, 2, "RTLSDRBlog Blog V3") == (500e3, 28.8e6)
+
+
+def _blog_src(monkeypatch, product):
+    from pt2vhf.sources import rtlsdr_source as rs
+    monkeypatch.setattr(rs, "usb_product", lambda _i: product)
+    monkeypatch.setattr(rs, "library_info", lambda: {"blog": True, "name": "rtlsdr.dll"})
+    calls = []
+
+    class Rtl(FakeRtl):
+        def set_direct_sampling(self, m):
+            calls.append(m)
+    return RtlSdrSource(1_200_000, 145.5e6, sdr_factory=lambda i: Rtl(i)), calls
+
+
+def test_v4_lite_ignores_direct_sampling_and_tunes_hf(monkeypatch):
+    s, calls = _blog_src(monkeypatch, "RTLSDRBlog Blog V4L")
+    assert s.hf_upconverter
+    s.set_direct_sampling(2)                 # configuração antiga (Ramo Q) não pode ser aplicada no V4L
+    assert s.direct_sampling == 0 and calls == []
+    assert "conversor interno" in " ".join(s.pop_messages())
+    assert s.set_center_freq(7.135e6) is True
+    assert s.sdr.center_freq == int(7.135e6)
+    s.close()
+
+
+def test_v3_keeps_direct_sampling(monkeypatch):
+    s, calls = _blog_src(monkeypatch, "RTLSDRBlog Blog V3")
+    assert not s.hf_upconverter
+    s.set_direct_sampling(2)
+    assert s.direct_sampling == 2 and calls == [2]
+    assert s.set_center_freq(7.135e6) is True
+    s.close()
