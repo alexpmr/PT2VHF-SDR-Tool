@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.8] — 2026-11-27 — HF no RTL-SDR Blog V4/V4L
+### RTL-SDR Blog V4 / V4 Lite (V4L)
+- HF passa a ser recebido pelo conversor interno (upconverter) do V4 e do V4L com o driver RTL-SDR Blog. Antes, no V4L (sintonizador R820T) só era possível sintonizar HF ligando a amostragem direta, que desliga o sintonizador e deixava o waterfall só com ruído (PR #31).
+- V4 e V4L são reconhecidos pelas strings USB ("Blog V4" / "Blog V4L"); faixa 0,5–1766 MHz com o driver Blog, independentemente do sintonizador.
+- Amostragem direta é recusada nesses modelos, com aviso; configuração salva e troca automática HF/VHF não voltam a ligá-la.
+- Aviso quando o V4/V4L abre com a biblioteca rtl-sdr padrão (sem HF); Diagnóstico mostra o produto USB.
+- RTL-SDR Blog V3 e dongles genéricos inalterados (HF continua por amostragem direta, Ramo Q).
+- Pendente: homologação com RF real no V4L.
+
 ## [1.0.7] — 2026-11-23 — decodificadores embarcados e splash do Sat Tool
 ### Splash
 - Mesmo splash do Sat Tool: banner oficial PT2VHF (`pt2vhf/assets/branding/welcome-banner.jpg`) em camada não modal, embarcado no Setup e no Portable (PR #28).

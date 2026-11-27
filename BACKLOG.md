@@ -1,5 +1,12 @@
 # Backlog — PT2VHF SDR Tool
 
+## v1.0.8 — HF no RTL-SDR Blog V4/V4L (27/11/2026)
+
+**Origem:** branch `release/stable-v1.0.8-v4l-hf-20261127`, a partir da v1.0.7 publicada, com a correção do PR #31 (aplicada sobre a v1.0.7, conflitos resolvidos preservando a troca automática HF/VHF). PR #32 (Reversa) e a branch experimental IQ/ONNX não foram incluídos.
+
+- V4/V4L recebem HF pelo upconverter com o driver RTL-SDR Blog; amostragem direta recusada nesses modelos.
+- **Evidência:** suíte Linux offscreen e autoteste do executável Windows. **Homologação com RF real no V4L (7,135 MHz LSB) pendente.**
+
 ## v1.0.7 — Decodificadores embarcados e splash do Sat Tool (23/11/2026)
 
 **Origem:** branch `release/stable-v1.0.7-decoders-20261123`, a partir da v1.0.6 publicada (tag `v1.0.6`), com merge dos PRs #29 (decodificadores) e #28 (splash). Nada da branch experimental IQ/ONNX foi incluído.
