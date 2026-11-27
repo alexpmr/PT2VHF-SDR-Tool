@@ -358,9 +358,13 @@
       "satelites",
       "igate-aprs",
       "reducao-de-ruido-neural",
-      "legendas-e-transcricao"
+      "legendas-e-transcricao",
+      "painel-web",
+      "cat-rigctl",
+      "atualizacao-ota",
+      "idiomas-e-configuracoes"
     ],
     "globals_done": [],
-    "last_file": "legendas-e-transcricao/tasks.md"
+    "last_file": "idiomas-e-configuracoes/tasks.md"
   }
 }
