@@ -1,26 +1,26 @@
-name: Build and attach PT2VHF SDR Tool v1.0.7 Linux and macOS
-# Gera pacotes nativos Linux (.deb/.tgz) e macOS (.dmg/.app.tgz) da v1.0.7,
+name: Build and attach PT2VHF SDR Tool v1.0.8 Linux and macOS
+# Gera pacotes nativos Linux (.deb/.tgz) e macOS (.dmg/.app.tgz) da v1.0.8,
 # com RS41 (fsk_demod/rs41mod) e AIS-catcher embarcados, roda o autoteste do
-# executável empacotado e anexa à Release v1.0.7 já publicada (Windows intacto).
+# executável empacotado e anexa à Release v1.0.8 já publicada (Windows intacto).
 on:
   push:
-    branches: [claude/project-thread-pue97w]
+    branches: [release/publish-v1.0.8-unix-20261127]
     paths:
-      - .github/workflows/publish-v107-unix.yml
+      - .github/workflows/publish-v108-unix.yml
       - packaging/**
   workflow_dispatch:
     inputs:
       attach:
-        description: "Anexar os pacotes à Release v1.0.7"
+        description: "Anexar os pacotes à Release v1.0.8"
         type: boolean
         default: false
 permissions:
   contents: write
 concurrency:
-  group: pt2vhf-sdr-publish-v107-unix
+  group: pt2vhf-sdr-publish-v108-unix
   cancel-in-progress: false
 env:
-  VERSION: "1.0.7"
+  VERSION: "1.0.8"
   QT_QPA_PLATFORM: offscreen
   PT2VHF_NO_AUTOCONNECT: "1"
   PT2VHF_NO_STARTUP_DIALOGS: "1"
@@ -165,7 +165,7 @@ jobs:
           test -s "release/pt2vhf-sdr-tool_${VERSION}_amd64.deb"
           test -s "release/PT2VHF-SDR-Tool-v${VERSION}-Linux-x86_64.tgz"
           ls release/PT2VHF-SDR-Tool-v${VERSION}-macOS-*.dmg
-      - name: Anexar à Release v1.0.7 (sem sobrescrever)
+      - name: Anexar à Release v1.0.8 (sem sobrescrever)
         run: |
           set -euo pipefail
           repo="${{ github.repository }}"
