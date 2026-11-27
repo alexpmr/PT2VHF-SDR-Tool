@@ -350,9 +350,13 @@
       "scanner-e-ocupacao",
       "memorias-e-favoritos",
       "gravacao-e-timeshift",
-      "assistente-de-sintonia"
+      "assistente-de-sintonia",
+      "aprs-packet",
+      "tons-dtmf-ctcss",
+      "trafego-adsb-ais",
+      "radiossonda-rs41"
     ],
     "globals_done": [],
-    "last_file": "assistente-de-sintonia/tasks.md"
+    "last_file": "radiossonda-rs41/questions.md"
   }
 }
