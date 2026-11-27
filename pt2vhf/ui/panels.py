@@ -143,6 +143,8 @@ class ReceiverPanel(QWidget):
         self.direct = QComboBox()
         self.direct.addItems(["Desligada", "Ramo I", "Ramo Q (HF RTL-SDR V3)"])
         self.direct.setCurrentIndex(cfg["direct_sampling"])
+        self.direct.setToolTip("Só para RTL-SDR V3 e similares (HF no Ramo Q). RTL-SDR Blog V4/V4L: deixe "
+                               "Desligada — o HF entra pelo conversor interno.")
         gf.addRow("Amostr. direta:", self.direct)
         self.external_converter = QCheckBox("Usar conversor externo (upconverter)")
         self.external_converter.setChecked(bool(cfg.get("external_converter_enabled", False)))
