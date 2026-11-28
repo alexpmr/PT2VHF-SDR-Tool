@@ -86,6 +86,25 @@
         "_reversa_sdd/traceability/code-spec-matrix.md"
       ],
       "code_spec_coverage": "87/87 funcionais (12 n/a)"
+    },
+    "reviewer": {
+      "completed_at": "2026-11-28T12:10:00Z",
+      "specs_reviewed": 20,
+      "cross_review": false,
+      "reclassifications": {
+        "yellow_to_green": 10,
+        "corrections": 2
+      },
+      "questions": 5,
+      "answered": 0,
+      "confidence": "91%",
+      "files": [
+        "_reversa_sdd/confidence-report.md",
+        "_reversa_sdd/questions.md",
+        "_reversa_sdd/gaps.md"
+      ],
+      "regression_check": "pulado: sem _reversa_forward/ nem addenda",
+      "baseline_warning": "specs na main v0.13.3; publicada v1.0.9 (156 commits a frente)"
     }
   },
   "engines": [

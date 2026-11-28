@@ -41,5 +41,5 @@ Lista de satélites carregados, `_last_freq`, timer; config `sat_tle_path`, `sat
 Texto de resumo no painel. 🟢
 
 ## Riscos e Lacunas
-- 🟡 Painel inacessível na UI atual.
+- 🟢 Painel inacessível na UI atual: `SatellitePanel` é criado e ligado a `tune`, mas não entra em nenhuma aba (`ui/main_window.py:272,618`) [Revisão: 🟡→🟢].
 - 🟡 Passo de 45 s pode errar AOS/LOS em até 45 s.

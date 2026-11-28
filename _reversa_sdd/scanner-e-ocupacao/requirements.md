@@ -95,4 +95,4 @@ Então a contagem daquele bin sobe só uma vez
 | `pt2vhf/occupancy.py` | `OccupancyHistory`, `BIN_HZ`, `HOURS` | 🟢 |
 | `pt2vhf/ui/main_window.py` | `_start_scan`, `_scan_next`, `_scan_tick`, `_stop_scan`, `_auto_squelch`, `_sscan_stop` | 🟢 |
 | `pt2vhf/ui/occupancy_panel.py` | painel de ocupação | 🟢 |
-| `pt2vhf/ui/panels.py` | painel do scanner e das memórias (dwell, resume) | 🟡 |
+| `pt2vhf/ui/listening.py` | `ScannerPanel` (`listening.py:170`) [Revisão: corrigido, o painel do scanner não fica em `panels.py`] | 🟢 |

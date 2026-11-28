@@ -36,4 +36,4 @@ Protocolo em [contracts.md](contracts.md).
 
 ## Lacunas
 - 🔴 Nunca demonstrado com transceptor real.
-- 🟡 Faixa aceita na leitura (24 kHz–1766 MHz) é a dívida D3 (`architecture.md`).
+- 🟢 Faixa aceita na leitura (24 kHz–1766 MHz) é a dívida D3 (`architecture.md`, `ui/main_window.py:1525`) [Revisão: 🟡→🟢].

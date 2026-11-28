@@ -23,7 +23,7 @@ Aquisição contínua de amostras IQ de um receptor SDR (RTL-SDR local, rtl_tcp,
 - O centro é deslocado para VFO + fs/8 quando fs ≥ 900 kHz, para afastar o VFO do pico de DC. 🟢 `engine.py:219`
 - A média do bloco é subtraída (remoção de DC) antes de qualquer processamento. 🟢 `engine.py:338`
 - WinUSB só na interface 0 do dispositivo composto, via `wdi-simple` com um único UAC. 🟢 `sources/rtl_driver.py:93-125`
-- `set_center_freq` fora da faixa: RTL-SDR devolve `False`; rtl_tcp e SoapySDR levantam `SourceError`. 🟢 `network_sources.py:86,175`. 🟡 A engine só trata `False`.
+- `set_center_freq` fora da faixa: RTL-SDR devolve `False`; rtl_tcp e SoapySDR levantam `SourceError`. 🟢 `network_sources.py:86,175`. 🟢 A engine só trata `False` (`engine.py:220`); `set_center` do scanner ignora o retorno (`engine.py:189`) [Revisão: 🟡→🟢].
 - Para o RTL-SDR Blog V4L do operador, HF deve ir pelo upconverter, nunca pela amostragem direta. 🟡 decisão do operador registrada em memória do projeto.
 
 ## Requisitos Funcionais

@@ -81,4 +81,4 @@ Então o texto aparece na lista de atividade
 | `pt2vhf/transcribe.py` | `CALLSIGN_RE`, `find_callsigns`, `backend_available`, `Transcriber` | 🟢 |
 | `pt2vhf/ui/live_captions_panel.py` | `LiveCaptionsPanel` | 🟢 |
 | `pt2vhf/ui/main_window.py` | `_download_caption_model`, `_toggle_live_captions`, `_toggle_transcription`, `caption_popup` | 🟢 |
-| `pt2vhf/app.py` | download de modelo por linha de comando (`app.py:168`) | 🟡 |
+| `pt2vhf/app.py` | autoteste confere que faster-whisper e `download_model` estão empacotados, sem baixar nada (`app.py:166-172`) [Revisão: corrigido, não há download por linha de comando] | 🟢 |

@@ -35,7 +35,7 @@
 
 ## Dependências
 - `pyrtlsdr` e DLLs librtlsdr (Blog e padrão) embarcadas. 🟢
-- `SoapySDR` (opcional, importado sob demanda). 🟡
+- `SoapySDR` (opcional, importado sob demanda). 🟢 `sources/network_sources.py:121` [Revisão: 🟡→🟢]
 - `ctypes`/`wintypes` para `ShellExecuteEx` e `wdi-simple.exe`. 🟢
 - Engine (consumidor dos blocos). 🟢
 

@@ -40,4 +40,4 @@
 
 ## Riscos e Lacunas
 - 🔴 Homologação de qualidade, CPU e latência com RF real.
-- 🟡 Depois de uma falha o backend fica desligado até recriar o worker.
+- 🟢 Depois de uma falha o backend fica desligado até recriar o worker, e o áudio segue sem tratamento (`neural_audio.py:131-138`) [Revisão: 🟡→🟢].

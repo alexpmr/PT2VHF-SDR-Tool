@@ -44,5 +44,5 @@
 Texto de status no painel com contagem e erro. 🟢
 
 ## Riscos e Lacunas
-- 🟡 `TrafficFeedsPanel` órfão.
+- 🟢 `TrafficFeedsPanel` órfão: definido em `ui/traffic_panel.py:191` e não usado em nenhum outro arquivo [Revisão: 🟡→🟢].
 - 🔴 Divergência entre a memória do projeto (modos embarcados v1.0.7) e esta branch.

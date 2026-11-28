@@ -59,11 +59,11 @@ Cobertura: 87 de 87 arquivos funcionais (100%); 12 arquivos n/a (empacotamento, 
 | `pt2vhf/ui/display_settings.py` | [display-e-instrumentos](../display-e-instrumentos/requirements.md) | 🟢 |
 | `pt2vhf/ui/igate_panel.py` | [igate-aprs](../igate-aprs/requirements.md) | 🟢 |
 | `pt2vhf/ui/lcd.py` | [display-e-instrumentos](../display-e-instrumentos/requirements.md), [idiomas-e-configuracoes](../idiomas-e-configuracoes/requirements.md) | 🟢 |
-| `pt2vhf/ui/listening.py` | [memorias-e-favoritos](../memorias-e-favoritos/requirements.md) | 🟢 |
+| `pt2vhf/ui/listening.py` | [memorias-e-favoritos](../memorias-e-favoritos/requirements.md), [scanner-e-ocupacao](../scanner-e-ocupacao/requirements.md) | 🟢 |
 | `pt2vhf/ui/live_captions_panel.py` | [legendas-e-transcricao](../legendas-e-transcricao/requirements.md) | 🟢 |
 | `pt2vhf/ui/main_window.py` | [aprs-packet](../aprs-packet/requirements.md), [assistente-de-sintonia](../assistente-de-sintonia/requirements.md), [atualizacao-ota](../atualizacao-ota/requirements.md), [cat-rigctl](../cat-rigctl/requirements.md), [display-e-instrumentos](../display-e-instrumentos/requirements.md), [espectro-e-waterfall](../espectro-e-waterfall/requirements.md), [gravacao-e-timeshift](../gravacao-e-timeshift/requirements.md), [idiomas-e-configuracoes](../idiomas-e-configuracoes/requirements.md), [igate-aprs](../igate-aprs/requirements.md), [legendas-e-transcricao](../legendas-e-transcricao/requirements.md), [memorias-e-favoritos](../memorias-e-favoritos/requirements.md), [painel-web](../painel-web/requirements.md), [radiossonda-rs41](../radiossonda-rs41/requirements.md), [reducao-de-ruido-neural](../reducao-de-ruido-neural/requirements.md), [scanner-e-ocupacao](../scanner-e-ocupacao/requirements.md), [trafego-adsb-ais](../trafego-adsb-ais/requirements.md) | 🟢 |
 | `pt2vhf/ui/occupancy_panel.py` | [scanner-e-ocupacao](../scanner-e-ocupacao/requirements.md) | 🟢 |
-| `pt2vhf/ui/panels.py` | [memorias-e-favoritos](../memorias-e-favoritos/requirements.md), [scanner-e-ocupacao](../scanner-e-ocupacao/requirements.md) | 🟢 |
+| `pt2vhf/ui/panels.py` | [memorias-e-favoritos](../memorias-e-favoritos/requirements.md) (`MemoryDialog`, `MemoryPanel`); `ReceiverPanel`, `ModePanel`, `AudioPanel`, `DecoderPanel` servem recepcao-sdr, demodulacao-e-audio e aprs-packet sem citação explícita [Revisão] | 🟡 |
 | `pt2vhf/ui/rigctl_panel.py` | [cat-rigctl](../cat-rigctl/requirements.md) | 🟢 |
 | `pt2vhf/ui/satellite_panel.py` | [satelites](../satelites/requirements.md) | 🟢 |
 | `pt2vhf/ui/settings_panel.py` | [atualizacao-ota](../atualizacao-ota/requirements.md), [idiomas-e-configuracoes](../idiomas-e-configuracoes/requirements.md), [painel-web](../painel-web/requirements.md) | 🟢 |

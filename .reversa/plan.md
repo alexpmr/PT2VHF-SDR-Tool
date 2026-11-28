@@ -48,9 +48,9 @@
 
 ## Fase 5: Revisão ✅
 
-- [ ] **Revisor** — Revisão cruzada de specs
+- [x] **Revisor** — Revisão cruzada de specs ✅
 - [ ] **Revisor** — Resolução de lacunas com o usuário
-- [ ] **Revisor** — Relatório de confiança final
+- [x] **Revisor** — Relatório de confiança final ✅
 
 ---
 

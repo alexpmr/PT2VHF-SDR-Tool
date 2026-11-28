@@ -92,5 +92,5 @@ Então aparece o motivo na barra de status e nada é sintonizado
 | `pt2vhf/presets.py` | `PresetPack`, `PACKS`, `import_packs` | 🟢 |
 | `pt2vhf/memory_regions.py` | `RegionMemoryStore` | 🟢 |
 | `pt2vhf/ui/listening.py` | `FavoritesBar`, `PresetDialog` | 🟢 |
-| `pt2vhf/ui/panels.py` | painel e diálogo de memórias | 🟡 |
+| `pt2vhf/ui/panels.py` | `MemoryDialog` (`panels.py:571`), `MemoryPanel` (`panels.py:636`) [Revisão: 🟡→🟢] | 🟢 |
 | `pt2vhf/ui/main_window.py` | `_recall`, `_save_current_memory`, `_remember_current_band`, `_goto_band`, `_unfavorite` | 🟢 |

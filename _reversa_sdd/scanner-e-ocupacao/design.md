@@ -50,5 +50,5 @@ Contadores `sweeps` e `channels_per_second`; flag `SCAN` no LCD. 🟢
 
 ## Riscos e Lacunas
 - 🟡 O comentário do squelch automático diz mediana, mas o código usa o quartil inferior.
-- 🟡 O OTA é adiado enquanto o scanner ou a varredura de memórias rodam (ver `atualizacao-ota`).
+- 🟢 O OTA é adiado enquanto o scanner ou a varredura de memórias rodam (`ui/main_window.py:1450-1453`, ver `atualizacao-ota`) [Revisão: 🟡→🟢].
 - 🔴 Desempenho real de detecção com RF real e antenas diferentes não está documentado.
